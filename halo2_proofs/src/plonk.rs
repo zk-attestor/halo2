@@ -7,6 +7,7 @@
 
 use blake2b_simd::Params as Blake2bParams;
 use group::ff::Field;
+use serde::{Deserialize, Serialize};
 
 use crate::arithmetic::{CurveAffine, FieldExt};
 use crate::helpers::CurveRead;
@@ -224,6 +225,47 @@ impl<C: CurveAffine> ProvingKey<C> {
     pub fn get_vk(&self) -> &VerifyingKey<C> {
         &self.vk
     }
+    /// Writes a proving key to a buffer.
+    /// Does so by first writing the verifying key and then serializing the rest of the data (in the form of field polynomials)
+    pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        self.vk.write(writer)?;
+        let partial_pkey = ProvingKeyWithoutVerifyingKey {
+            l0: self.l0.clone(),
+            l_last: self.l_last.clone(),
+            l_active_row: self.l_active_row.clone(),
+            fixed_values: self.fixed_values.clone(),
+            fixed_polys: self.fixed_polys.clone(),
+            fixed_cosets: self.fixed_cosets.clone(),
+            permutation: self.permutation.clone(),
+            ev: self.ev.clone(),
+        };
+        let pkey_serialized =
+            bincode::serialize(&partial_pkey).expect("should be able to serialize pkey");
+        writer.write_all(&pkey_serialized)
+    }
+    /// Reads a proving key from a buffer.
+    /// Does so by reading verification key first, and then deserializing the rest of the file into the remaining proving key data.
+    pub fn read<'params, R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
+        reader: &mut R,
+        params: &impl Params<'params, C>,
+    ) -> io::Result<Self> {
+        let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(reader, params)?;
+        let mut buf = vec![];
+        reader.read_to_end(&mut buf)?;
+        let partial_pk: ProvingKeyWithoutVerifyingKey<C> =
+            bincode::deserialize(&buf).expect("should be able to deserialize pkey");
+        Ok(Self {
+            vk,
+            l0: partial_pk.l0,
+            l_last: partial_pk.l_last,
+            l_active_row: partial_pk.l_active_row,
+            fixed_values: partial_pk.fixed_values,
+            fixed_polys: partial_pk.fixed_polys,
+            fixed_cosets: partial_pk.fixed_cosets,
+            permutation: partial_pk.permutation,
+            ev: partial_pk.ev,
+        })
+    }
 }
 
 impl<C: CurveAffine> VerifyingKey<C> {
@@ -231,6 +273,20 @@ impl<C: CurveAffine> VerifyingKey<C> {
     pub fn get_domain(&self) -> &EvaluationDomain<C::Scalar> {
         &self.domain
     }
+}
+
+#[allow(missing_docs)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(bound = "C: CurveAffine")]
+struct ProvingKeyWithoutVerifyingKey<C: CurveAffine> {
+    l0: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
+    l_last: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
+    l_active_row: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
+    fixed_values: Vec<Polynomial<C::Scalar, LagrangeCoeff>>,
+    fixed_polys: Vec<Polynomial<C::Scalar, Coeff>>,
+    fixed_cosets: Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>,
+    permutation: permutation::ProvingKey<C>,
+    ev: Evaluator<C>,
 }
 
 #[derive(Clone, Copy, Debug)]

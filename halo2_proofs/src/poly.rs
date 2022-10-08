@@ -5,8 +5,11 @@
 use crate::arithmetic::parallelize;
 use crate::plonk::Assigned;
 
+use ff::PrimeField;
 use group::ff::{BatchInvert, Field};
 use halo2curves::FieldExt;
+use serde::ser::SerializeSeq;
+use serde::{de::Error as DeError, Deserialize, Serialize};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, RangeFrom, RangeFull, Sub};
@@ -61,8 +64,11 @@ impl Basis for ExtendedLagrangeCoeff {}
 
 /// Represents a univariate polynomial defined over a field and a particular
 /// basis.
-#[derive(Clone, Debug)]
+#[serde_with::serde_as]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(bound = "F: PrimeField")]
 pub struct Polynomial<F, B> {
+    #[serde_as(as = "Vec<crate::helpers::SerdePrimeField<F>>")]
     values: Vec<F>,
     _marker: PhantomData<B>,
 }
