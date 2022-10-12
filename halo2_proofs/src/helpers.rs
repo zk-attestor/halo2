@@ -25,7 +25,10 @@ impl<F: PrimeField> serde_with::SerializeAs<F> for SerdePrimeField<F> {
     where
         S: serde::Serializer,
     {
-        serde_bytes::serialize(source.to_repr().as_ref(), serializer)
+        Serialize::serialize(
+            serde_bytes::Bytes::new(source.to_repr().as_ref()),
+            serializer,
+        )
     }
 }
 
@@ -35,8 +38,8 @@ impl<'de, F: PrimeField> serde_with::DeserializeAs<'de, F> for SerdePrimeField<F
         D: serde::Deserializer<'de>,
     {
         let mut compressed = F::Repr::default();
-        let bytes: &'_ serde_bytes::Bytes = Deserialize::deserialize(deserializer)?;
-        compressed.as_mut().copy_from_slice(bytes);
+        let bytes: serde_bytes::ByteBuf = Deserialize::deserialize(deserializer)?;
+        compressed.as_mut().copy_from_slice(&bytes);
         Ok(Option::from(F::from_repr(compressed)).unwrap())
         //.ok_or(D::Error::custom("invalid prime field point encoding"))
     }

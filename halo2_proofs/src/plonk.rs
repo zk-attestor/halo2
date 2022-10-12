@@ -57,7 +57,7 @@ pub struct VerifyingKey<C: CurveAffine> {
 impl<C: CurveAffine> VerifyingKey<C> {
     /// Writes a verifying key to a buffer.
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write(&(self.fixed_commitments.len() as u32).to_be_bytes());
+        writer.write(&(self.fixed_commitments.len() as u32).to_be_bytes())?;
         for commitment in &self.fixed_commitments {
             writer.write_all(commitment.to_bytes().as_ref())?;
         }
@@ -243,9 +243,8 @@ impl<C: CurveAffine> ProvingKey<C> {
             permutation: self.permutation.clone(),
             ev: self.ev.clone(),
         };
-        let pkey_serialized =
-            bincode::serialize(&partial_pkey).expect("should be able to serialize pkey");
-        writer.write_all(&pkey_serialized)
+        bincode::serialize_into(writer, &partial_pkey).expect("should be able to serialize pkey");
+        Ok(())
     }
     /// Reads a proving key from a buffer.
     /// Does so by reading verification key first, and then deserializing the rest of the file into the remaining proving key data.
@@ -254,10 +253,8 @@ impl<C: CurveAffine> ProvingKey<C> {
         params: &impl Params<'params, C>,
     ) -> io::Result<Self> {
         let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(reader, params)?;
-        let mut buf = vec![];
-        reader.read_to_end(&mut buf)?;
         let partial_pk: ProvingKeyWithoutVerifyingKey<C> =
-            bincode::deserialize(&buf).expect("should be able to deserialize pkey");
+            bincode::deserialize_from(reader).expect("should be able to deserialize pkey");
         Ok(Self {
             vk,
             l0: partial_pk.l0,
