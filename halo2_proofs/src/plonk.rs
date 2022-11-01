@@ -231,7 +231,7 @@ impl<C: CurveAffine> ProvingKey<C> {
     }
     /// Writes a proving key to a buffer.
     /// Does so by first writing the verifying key and then serializing the rest of the data (in the form of field polynomials)
-    pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+    pub fn write<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
         self.vk.write(writer)?;
         let partial_pkey = ProvingKeyWithoutVerifyingKey {
             l0: self.l0.clone(),
@@ -241,20 +241,19 @@ impl<C: CurveAffine> ProvingKey<C> {
             fixed_polys: self.fixed_polys.clone(),
             fixed_cosets: self.fixed_cosets.clone(),
             permutation: self.permutation.clone(),
-            ev: self.ev.clone(),
         };
-        bincode::serialize_into(writer, &partial_pkey).expect("should be able to serialize pkey");
-        Ok(())
+        bincode::serialize_into(writer, &partial_pkey).or_else(|err| Err(Error::Serde(err)))
     }
     /// Reads a proving key from a buffer.
     /// Does so by reading verification key first, and then deserializing the rest of the file into the remaining proving key data.
     pub fn read<'params, R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
         reader: &mut R,
         params: &impl Params<'params, C>,
-    ) -> io::Result<Self> {
+    ) -> Result<Self, Error> {
         let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(reader, params)?;
+        let ev = Evaluator::new(vk.cs());
         let partial_pk: ProvingKeyWithoutVerifyingKey<C> =
-            bincode::deserialize_from(reader).expect("should be able to deserialize pkey");
+            bincode::deserialize_from(reader).or_else(|err| Err(Error::Serde(err)))?;
         Ok(Self {
             vk,
             l0: partial_pk.l0,
@@ -264,7 +263,7 @@ impl<C: CurveAffine> ProvingKey<C> {
             fixed_polys: partial_pk.fixed_polys,
             fixed_cosets: partial_pk.fixed_cosets,
             permutation: partial_pk.permutation,
-            ev: partial_pk.ev,
+            ev,
         })
     }
 }
@@ -287,7 +286,6 @@ struct ProvingKeyWithoutVerifyingKey<C: CurveAffine> {
     fixed_polys: Vec<Polynomial<C::Scalar, Coeff>>,
     fixed_cosets: Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>,
     permutation: permutation::ProvingKey<C>,
-    ev: Evaluator<C>,
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -37,6 +37,8 @@ pub enum Error {
     /// The instance sets up a copy constraint involving a column that has not been
     /// included in the permutation.
     ColumnNotInPermutation(Column<Any>),
+    /// Serialization error
+    Serde(bincode::Error),
 }
 
 impl From<io::Error> for Error {
@@ -78,6 +80,11 @@ impl fmt::Display for Error {
                 f,
                 "Column {:?} must be included in the permutation. Help: try applying `meta.enable_equalty` on the column",
                 column
+            ),
+            Error::Serde(err) => write!(
+                f,
+                "Error in (de)serialization of proving key: {:?}", 
+                err
             ),
         }
     }
