@@ -1,4 +1,3 @@
-use crate::helpers::SerdePrimeField;
 use crate::multicore;
 use crate::plonk::lookup::prover::Committed;
 use crate::plonk::permutation::Argument;
@@ -17,7 +16,6 @@ use group::{
     ff::{BatchInvert, Field},
     Curve,
 };
-use serde::{Deserialize, Serialize};
 use std::any::TypeId;
 use std::convert::TryInto;
 use std::num::ParseIntError;
@@ -36,7 +34,7 @@ fn get_rotation_idx(idx: usize, rot: i32, rot_scale: i32, isize: i32) -> usize {
 }
 
 /// Value used in a calculation
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd)]
 pub enum ValueSource {
     /// This is a constant value
     Constant(usize),
@@ -108,7 +106,7 @@ impl ValueSource {
 }
 
 /// Calculation
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Calculation {
     /// This is an addition
     Add(ValueSource, ValueSource),
@@ -182,8 +180,7 @@ impl Calculation {
 }
 
 /// Evaluator
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
-#[serde(bound = "C: CurveAffine")]
+#[derive(Clone, Default, Debug)]
 pub struct Evaluator<C: CurveAffine> {
     ///  Custom gates evalution
     pub custom_gates: GraphEvaluator<C>,
@@ -192,11 +189,9 @@ pub struct Evaluator<C: CurveAffine> {
 }
 
 /// GraphEvaluator
-#[serde_with::serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct GraphEvaluator<C: CurveAffine> {
     /// Constants
-    #[serde_as(as = "Vec<SerdePrimeField<C::ScalarExt>>")]
     pub constants: Vec<C::ScalarExt>,
     /// Rotations
     pub rotations: Vec<i32>,
@@ -216,7 +211,7 @@ pub struct EvaluationData<C: CurveAffine> {
 }
 
 /// CaluclationInfo
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct CalculationInfo {
     /// Calculation
     pub calculation: Calculation,
