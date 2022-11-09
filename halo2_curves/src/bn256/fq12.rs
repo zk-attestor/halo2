@@ -6,7 +6,7 @@ use ff::Field;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub struct Fq12 {
     pub c0: Fq6,
     pub c1: Fq6,
