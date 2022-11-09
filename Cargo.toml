@@ -3,4 +3,12 @@ members = [
     "halo2",
     "halo2_gadgets",
     "halo2_proofs",
+    "halo2curves",
+    "ff"
 ]
+
+[patch.crates-io]
+ff = { path = "ff" }
+
+[patch."https://github.com/privacy-scaling-explorations/halo2curves.git"]
+halo2curves = { path = "halo2curves" }
