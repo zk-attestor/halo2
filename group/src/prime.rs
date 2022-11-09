@@ -19,7 +19,6 @@ pub trait PrimeCurve: Curve<AffineRepr = <Self as PrimeCurve>::Affine> + PrimeGr
 /// Affine representation of an elliptic curve point guaranteed to be
 /// in the correct prime order subgroup.
 pub trait PrimeCurveAffine: GroupEncoding
-    + Copy
     + Clone
     + Sized
     + Send

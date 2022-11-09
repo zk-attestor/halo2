@@ -20,7 +20,7 @@ pub(crate) fn wnaf_table<G: Group>(table: &mut Vec<G>, mut base: G, window: usiz
     let dbl = base.double();
 
     for _ in 0..(1 << (window - 1)) {
-        table.push(base);
+        table.push(base.clone());
         base.add_assign(&dbl);
     }
 }

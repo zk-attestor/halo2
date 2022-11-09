@@ -54,7 +54,6 @@ impl<T, Rhs, Output> ScalarMulOwned<Rhs, Output> for T where T: for<'r> ScalarMu
 /// This trait represents an element of a cryptographic group.
 pub trait Group:
     Clone
-    + Copy
     + fmt::Debug
     + Eq
     + Sized
