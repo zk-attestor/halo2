@@ -147,14 +147,14 @@ macro_rules! new_curve_impl {
     $curve_id:literal,
     ) => {
 
-        #[derive(Copy, Clone, Debug)]
+        #[derive(Clone, Debug)]
         $($privacy)* struct $name {
             pub x: $base,
             pub y: $base,
             pub z: $base,
         }
 
-        #[derive(Copy, Clone)]
+        #[derive(Clone)]
         $($privacy)* struct $name_affine {
             pub x: $base,
             pub y: $base,
