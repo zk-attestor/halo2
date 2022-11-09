@@ -3,7 +3,7 @@ members = [
     "halo2",
     "halo2_gadgets",
     "halo2_proofs",
-    "halo2curves",
+    "halo2_curves",
     "ff"
 ]
 
@@ -11,4 +11,4 @@ members = [
 ff = { path = "ff" }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2curves.git"]
-halo2curves = { path = "halo2curves" }
+halo2curves = { path = "halo2_curves" }
