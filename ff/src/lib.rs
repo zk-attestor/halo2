@@ -36,6 +36,7 @@ pub type FieldBits<V> = BitArray<V, Lsb0>;
 pub trait Field:
     Sized
     + Eq
+    + Copy
     + Clone
     + Copy
     + Default
