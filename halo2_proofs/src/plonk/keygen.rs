@@ -100,14 +100,14 @@ impl<F: Field> Assignment<F> for Assembly<F> {
         _: Column<Advice>,
         _: usize,
         _: Value<Assigned<F>>,
-    ) -> Result<(), Error>
+    ) -> Result<Value<&Assigned<F>>, Error>
 /*where
         V: FnOnce() -> Value<VR>,
         VR: Into<Assigned<F>>,
         A: FnOnce() -> AR,
         AR: Into<String>,*/ {
         // We only care about fixed columns here
-        Ok(())
+        Ok(Value::unknown())
     }
 
     fn assign_fixed<V, VR, A, AR>(

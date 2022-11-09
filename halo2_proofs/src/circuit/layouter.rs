@@ -6,7 +6,7 @@ use std::fmt;
 
 use ff::Field;
 
-use super::{Cell, RegionIndex, Value};
+use super::{AssignedCell, Cell, RegionIndex, Value};
 use crate::plonk::{Advice, Any, Assigned, Column, Error, Fixed, Instance, Selector, TableColumn};
 
 /// Helper trait for implementing a custom [`Layouter`].
@@ -55,7 +55,7 @@ pub trait RegionLayouter<F: Field>: fmt::Debug {
         column: Column<Advice>,
         offset: usize,
         to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<Cell, Error>;
+    ) -> Result<AssignedCell<&Assigned<F>, F>, Error>;
 
     /// Assigns a constant value to the column `advice` at `offset` within this region.
     ///
@@ -170,6 +170,7 @@ impl PartialOrd for RegionColumn {
     }
 }
 
+/*
 impl RegionShape {
     /// Create a new `RegionShape` for a region at `region_index`.
     pub fn new(region_index: RegionIndex) -> Self {
@@ -215,7 +216,7 @@ impl<F: Field> RegionLayouter<F> for RegionShape {
         column: Column<Advice>,
         offset: usize,
         _to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<Cell, Error> {
+    ) -> Result<AssignedCell<&Assigned<F>, F>, Error> {
         self.columns.insert(Column::<Any>::from(column).into());
         self.row_count = cmp::max(self.row_count, offset + 1);
 
@@ -223,7 +224,8 @@ impl<F: Field> RegionLayouter<F> for RegionShape {
             region_index: self.region_index,
             row_offset: offset,
             column: column.into(),
-        })
+        });
+        todo!()
     }
 
     fn assign_advice_from_constant<'v>(
@@ -285,3 +287,4 @@ impl<F: Field> RegionLayouter<F> for RegionShape {
         Ok(())
     }
 }
+*/

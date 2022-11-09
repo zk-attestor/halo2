@@ -33,8 +33,8 @@ mod util;
 mod failure;
 pub use failure::{FailureLocation, VerifyFailure};
 
-pub mod cost;
-pub use cost::CircuitCost;
+//pub mod cost;
+//pub use cost::CircuitCost;
 
 mod gates;
 pub use gates::CircuitGates;
@@ -372,7 +372,7 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
         column: Column<Advice>,
         row: usize,
         to: circuit::Value<Assigned<F>>,
-    ) -> Result<(), Error>
+    ) -> Result<circuit::Value<&Assigned<F>>, Error>
 /*where
         V: FnOnce() -> circuit::Value<VR>,
         VR: Into<Assigned<F>>,
@@ -391,13 +391,14 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
                 .or_default();
         }
 
-        *self
+        let advice_get_mut = self
             .advice
             .get_mut(column.index())
             .and_then(|v| v.get_mut(row))
-            .ok_or(Error::BoundsFailure)? = CellValue::Assigned(to.evaluate().assign()?);
+            .ok_or(Error::BoundsFailure)?;
+        *advice_get_mut = CellValue::Assigned(to.evaluate().assign()?);
 
-        Ok(())
+        todo!()
     }
 
     fn assign_fixed<V, VR, A, AR>(

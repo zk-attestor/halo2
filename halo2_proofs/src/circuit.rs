@@ -229,7 +229,7 @@ impl<'r, F: Field> Region<'r, F> {
         column: Column<Advice>,
         offset: usize,
         to: Value<F>, // For now only accept Value<F>, later might change to Value<Assigned<F>> for batch inversion
-    ) -> Result<Cell, Error>
+    ) -> Result<AssignedCell<&Assigned<F>, F>, Error>
 /*
     where
         V: FnMut() -> Value<VR> + 'v,

@@ -79,14 +79,14 @@ impl<F: Field> Assignment<F> for Assembly {
         //_: A,
         _: Column<Advice>,
         _: usize,
-        _: Value<Assigned<F>>,
-    ) -> Result<(), Error>
+        to: Value<Assigned<F>>,
+    ) -> Result<Value<&Assigned<F>>, Error>
 /*where
         V: FnOnce() -> Value<VR>,
         VR: Into<Assigned<F>>,
         A: FnOnce() -> AR,
         AR: Into<String>,*/ {
-        Ok(())
+        Ok(to.as_ref())
     }
 
     fn assign_fixed<V, VR, A, AR>(

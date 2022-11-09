@@ -189,28 +189,30 @@ pub fn create_proof<
             column: Column<Advice>,
             row: usize,
             to: Value<Assigned<F>>,
-        ) -> Result<(), Error>
+        ) -> Result<Value<&Assigned<F>>, Error>
 /*where
             V: FnOnce() -> Value<VR>,
             VR: Into<Assigned<F>>,
             A: FnOnce() -> AR,
             AR: Into<String>,*/ {
+            // TODO: better to assign all at once, deal with phases later
             // Ignore assignment of advice column in different phase than current one.
-            if self.current_phase != column.column_type().phase {
-                return Ok(());
-            }
+            // if self.current_phase != column.column_type().phase {
+            //    return Ok(to.as_ref());
+            // }
 
             if !self.usable_rows.contains(&row) {
                 return Err(Error::not_enough_rows_available(self.k));
             }
 
-            *self
+            let advice_get_mut = self
                 .advice
                 .get_mut(column.index())
                 .and_then(|v| v.get_mut(row))
-                .ok_or(Error::BoundsFailure)? = to.assign()?;
+                .ok_or(Error::BoundsFailure)?;
+            *advice_get_mut = to.assign()?;
 
-            Ok(())
+            Ok(Value::known(advice_get_mut))
         }
 
         fn assign_fixed<V, VR, A, AR>(

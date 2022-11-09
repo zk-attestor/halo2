@@ -557,7 +557,7 @@ pub trait Assignment<F: Field> {
         column: Column<Advice>,
         row: usize,
         to: Value<Assigned<F>>, // V,
-    ) -> Result<(), Error>;
+    ) -> Result<Value<&Assigned<F>>, Error>;
     // where
     // V: FnOnce() -> Value<VR>,
     // VR: Into<Assigned<F>>,

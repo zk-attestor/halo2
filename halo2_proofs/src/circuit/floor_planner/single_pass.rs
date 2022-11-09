@@ -8,7 +8,7 @@ use ff::Field;
 use crate::{
     circuit::{
         layouter::{RegionColumn, RegionLayouter, RegionShape, TableLayouter},
-        Cell, Layouter, Region, RegionIndex, RegionStart, Table, Value,
+        AssignedCell, Cell, Layouter, Region, RegionIndex, RegionStart, Table, Value,
     },
     plonk::{
         Advice, Any, Assigned, Assignment, Challenge, Circuit, Column, Error, Fixed, FloorPlanner,
@@ -85,7 +85,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
         let region_index = self.regions.len();
 
         // Get shape of the region.
-        let mut shape = RegionShape::new(region_index.into());
+        /*let mut shape = RegionShape::new(region_index.into());
         {
             let region: &mut dyn RegionLayouter<F> = &mut shape;
             assignment(region.into())?;
@@ -102,7 +102,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
         // Update column usage information.
         for column in shape.columns {
             self.columns.insert(column, region_start + shape.row_count);
-        }
+        }*/
 
         // Assign region cells.
         self.cs.enter_region(name);
@@ -285,18 +285,22 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         column: Column<Advice>,
         offset: usize,
         to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<Cell, Error> {
-        self.layouter.cs.assign_advice(
+    ) -> Result<AssignedCell<&Assigned<F>, F>, Error> {
+        let value = self.layouter.cs.assign_advice(
             // annotation,
             column,
             *self.layouter.regions[*self.region_index] + offset,
             to,
         )?;
 
-        Ok(Cell {
-            region_index: self.region_index,
-            row_offset: offset,
-            column: column.into(),
+        Ok(AssignedCell {
+            value,
+            cell: Cell {
+                region_index: self.region_index,
+                row_offset: offset,
+                column: column.into(),
+            },
+            _marker: PhantomData,
         })
     }
 
@@ -307,7 +311,9 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         offset: usize,
         constant: Assigned<F>,
     ) -> Result<Cell, Error> {
-        let advice = self.assign_advice(column, offset, Value::known(constant))?;
+        let advice = self
+            .assign_advice(column, offset, Value::known(constant))?
+            .cell;
         self.constrain_constant(advice, constant)?;
 
         Ok(advice)
@@ -323,7 +329,9 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
     ) -> Result<(Cell, Value<F>), Error> {
         let value = self.layouter.cs.query_instance(instance, row)?;
 
-        let cell = self.assign_advice(advice, offset, value.map(|v| Assigned::Trivial(v)))?;
+        let cell = self
+            .assign_advice(advice, offset, value.map(|v| Assigned::Trivial(v)))?
+            .cell;
 
         self.layouter.cs.copy(
             cell.column,
