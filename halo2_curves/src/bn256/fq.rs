@@ -160,10 +160,12 @@ impl ff::Field for Fq {
         Self::from_bytes_wide(&random_bytes)
     }
 
+    #[inline(always)]
     fn zero() -> Self {
         Self::zero()
     }
 
+    #[inline(always)]
     fn one() -> Self {
         Self::one()
     }

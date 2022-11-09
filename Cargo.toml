@@ -5,12 +5,14 @@ members = [
     "halo2_proofs",
     "halo2_curves",
     "ff",
-    "group"
+    "group",
+    "pasta_curves"
 ]
 
 [patch.crates-io]
 ff = { path = "ff" }
 group = { path = "group" }
+pasta_curves = { path = "pasta_curves" }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2curves.git"]
 halo2curves = { path = "halo2_curves" }

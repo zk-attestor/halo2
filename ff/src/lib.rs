@@ -37,6 +37,7 @@ pub trait Field:
     Sized
     + Eq
     + Clone
+    + Copy
     + Default
     + Send
     + Sync
