@@ -182,19 +182,19 @@ pub fn create_proof<
                 .ok_or(Error::BoundsFailure)
         }
 
-        fn assign_advice<V, VR, A, AR>(
+        fn assign_advice(
+            //<V, VR, A, AR>(
             &mut self,
-            _: A,
+            //_: A,
             column: Column<Advice>,
             row: usize,
-            to: V,
+            to: Value<Assigned<F>>,
         ) -> Result<(), Error>
-        where
+/*where
             V: FnOnce() -> Value<VR>,
             VR: Into<Assigned<F>>,
             A: FnOnce() -> AR,
-            AR: Into<String>,
-        {
+            AR: Into<String>,*/ {
             // Ignore assignment of advice column in different phase than current one.
             if self.current_phase != column.column_type().phase {
                 return Ok(());
@@ -208,7 +208,7 @@ pub fn create_proof<
                 .advice
                 .get_mut(column.index())
                 .and_then(|v| v.get_mut(row))
-                .ok_or(Error::BoundsFailure)? = to().into_field().assign()?;
+                .ok_or(Error::BoundsFailure)? = to.assign()?;
 
             Ok(())
         }

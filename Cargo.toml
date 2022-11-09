@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "halo2",
-    "halo2_gadgets",
+    # "halo2_gadgets",
     "halo2_proofs",
     "halo2_curves",
     "ff",

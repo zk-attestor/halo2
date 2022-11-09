@@ -97,6 +97,17 @@ pub struct Cell {
     column: Column<Any>,
 }
 
+impl Cell {
+    /// Returns row offset
+    pub fn row_offset(&self) -> usize {
+        self.row_offset
+    }
+    /// Returns reference to column
+    pub fn column(&self) -> &Column<Any> {
+        &self.column
+    }
+}
+
 /// An assigned cell.
 #[derive(Clone, Debug)]
 pub struct AssignedCell<V, F: Field> {
@@ -141,6 +152,7 @@ impl<F: Field> AssignedCell<Assigned<F>, F> {
     }
 }
 
+/*
 impl<V: Clone, F: Field> AssignedCell<V, F>
 where
     for<'v> Assigned<F>: From<&'v V>,
@@ -167,6 +179,7 @@ where
         Ok(assigned_cell)
     }
 }
+*/
 
 /// A region of the circuit in which a [`Chip`] can assign cells.
 ///
@@ -209,34 +222,35 @@ impl<'r, F: Field> Region<'r, F> {
     /// Assign an advice column value (witness).
     ///
     /// Even though `to` has `FnMut` bounds, it is guaranteed to be called at most once.
-    pub fn assign_advice<'v, V, VR, A, AR>(
+    pub fn assign_advice<'v>(
+        //, V, VR, A, AR>(
         &'v mut self,
-        annotation: A,
+        //annotation: A,
         column: Column<Advice>,
         offset: usize,
-        mut to: V,
-    ) -> Result<AssignedCell<VR, F>, Error>
+        to: Value<F>, // For now only accept Value<F>, later might change to Value<Assigned<F>> for batch inversion
+    ) -> Result<Cell, Error>
+/*
     where
         V: FnMut() -> Value<VR> + 'v,
         for<'vr> Assigned<F>: From<&'vr VR>,
         A: Fn() -> AR,
-        AR: Into<String>,
-    {
-        let mut value = Value::unknown();
-        let cell =
-            self.region
-                .assign_advice(&|| annotation().into(), column, offset, &mut || {
-                    let v = to();
-                    let value_f = v.to_field();
-                    value = v;
-                    value_f
-                })?;
+        AR: Into<String>,*/ {
+        //let mut value = Value::unknown();
+        self.region.assign_advice(
+            //&|| annotation().into(),
+            column,
+            offset,
+            to.into(),
+        )
 
+        /*
         Ok(AssignedCell {
             value,
             cell,
             _marker: PhantomData,
         })
+        */
     }
 
     /// Assigns a constant value to the column `advice` at `offset` within this region.

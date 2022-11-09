@@ -281,13 +281,13 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
 
     fn assign_advice<'v>(
         &'v mut self,
-        annotation: &'v (dyn Fn() -> String + 'v),
+        // annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,
-        to: &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
+        to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
     ) -> Result<Cell, Error> {
         self.layouter.cs.assign_advice(
-            annotation,
+            // annotation,
             column,
             *self.layouter.regions[*self.region_index] + offset,
             to,
@@ -307,8 +307,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         offset: usize,
         constant: Assigned<F>,
     ) -> Result<Cell, Error> {
-        let advice =
-            self.assign_advice(annotation, column, offset, &mut || Value::known(constant))?;
+        let advice = self.assign_advice(column, offset, Value::known(constant))?;
         self.constrain_constant(advice, constant)?;
 
         Ok(advice)
@@ -324,7 +323,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
     ) -> Result<(Cell, Value<F>), Error> {
         let value = self.layouter.cs.query_instance(instance, row)?;
 
-        let cell = self.assign_advice(annotation, advice, offset, &mut || value.to_field())?;
+        let cell = self.assign_advice(advice, offset, value.map(|v| Assigned::Trivial(v)))?;
 
         self.layouter.cs.copy(
             cell.column,

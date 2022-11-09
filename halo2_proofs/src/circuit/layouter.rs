@@ -51,10 +51,10 @@ pub trait RegionLayouter<F: Field>: fmt::Debug {
     /// Assign an advice column value (witness)
     fn assign_advice<'v>(
         &'v mut self,
-        annotation: &'v (dyn Fn() -> String + 'v),
+        // annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,
-        to: &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
+        to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
     ) -> Result<Cell, Error>;
 
     /// Assigns a constant value to the column `advice` at `offset` within this region.
@@ -211,10 +211,10 @@ impl<F: Field> RegionLayouter<F> for RegionShape {
 
     fn assign_advice<'v>(
         &'v mut self,
-        _: &'v (dyn Fn() -> String + 'v),
+        //_: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,
-        _to: &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
+        _to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
     ) -> Result<Cell, Error> {
         self.columns.insert(Column::<Any>::from(column).into());
         self.row_count = cmp::max(self.row_count, offset + 1);
@@ -234,7 +234,7 @@ impl<F: Field> RegionLayouter<F> for RegionShape {
         constant: Assigned<F>,
     ) -> Result<Cell, Error> {
         // The rest is identical to witnessing an advice cell.
-        self.assign_advice(annotation, column, offset, &mut || Value::known(constant))
+        self.assign_advice(column, offset, Value::known(constant))
     }
 
     fn assign_advice_from_instance<'v>(

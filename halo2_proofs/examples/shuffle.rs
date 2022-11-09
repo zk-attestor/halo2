@@ -1,7 +1,7 @@
 use ff::BatchInvert;
 use halo2_proofs::{
     arithmetic::{CurveAffine, FieldExt},
-    circuit::{floor_planner::V1, Layouter, Value},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     dev::{metadata, FailureLocation, MockProver, VerifyFailure},
     halo2curves::pasta::EqAffine,
     plonk::*,
@@ -137,7 +137,7 @@ impl<F: FieldExt, const W: usize, const H: usize> MyCircuit<F, W, H> {
 
 impl<F: FieldExt, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W, H> {
     type Config = MyConfig<W>;
-    type FloorPlanner = V1;
+    type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -174,10 +174,8 @@ impl<F: FieldExt, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W,
                 {
                     for (offset, &value) in values.transpose_array().iter().enumerate() {
                         region.assign_advice(
-                            || format!("original[{}][{}]", idx, offset),
-                            column,
-                            offset,
-                            || value,
+                            // || format!("original[{}][{}]", idx, offset),
+                            column, offset, value,
                         )?;
                     }
                 }
@@ -189,10 +187,8 @@ impl<F: FieldExt, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W,
                 {
                     for (offset, &value) in values.transpose_array().iter().enumerate() {
                         region.assign_advice(
-                            || format!("shuffled[{}][{}]", idx, offset),
-                            column,
-                            offset,
-                            || value,
+                            // || format!("shuffled[{}][{}]", idx, offset),
+                            column, offset, value,
                         )?;
                     }
                 }
@@ -240,10 +236,8 @@ impl<F: FieldExt, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W,
                 );
                 for (offset, value) in z.transpose_vec(H + 1).into_iter().enumerate() {
                     region.assign_advice(
-                        || format!("z[{}]", offset),
-                        config.z,
-                        offset,
-                        || value,
+                        // || format!("z[{}]", offset),
+                        config.z, offset, value,
                     )?;
                 }
 
