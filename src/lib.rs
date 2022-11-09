@@ -12,8 +12,6 @@ extern crate alloc;
 mod batch;
 pub use batch::*;
 
-pub mod helpers;
-
 #[cfg(feature = "derive")]
 #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
 pub use ff_derive::PrimeField;
@@ -61,18 +59,18 @@ pub trait Field:
     + for<'a> AddAssign<&'a Self>
     + for<'a> SubAssign<&'a Self>
 {
-    /// The zero element of the field, the additive identity.
-    const ZERO: Self;
-
-    /// The one element of the field, the multiplicative identity.
-    const ONE: Self;
-
     /// Returns an element chosen uniformly at random using a user-provided RNG.
     fn random(rng: impl RngCore) -> Self;
 
+    /// Returns the zero element of the field, the additive identity.
+    fn zero() -> Self;
+
+    /// Returns the one element of the field, the multiplicative identity.
+    fn one() -> Self;
+
     /// Returns true iff this element is zero.
     fn is_zero(&self) -> Choice {
-        self.ct_eq(&Self::ZERO)
+        self.ct_eq(&Self::zero())
     }
 
     /// Returns true iff this element is zero.
@@ -103,73 +101,17 @@ pub trait Field:
     /// failing if the element is zero.
     fn invert(&self) -> CtOption<Self>;
 
-    /// Computes:
-    ///
-    /// - $(\textsf{true}, \sqrt{\textsf{num}/\textsf{div}})$, if $\textsf{num}$ and
-    ///   $\textsf{div}$ are nonzero and $\textsf{num}/\textsf{div}$ is a square in the
-    ///   field;
-    /// - $(\textsf{true}, 0)$, if $\textsf{num}$ is zero;
-    /// - $(\textsf{false}, 0)$, if $\textsf{num}$ is nonzero and $\textsf{div}$ is zero;
-    /// - $(\textsf{false}, \sqrt{G_S \cdot \textsf{num}/\textsf{div}})$, if
-    ///   $\textsf{num}$ and $\textsf{div}$ are nonzero and $\textsf{num}/\textsf{div}$ is
-    ///   a nonsquare in the field;
-    ///
-    /// where $G_S$ is a non-square.
-    ///
-    /// # Warnings
-    ///
-    /// - The choice of root from `sqrt` is unspecified.
-    /// - The value of $G_S$ is unspecified, and cannot be assumed to have any specific
-    ///   value in a generic context.
-    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self);
-
-    /// Equivalent to `Self::sqrt_ratio(self, one())`.
-    ///
-    /// The provided method is implemented in terms of [`Self::sqrt_ratio`].
-    fn sqrt_alt(&self) -> (Choice, Self) {
-        Self::sqrt_ratio(self, &Self::ONE)
-    }
-
     /// Returns the square root of the field element, if it is
     /// quadratic residue.
-    ///
-    /// The provided method is implemented in terms of [`Self::sqrt_ratio`].
-    fn sqrt(&self) -> CtOption<Self> {
-        let (is_square, res) = Self::sqrt_ratio(self, &Self::ONE);
-        CtOption::new(res, is_square)
-    }
+    fn sqrt(&self) -> CtOption<Self>;
 
-    /// Exponentiates `self` by `exp`, where `exp` is a little-endian order integer
-    /// exponent.
+    /// Exponentiates `self` by `exp`, where `exp` is a little-endian order
+    /// integer exponent.
     ///
-    /// # Guarantees
-    ///
-    /// This operation is constant time with respect to `self`, for all exponents with the
-    /// same number of digits (`exp.as_ref().len()`). It is variable time with respect to
-    /// the number of digits in the exponent.
-    fn pow<S: AsRef<[u64]>>(&self, exp: S) -> Self {
-        let mut res = Self::ONE;
-        for e in exp.as_ref().iter().rev() {
-            for i in (0..64).rev() {
-                res = res.square();
-                let mut tmp = res;
-                tmp *= self;
-                res.conditional_assign(&tmp, (((*e >> i) & 1) as u8).into());
-            }
-        }
-        res
-    }
-
-    /// Exponentiates `self` by `exp`, where `exp` is a little-endian order integer
-    /// exponent.
-    ///
-    /// # Guarantees
-    ///
-    /// **This operation is variable time with respect to `self`, for all exponent.** If
-    /// the exponent is fixed, this operation is effectively constant time. However, for
-    /// stronger constant-time guarantees, [`Field::pow`] should be used.
+    /// **This operation is variable time with respect to the exponent.** If the
+    /// exponent is fixed, this operation is effectively constant time.
     fn pow_vartime<S: AsRef<[u64]>>(&self, exp: S) -> Self {
-        let mut res = Self::ONE;
+        let mut res = Self::one();
         for e in exp.as_ref().iter().rev() {
             for i in (0..64).rev() {
                 res = res.square();
@@ -202,10 +144,10 @@ pub trait PrimeField: Field + From<u64> {
         }
 
         if s == "0" {
-            return Some(Self::ZERO);
+            return Some(Self::zero());
         }
 
-        let mut res = Self::ZERO;
+        let mut res = Self::zero();
 
         let ten = Self::from(10);
 
@@ -281,16 +223,16 @@ pub trait PrimeField: Field + From<u64> {
     /// This is usually `Self::NUM_BITS - 1`.
     const CAPACITY: u32;
 
-    /// A fixed multiplicative generator of `modulus - 1` order. This element must also be
-    /// a quadratic nonresidue.
+    /// Returns a fixed multiplicative generator of `modulus - 1` order. This element must
+    /// also be a quadratic nonresidue.
     ///
     /// It can be calculated using [SageMath] as `GF(modulus).primitive_element()`.
     ///
-    /// Implementations of this trait MUST ensure that this is the generator used to
+    /// Implementations of this method MUST ensure that this is the generator used to
     /// derive `Self::root_of_unity`.
     ///
     /// [SageMath]: https://www.sagemath.org/
-    const MULTIPLICATIVE_GENERATOR: Self;
+    fn multiplicative_generator() -> Self;
 
     /// An integer `s` satisfying the equation `2^s * t = modulus - 1` with `t` odd.
     ///
@@ -298,11 +240,11 @@ pub trait PrimeField: Field + From<u64> {
     /// `modulus - 1`.
     const S: u32;
 
-    /// The `2^s` root of unity.
+    /// Returns the `2^s` root of unity.
     ///
-    /// It can be calculated by exponentiating `Self::MULTIPLICATIVE_GENERATOR` by `t`,
+    /// It can be calculated by exponentiating `Self::multiplicative_generator` by `t`,
     /// where `t = (modulus - 1) >> Self::S`.
-    const ROOT_OF_UNITY: Self;
+    fn root_of_unity() -> Self;
 }
 
 /// This represents the bits of an element of a prime field.
