@@ -5,6 +5,7 @@ use rand_core::RngCore;
 use std::collections::BTreeSet;
 use std::env::var;
 use std::ops::RangeTo;
+use std::rc::Rc;
 use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 use std::{collections::HashMap, iter, mem, sync::atomic::Ordering};
@@ -140,7 +141,7 @@ pub fn create_proof<
     struct WitnessCollection<'a, F: Field> {
         k: u32,
         current_phase: sealed::Phase,
-        advice: Vec<Polynomial<Assigned<F>, LagrangeCoeff>>,
+        advice: Vec<Vec<Rc<Assigned<F>>>>,
         challenges: &'a HashMap<usize, F>,
         instances: &'a [&'a [F]],
         usable_rows: RangeTo<usize>,
@@ -182,19 +183,14 @@ pub fn create_proof<
                 .ok_or(Error::BoundsFailure)
         }
 
-        fn assign_advice(
+        fn assign_advice<'r, 'v>(
             //<V, VR, A, AR>(
-            &mut self,
+            &'r mut self,
             //_: A,
             column: Column<Advice>,
             row: usize,
             to: Value<Assigned<F>>,
-        ) -> Result<Value<&Assigned<F>>, Error>
-/*where
-            V: FnOnce() -> Value<VR>,
-            VR: Into<Assigned<F>>,
-            A: FnOnce() -> AR,
-            AR: Into<String>,*/ {
+        ) -> Result<Value<&'v Assigned<F>>, Error> {
             // TODO: better to assign all at once, deal with phases later
             // Ignore assignment of advice column in different phase than current one.
             // if self.current_phase != column.column_type().phase {
@@ -210,9 +206,10 @@ pub fn create_proof<
                 .get_mut(column.index())
                 .and_then(|v| v.get_mut(row))
                 .ok_or(Error::BoundsFailure)?;
-            *advice_get_mut = to.assign()?;
-
-            Ok(Value::known(advice_get_mut))
+            let rc_val = Rc::new(to.assign()?);
+            let val_ref = Rc::downgrade(&rc_val);
+            *advice_get_mut = rc_val;
+            Ok(Value::known(unsafe { &*val_ref.as_ptr() }))
         }
 
         fn assign_fixed<V, VR, A, AR>(
@@ -303,10 +300,11 @@ pub fn create_proof<
             for ((circuit, advice), instances) in
                 circuits.iter().zip(advice.iter_mut()).zip(instances)
             {
+                let zero: Rc<Assigned<Scheme::Scalar>> = Rc::new(Assigned::Zero);
                 let mut witness = WitnessCollection {
                     k: params.k(),
                     current_phase,
-                    advice: vec![domain.empty_lagrange_assigned(); meta.num_advice_columns],
+                    advice: vec![vec![zero; (1 << domain.k()) as usize]; meta.num_advice_columns],
                     instances,
                     challenges: &challenges,
                     // The prover will not be allowed to assign values to advice
@@ -332,6 +330,12 @@ pub fn create_proof<
                         .enumerate()
                         .filter_map(|(column_index, advice)| {
                             if column_indices.contains(&column_index) {
+                                let advice = domain.lagrange_assigned_from_vec(
+                                    advice
+                                        .into_iter()
+                                        .map(|rc| Rc::try_unwrap(rc).unwrap_or(Assigned::Zero))
+                                        .collect(),
+                                );
                                 Some(advice)
                             } else {
                                 None

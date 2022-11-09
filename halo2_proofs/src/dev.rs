@@ -365,19 +365,14 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
             .ok_or(Error::BoundsFailure)
     }
 
-    fn assign_advice(
+    fn assign_advice<'r, 'v>(
         //<V, VR, A, AR>(
-        &mut self,
+        &'r mut self,
         //_: A,
         column: Column<Advice>,
         row: usize,
         to: circuit::Value<Assigned<F>>,
-    ) -> Result<circuit::Value<&Assigned<F>>, Error>
-/*where
-        V: FnOnce() -> circuit::Value<VR>,
-        VR: Into<Assigned<F>>,
-        A: FnOnce() -> AR,
-        AR: Into<String>,*/ {
+    ) -> Result<circuit::Value<&'v Assigned<F>>, Error> {
         if !self.usable_rows.contains(&row) {
             return Err(Error::not_enough_rows_available(self.k));
         }

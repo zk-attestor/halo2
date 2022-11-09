@@ -49,13 +49,13 @@ pub trait RegionLayouter<F: Field>: fmt::Debug {
     ) -> Result<(), Error>;
 
     /// Assign an advice column value (witness)
-    fn assign_advice<'v>(
-        &'v mut self,
+    fn assign_advice<'b, 'v>(
+        &'b mut self,
         // annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,
         to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<AssignedCell<&Assigned<F>, F>, Error>;
+    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error>;
 
     /// Assigns a constant value to the column `advice` at `offset` within this region.
     ///

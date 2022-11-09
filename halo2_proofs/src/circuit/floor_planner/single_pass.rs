@@ -89,16 +89,17 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
         {
             let region: &mut dyn RegionLayouter<F> = &mut shape;
             assignment(region.into())?;
-        }
+        }*/
 
         // Lay out this region. We implement the simplest approach here: position the
         // region starting at the earliest row for which none of the columns are in use.
         let mut region_start = 0;
-        for column in &shape.columns {
+        /*for column in &shape.columns {
             region_start = cmp::max(region_start, self.columns.get(column).cloned().unwrap_or(0));
-        }
+        }*/
         self.regions.push(region_start.into());
 
+        /*
         // Update column usage information.
         for column in shape.columns {
             self.columns.insert(column, region_start + shape.row_count);
@@ -279,13 +280,13 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         )
     }
 
-    fn assign_advice<'v>(
-        &'v mut self,
+    fn assign_advice<'b, 'v>(
+        &'b mut self,
         // annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,
         to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<AssignedCell<&Assigned<F>, F>, Error> {
+    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error> {
         let value = self.layouter.cs.assign_advice(
             // annotation,
             column,

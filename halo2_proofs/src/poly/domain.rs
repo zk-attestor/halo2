@@ -153,6 +153,18 @@ impl<G: Group> EvaluationDomain<G> {
         }
     }
 
+    pub fn lagrange_assigned_from_vec(
+        &self,
+        values: Vec<Assigned<G>>,
+    ) -> Polynomial<Assigned<G>, LagrangeCoeff> {
+        assert_eq!(values.len(), self.n as usize);
+
+        Polynomial {
+            values,
+            _marker: PhantomData,
+        }
+    }
+
     /// Obtains a polynomial in coefficient form when given a vector of
     /// coefficients of size `n`; panics if the provided vector is the wrong
     /// length.

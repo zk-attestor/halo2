@@ -222,14 +222,15 @@ impl<'r, F: Field> Region<'r, F> {
     /// Assign an advice column value (witness).
     ///
     /// Even though `to` has `FnMut` bounds, it is guaranteed to be called at most once.
-    pub fn assign_advice<'v>(
+    // The returned &'v Assigned<F> lives longer than the mutable borrow of &mut self
+    pub fn assign_advice<'b, 'v>(
         //, V, VR, A, AR>(
-        &'v mut self,
+        &'b mut self,
         //annotation: A,
         column: Column<Advice>,
         offset: usize,
         to: Value<F>, // For now only accept Value<F>, later might change to Value<Assigned<F>> for batch inversion
-    ) -> Result<AssignedCell<&Assigned<F>, F>, Error>
+    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error>
 /*
     where
         V: FnMut() -> Value<VR> + 'v,
