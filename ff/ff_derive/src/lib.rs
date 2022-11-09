@@ -257,8 +257,8 @@ fn validate_struct(ast: &syn::DeriveInput, limbs: usize) -> Option<proc_macro2::
         syn::Expr::Group(expr_group) => match &*expr_group.expr {
             syn::Expr::Lit(expr_lit) => Some(&expr_lit.lit),
             _ => None,
-        },
-        _ => None,
+        }
+        _ => None
     };
     let lit_int = match match expr_lit {
         Some(syn::Lit::Int(lit_int)) => Some(lit_int),
@@ -519,7 +519,7 @@ fn prime_field_constants_and_sqrt(
         } else if (modulus % BigUint::from_str("16").unwrap()) == BigUint::from_str("1").unwrap() {
             // Addition chain for (t - 1) // 2
             let t_minus_1_over_2 = if t == BigUint::one() {
-                quote!( #name::ONE )
+                quote!( #name::one() )
             } else {
                 pow_fixed::generate(&quote! {self}, (&t - BigUint::one()) >> 1)
             };
@@ -547,7 +547,7 @@ fn prime_field_constants_and_sqrt(
                     let mut j_less_than_v: ::ff::derive::subtle::Choice = 1.into();
 
                     for j in 2..max_v {
-                        let tmp_is_one = tmp.ct_eq(&#name::ONE);
+                        let tmp_is_one = tmp.ct_eq(&#name::one());
                         let squared = #name::conditional_select(&tmp, &z, tmp_is_one).square();
                         tmp = #name::conditional_select(&squared, &tmp, tmp_is_one);
                         let new_z = #name::conditional_select(&z, &squared, tmp_is_one);
@@ -557,7 +557,7 @@ fn prime_field_constants_and_sqrt(
                     }
 
                     let result = x * &z;
-                    x = #name::conditional_select(&result, &x, b.ct_eq(&#name::ONE));
+                    x = #name::conditional_select(&result, &x, b.ct_eq(&#name::one()));
                     z = z.square();
                     b *= &z;
                     v = k;
@@ -841,6 +841,7 @@ fn prime_field_impl(
     /// field.
     fn inv_impl(
         a: proc_macro2::TokenStream,
+        name: &syn::Ident,
         modulus: &BigUint,
     ) -> proc_macro2::TokenStream {
         // Addition chain for p - 2
@@ -859,13 +860,13 @@ fn prime_field_impl(
                 #mod_minus_2
             };
 
-            ::ff::derive::subtle::CtOption::new(inv, !#a.is_zero())
+            ::ff::derive::subtle::CtOption::new(inv, !#a.ct_eq(&#name::zero()))
         }
     }
 
     let squaring_impl = sqr_impl(quote! {self}, limbs);
     let multiply_impl = mul_impl(quote! {self}, quote! {other}, limbs);
-    let invert_impl = inv_impl(quote! {self}, modulus);
+    let invert_impl = inv_impl(quote! {self}, name, modulus);
     let montgomery_impl = mont_impl(limbs);
 
     // self.0[0].ct_eq(&other.0[0]) & self.0[1].ct_eq(&other.0[1]) & ...
@@ -933,7 +934,7 @@ fn prime_field_impl(
         impl ::core::default::Default for #name {
             fn default() -> #name {
                 use ::ff::Field;
-                #name::ZERO
+                #name::zero()
             }
         }
 
@@ -1206,19 +1207,20 @@ fn prime_field_impl(
 
             const CAPACITY: u32 = Self::NUM_BITS - 1;
 
-            const MULTIPLICATIVE_GENERATOR: Self = GENERATOR;
+            fn multiplicative_generator() -> Self {
+                GENERATOR
+            }
 
             const S: u32 = S;
 
-            const ROOT_OF_UNITY: Self = ROOT_OF_UNITY;
+            fn root_of_unity() -> Self {
+                ROOT_OF_UNITY
+            }
         }
 
         #prime_field_bits_impl
 
         impl ::ff::Field for #name {
-            const ZERO: Self = #name([0; #limbs]);
-            const ONE: Self = R;
-
             /// Computes a uniformly random element using rejection sampling.
             fn random(mut rng: impl ::ff::derive::rand_core::RngCore) -> Self {
                 loop {
@@ -1231,16 +1233,28 @@ fn prime_field_impl(
                     };
 
                     // Mask away the unused most-significant bits.
-                    // Note: In some edge cases, `REPR_SHAVE_BITS` could be 64, in which case
-                    // `0xfff... >> REPR_SHAVE_BITS` overflows. So use `checked_shr` instead.
-                    // This is always sufficient because we will have at most one spare limb
-                    // to accommodate values of up to twice the modulus.
-                    tmp.0.as_mut()[#top_limb_index] &= 0xffffffffffffffffu64.checked_shr(REPR_SHAVE_BITS).unwrap_or(0);
+                    tmp.0.as_mut()[#top_limb_index] &= 0xffffffffffffffff >> REPR_SHAVE_BITS;
 
                     if tmp.is_valid() {
                         return tmp
                     }
                 }
+            }
+
+            #[inline]
+            fn zero() -> Self {
+                #name([0; #limbs])
+            }
+
+            #[inline]
+            fn one() -> Self {
+                R
+            }
+
+            #[inline]
+            fn is_zero(&self) -> ::ff::derive::subtle::Choice {
+                use ::ff::derive::subtle::ConstantTimeEq;
+                self.ct_eq(&Self::zero())
             }
 
             #[inline]
@@ -1275,10 +1289,6 @@ fn prime_field_impl(
             fn square(&self) -> Self
             {
                 #squaring_impl
-            }
-
-            fn sqrt_ratio(num: &Self, div: &Self) -> (::ff::derive::subtle::Choice, Self) {
-                ::ff::helpers::sqrt_ratio_generic(num, div)
             }
 
             fn sqrt(&self) -> ::ff::derive::subtle::CtOption<Self> {
@@ -1342,7 +1352,6 @@ fn prime_field_impl(
                 }
             }
 
-            #[allow(clippy::too_many_arguments)]
             #[inline(always)]
             fn mont_reduce(
                 &mut self,
