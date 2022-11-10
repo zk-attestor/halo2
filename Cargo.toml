@@ -8,14 +8,6 @@ members = [
     "arithmetic/pasta_curves"
 ]
 
-[patch.crates-io]
-ff = { path = "arithmetic/ff" }
-group = { path = "arithmetic/group" }
-pasta_curves = { path = "arithmetic/pasta_curves" }
-
-[patch."https://github.com/privacy-scaling-explorations/halo2curves.git"]
-halo2curves = { path = "arithmetic/curves", package = "curves" }
-
 [profile.bench]
 opt-level = 3
 debug = false
