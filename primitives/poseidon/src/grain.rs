@@ -1,5 +1,5 @@
 use crate::spec::MDSMatrix;
-use halo2curves::FieldExt;
+use curves::FieldExt;
 use std::marker::PhantomData;
 
 /// Grain initializes round constants and MDS matrix at given sponge parameters
