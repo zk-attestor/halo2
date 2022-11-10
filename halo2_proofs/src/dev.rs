@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::iter;
 use std::ops::{Add, Mul, Neg, Range};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use blake2b_simd::blake2b;
@@ -87,6 +88,17 @@ enum CellValue<F: Group + Field> {
     Unassigned,
     // A cell that has been assigned a value.
     Assigned(F),
+    // A unique poisoned cell.
+    Poison(usize),
+}
+
+/// The value of a particular cell within the circuit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum AdviceCellValue<F: Group + Field> {
+    // An unassigned cell.
+    Unassigned,
+    // A cell that has been assigned a value.
+    Assigned(Rc<Assigned<F>>),
     // A unique poisoned cell.
     Poison(usize),
 }
@@ -291,7 +303,7 @@ pub struct MockProver<F: Group + Field> {
     // The fixed cells in the circuit, arranged as [column][row].
     fixed: Vec<Vec<CellValue<F>>>,
     // The advice cells in the circuit, arranged as [column][row].
-    advice: Vec<Vec<CellValue<F>>>,
+    advice: Vec<Vec<AdviceCellValue<F>>>,
     // The instance cells in the circuit, arranged as [column][row].
     instance: Vec<Vec<F>>,
 
@@ -391,9 +403,12 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
             .get_mut(column.index())
             .and_then(|v| v.get_mut(row))
             .ok_or(Error::BoundsFailure)?;
-        *advice_get_mut = CellValue::Assigned(to.evaluate().assign()?);
 
-        todo!()
+        let rc_val = Rc::new(to.assign()?);
+        let val_ref = Rc::downgrade(&rc_val);
+        *advice_get_mut = AdviceCellValue::Assigned(rc_val);
+
+        Ok(circuit::Value::known(unsafe { &*val_ref.as_ptr() }))
     }
 
     fn assign_fixed<V, VR, A, AR>(
@@ -523,10 +538,10 @@ impl<F: FieldExt> MockProver<F> {
         let usable_rows = n - (blinding_factors + 1);
         let advice = vec![
             {
-                let mut column = vec![CellValue::Unassigned; n];
+                let mut column = vec![AdviceCellValue::Unassigned; n];
                 // Poison unusable rows.
                 for (i, cell) in column.iter_mut().enumerate().skip(usable_rows) {
-                    *cell = CellValue::Poison(i);
+                    *cell = AdviceCellValue::Poison(i);
                 }
                 column
             };
@@ -649,6 +664,24 @@ impl<F: FieldExt> MockProver<F> {
             })
         });
 
+        let advice = self
+            .advice
+            .iter()
+            .map(|advice| {
+                advice
+                    .iter()
+                    .map(|rc| match *rc {
+                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a.as_ref() {
+                            Assigned::Trivial(a) => *a,
+                            _ => unreachable!(),
+                        }),
+                        AdviceCellValue::Poison(i) => CellValue::Poison(i),
+                        AdviceCellValue::Unassigned => CellValue::Unassigned,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let advice = &advice;
         // Check that all gates are satisfied for all rows.
         let gate_errors =
             self.cs
@@ -669,7 +702,7 @@ impl<F: FieldExt> MockProver<F> {
                                 &|scalar| Value::Real(scalar),
                                 &|_| panic!("virtual selectors are removed during optimization"),
                                 &util::load(n, row, &self.cs.fixed_queries, &self.fixed),
-                                &util::load(n, row, &self.cs.advice_queries, &self.advice),
+                                &util::load(n, row, &self.cs.advice_queries, advice),
                                 &util::load_instance(
                                     n,
                                     row,
@@ -701,7 +734,7 @@ impl<F: FieldExt> MockProver<F> {
                                         gate,
                                         poly,
                                         &util::load(n, row, &self.cs.fixed_queries, &self.fixed),
-                                        &util::load(n, row, &self.cs.advice_queries, &self.advice),
+                                        &util::load(n, row, &self.cs.advice_queries, advice),
                                         &util::load_instance(
                                             n,
                                             row,
@@ -748,7 +781,7 @@ impl<F: FieldExt> MockProver<F> {
                                 let query = self.cs.advice_queries[query.index];
                                 let column_index = query.0.index();
                                 let rotation = query.1 .0;
-                                self.advice[column_index]
+                                advice[column_index]
                                     [(row as i32 + n + rotation) as usize % n as usize]
                                     .into()
                             },
@@ -872,7 +905,7 @@ impl<F: FieldExt> MockProver<F> {
                     .get_columns()
                     .get(column)
                     .map(|c: &Column<Any>| match c.column_type() {
-                        Any::Advice(_) => self.advice[c.index()][row],
+                        Any::Advice(_) => advice[c.index()][row],
                         Any::Fixed => self.fixed[c.index()][row],
                         Any::Instance => CellValue::Assigned(self.instance[c.index()][row]),
                     })
@@ -931,6 +964,7 @@ impl<F: FieldExt> MockProver<F> {
         }
     }
 
+    /*
     /// Returns `Ok(())` if this `MockProver` is satisfied, or a list of errors indicating
     /// the reasons that the circuit is not satisfied.
     /// Constraints and lookup are checked at `usable_rows`, parallelly.
@@ -1015,6 +1049,16 @@ impl<F: FieldExt> MockProver<F> {
             })
         });
 
+        let advice = self
+            .advice
+            .into_iter()
+            .map(|advice| {
+                advice
+                    .into_iter()
+                    .map(|rc| Rc::try_unwrap(rc).unwrap_or(CellValue::Unassigned))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
         // Check that all gates are satisfied for all rows.
         let gate_errors = self
             .cs
@@ -1038,7 +1082,7 @@ impl<F: FieldExt> MockProver<F> {
                                 &|scalar| Value::Real(scalar),
                                 &|_| panic!("virtual selectors are removed during optimization"),
                                 &util::load(n, row, &self.cs.fixed_queries, &self.fixed),
-                                &util::load(n, row, &self.cs.advice_queries, &self.advice),
+                                &util::load(n, row, &self.cs.advice_queries, &advice),
                                 &util::load_instance(
                                     n,
                                     row,
@@ -1070,7 +1114,7 @@ impl<F: FieldExt> MockProver<F> {
                                         gate,
                                         poly,
                                         &util::load(n, row, &self.cs.fixed_queries, &self.fixed),
-                                        &util::load(n, row, &self.cs.advice_queries, &self.advice),
+                                        &util::load(n, row, &self.cs.advice_queries, &advice),
                                         &util::load_instance(
                                             n,
                                             row,
@@ -1113,7 +1157,7 @@ impl<F: FieldExt> MockProver<F> {
                                     .into()
                             },
                             &|query| {
-                                self.advice[query.column_index]
+                                advice[query.column_index]
                                     [(row as i32 + n + query.rotation.0) as usize % n as usize]
                                     .into()
                             },
@@ -1229,7 +1273,7 @@ impl<F: FieldExt> MockProver<F> {
                     .get_columns()
                     .get(column)
                     .map(|c: &Column<Any>| match c.column_type() {
-                        Any::Advice(_) => self.advice[c.index()][row],
+                        Any::Advice(_) => advice[c.index()][row],
                         Any::Fixed => self.fixed[c.index()][row],
                         Any::Instance => CellValue::Assigned(self.instance[c.index()][row]),
                     })
@@ -1290,7 +1334,7 @@ impl<F: FieldExt> MockProver<F> {
             });
             Err(errors)
         }
-    }
+    } */
 
     /// Panics if the circuit being checked by this `MockProver` is not satisfied.
     ///

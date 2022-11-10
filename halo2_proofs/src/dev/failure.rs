@@ -10,6 +10,8 @@ use super::{
     util::{self, AnyQuery},
     MockProver, Region,
 };
+use crate::dev::{AdviceCellValue, CellValue};
+use crate::plonk::Assigned;
 use crate::{
     dev::Value,
     plonk::{Any, Column, ConstraintSystem, Expression, Gate},
@@ -448,13 +450,30 @@ fn render_lookup<F: FieldExt>(
 
     eprintln!();
     eprintln!("  Lookup '{}' inputs:", name);
+    let advice = prover
+        .advice
+        .iter()
+        .map(|advice| {
+            advice
+                .iter()
+                .map(|rc| match rc {
+                    AdviceCellValue::Assigned(a) => CellValue::Assigned(match a.as_ref() {
+                        Assigned::Trivial(a) => *a,
+                        _ => unreachable!(),
+                    }),
+                    AdviceCellValue::Poison(i) => CellValue::Poison(*i),
+                    AdviceCellValue::Unassigned => CellValue::Unassigned,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
     for (i, input) in lookup.input_expressions.iter().enumerate() {
         // Fetch the cell values (since we don't store them in VerifyFailure::Lookup).
         let cell_values = input.evaluate(
             &|_| BTreeMap::default(),
             &|_| panic!("virtual selectors are removed during optimization"),
             &cell_value(&util::load(n, row, &cs.fixed_queries, &prover.fixed)),
-            &cell_value(&util::load(n, row, &cs.advice_queries, &prover.advice)),
+            &cell_value(&util::load(n, row, &cs.advice_queries, &advice)),
             &cell_value(&util::load_instance(
                 n,
                 row,

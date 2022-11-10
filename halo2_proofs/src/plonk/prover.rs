@@ -333,7 +333,12 @@ pub fn create_proof<
                                 let advice = domain.lagrange_assigned_from_vec(
                                     advice
                                         .into_iter()
-                                        .map(|rc| Rc::try_unwrap(rc).unwrap_or(Assigned::Zero))
+                                        .map(|rc| {
+                                            /*if rc.as_ref() != &Assigned::Zero {
+                                                dbg!(rc.as_ref());
+                                            }*/
+                                            Rc::try_unwrap(rc).unwrap_or(Assigned::Zero)
+                                        })
                                         .collect(),
                                 );
                                 Some(advice)
