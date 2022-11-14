@@ -24,7 +24,7 @@ use crate::arithmetic::SqrtTables;
 // The internal representation of this type is four 64-bit unsigned
 // integers in little-endian order. `Fp` values are always in
 // Montgomery form; i.e., Fp(a) = aR mod p, with R = 2^256.
-#[derive(Clone, Copy, Eq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub struct Fp(pub(crate) [u64; 4]);
 
@@ -61,13 +61,6 @@ impl ConstantTimeEq for Fp {
             & self.0[1].ct_eq(&other.0[1])
             & self.0[2].ct_eq(&other.0[2])
             & self.0[3].ct_eq(&other.0[3])
-    }
-}
-
-impl PartialEq for Fp {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.ct_eq(other).unwrap_u8() == 1
     }
 }
 

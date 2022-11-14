@@ -18,7 +18,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 // The internal representation of this type is four 64-bit unsigned
 // integers in little-endian order. `Fr` values are always in
 // Montgomery form; i.e., Fr(a) = aR mod r, with R = 2^256.
-#[derive(Clone, Copy, Eq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Fr(pub(crate) [u64; 4]);
 
 /// Constant representing the modulus
@@ -253,6 +253,60 @@ impl ff::PrimeField for Fr {
         res
     }
 
+    fn from_u64_digits(mut val: Vec<u64>) -> Self {
+        assert!(val.len() <= 4);
+        val.extend((0..4 - val.len()).map(|_| 0u64));
+        let val: [u64; 4] = val.try_into().unwrap();
+        Self::from_raw(val)
+    }
+
+    fn to_u64_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u64> {
+        // Turn into canonical form by computing
+        // (a.R) / R = a
+        #[cfg(feature = "asm")]
+        let tmp = Fr::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
+
+        #[cfg(not(feature = "asm"))]
+        let tmp = Fr::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        decompose_u64_digits_to_limbs(tmp.0, num_limbs, bit_len)
+    }
+
+    fn to_u32_digits(&self) -> Vec<u32> {
+        // Turn into canonical form by computing
+        // (a.R) / R = a
+        #[cfg(feature = "asm")]
+        let tmp = Fr::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
+
+        #[cfg(not(feature = "asm"))]
+        let tmp = Fr::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        tmp.0
+            .iter()
+            .flat_map(|digit| [(digit & (u32::MAX as u64)) as u32, (digit >> 32) as u32])
+            .collect()
+    }
+
+    fn to_i128(&self) -> i128 {
+        // Turn into canonical form by computing
+        // (a.R) / R = a
+        #[cfg(feature = "asm")]
+        let tmp = Fr::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
+
+        #[cfg(not(feature = "asm"))]
+        let tmp = Fr::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        if tmp.0[2] == 0 && tmp.0[3] == 0 {
+            i128::from(tmp.0[0]) | (i128::from(tmp.0[1]) << 64)
+        } else {
+            // modulus - tmp
+            let (a0, borrow) = sbb(MODULUS.0[1], tmp.0[0], 0);
+            let (a1, _) = sbb(MODULUS.0[1], tmp.0[1], borrow);
+
+            -(i128::from(a0) | (i128::from(a1) << 64))
+        }
+    }
+
     fn is_odd(&self) -> Choice {
         Choice::from(self.to_repr()[0] & 1)
     }
@@ -264,6 +318,37 @@ impl ff::PrimeField for Fr {
     fn root_of_unity() -> Self {
         ROOT_OF_UNITY
     }
+}
+
+fn decompose_u64_digits_to_limbs(
+    e: impl IntoIterator<Item = u64>,
+    number_of_limbs: usize,
+    bit_len: usize,
+) -> Vec<u64> {
+    let mut e = e.into_iter();
+    let mut limbs = Vec::with_capacity(number_of_limbs);
+    let mask: u64 = (1u64 << bit_len) - 1u64;
+    let mut u64_digit = e.next().unwrap();
+    let mut rem = 64;
+    while limbs.len() < number_of_limbs {
+        if rem == 0 {
+            u64_digit = e.next().expect("not enough limbs");
+            rem = 64;
+        }
+        if rem >= bit_len {
+            limbs.push(u64_digit & mask);
+            u64_digit >>= bit_len;
+            rem -= bit_len;
+        } else {
+            let mut limb = u64_digit;
+            u64_digit = e.next().expect("not enough limbs");
+            limb |= (u64_digit & ((1 << (bit_len - rem)) - 1)) << rem;
+            limbs.push(limb);
+            u64_digit >>= bit_len - rem;
+            rem += 64 - bit_len;
+        }
+    }
+    limbs
 }
 
 impl SqrtRatio for Fr {

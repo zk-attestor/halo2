@@ -5,11 +5,14 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![forbid(unsafe_code)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
 mod batch;
+use alloc::vec::Vec;
 pub use batch::*;
 
 #[cfg(feature = "derive")]
@@ -131,6 +134,7 @@ pub trait Field:
 
 /// This represents an element of a prime field.
 pub trait PrimeField: Field + From<u64> {
+    const NUM_U64_LIMBS: usize = 4;
     /// The prime field can be converted back and forth into this binary
     /// representation.
     type Repr: Copy + Default + Send + Sync + 'static + AsRef<[u8]> + AsMut<[u8]>;
@@ -187,6 +191,9 @@ pub trait PrimeField: Field + From<u64> {
     /// returned by [`PrimeField::to_repr`].
     fn from_repr(repr: Self::Repr) -> CtOption<Self>;
 
+    fn from_u64_digits(_val: Vec<u64>) -> Self {
+        todo!()
+    }
     /// Attempts to convert a byte representation of a field element into an element of
     /// this prime field, failing if the input is not canonical (is not smaller than the
     /// field's modulus).
@@ -208,6 +215,33 @@ pub trait PrimeField: Field + From<u64> {
     /// The endianness of the byte representation is implementation-specific. Generic
     /// encodings of field elements should be treated as opaque.
     fn to_repr(&self) -> Self::Repr;
+
+    /// Returns the base 2^32 little endian representation of the prime field element
+    ///
+    /// Basically same as `to_repr` but does not go further into bytes
+    fn to_u32_digits(&self) -> Vec<u32> {
+        todo!()
+    }
+
+    /// Returns the base `2^bit_len` little endian representation of the prime field element
+    /// up to `num_limbs` number of limbs (truncates any extra limbs)
+    ///
+    /// Basically same as `to_repr` but does not go further into bytes
+    fn to_u64_limbs(&self, _num_limbs: usize, _bit_len: usize) -> Vec<u64> {
+        todo!()
+    }
+
+    /// Returns the base `2^bit_len` little endian representation of the prime field element
+    /// up to `num_limbs` number of limbs (truncates any extra limbs)
+    ///
+    /// Basically same as `to_repr` but does not go further into bytes
+    fn to_u128_limbs(&self, _num_limbs: usize, _bit_len: usize) -> Vec<u128> {
+        todo!()
+    }
+
+    fn to_i128(&self) -> i128 {
+        todo!()
+    }
 
     /// Returns true iff this element is odd.
     fn is_odd(&self) -> Choice;

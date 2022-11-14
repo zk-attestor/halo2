@@ -20,7 +20,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 // The internal representation of this type is four 64-bit unsigned
 // integers in little-endian order. `Fq` values are always in
 // Montgomery form; i.e., Fq(a) = aR mod q, with R = 2^256.
-#[derive(Clone, Copy, Eq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Fq(pub(crate) [u64; 4]);
 
 /// Constant representing the modulus
@@ -256,6 +256,63 @@ impl ff::PrimeField for Fq {
         res[24..32].copy_from_slice(&tmp.0[3].to_le_bytes());
 
         res
+    }
+
+    fn from_u64_digits(mut val: Vec<u64>) -> Self {
+        assert!(val.len() <= 4);
+        val.extend((0..4 - val.len()).map(|_| 0u64));
+        let val: [u64; 4] = val.try_into().unwrap();
+        Self::from_raw(val)
+    }
+
+    fn to_u32_digits(&self) -> Vec<u32> {
+        // Turn into canonical form by computing
+        // (a.R) / R = a
+        #[cfg(feature = "asm")]
+        let tmp =
+            Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
+
+        #[cfg(not(feature = "asm"))]
+        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        tmp.0
+            .iter()
+            .flat_map(|digit| [(digit & (u32::MAX as u64)) as u32, (digit >> 32) as u32])
+            .collect()
+    }
+
+    fn to_u128_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u128> {
+        assert!(bit_len > 64 && bit_len <= 128);
+        // Turn into canonical form by computing
+        // (a.R) / R = a
+        #[cfg(feature = "asm")]
+        let tmp =
+            Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
+
+        #[cfg(not(feature = "asm"))]
+        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        let mut e = IntoIterator::into_iter(tmp.0);
+        let mut limbs = Vec::with_capacity(num_limbs);
+        let mut u64_digit = e.next().unwrap();
+        let mut rem = 64;
+
+        while limbs.len() != num_limbs {
+            let mut limb: u128 = u64_digit.into();
+            let mut bits = rem;
+            u64_digit = e.next().unwrap_or(0);
+            if bit_len - bits >= 64 {
+                limb |= (u64_digit as u128) << bits;
+                u64_digit = e.next().unwrap_or(0);
+                bits += 64;
+            }
+            rem = bit_len - bits;
+            limb |= ((u64_digit & ((1 << rem) - 1)) as u128) << bits;
+            u64_digit >>= rem;
+            rem = 64 - rem;
+            limbs.push(limb);
+        }
+        limbs
     }
 
     fn is_odd(&self) -> Choice {

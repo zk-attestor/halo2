@@ -57,7 +57,7 @@ pub struct VerifyingKey<C: CurveAffine> {
 impl<C: CurveAffine> VerifyingKey<C> {
     /// Writes a verifying key to a buffer.
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write(&(self.fixed_commitments.len() as u32).to_be_bytes())?;
+        writer.write_all(&(self.fixed_commitments.len() as u32).to_be_bytes())?;
         for commitment in &self.fixed_commitments {
             writer.write_all(commitment.to_bytes().as_ref())?;
         }
@@ -66,10 +66,10 @@ impl<C: CurveAffine> VerifyingKey<C> {
         // write self.selectors
         for selector in &self.selectors {
             let mut selector_bytes = vec![0u8; selector.len() / 8 + 1];
-            for i in 0..selector.len() {
+            for (i, value) in selector.iter().enumerate() {
                 let byte_index = i / 8;
                 let bit_index = i % 8;
-                selector_bytes[byte_index] |= (selector[i] as u8) << bit_index;
+                selector_bytes[byte_index] |= (*value as u8) << bit_index;
             }
             writer.write_all(&selector_bytes)?;
         }
@@ -84,7 +84,7 @@ impl<C: CurveAffine> VerifyingKey<C> {
     ) -> io::Result<Self> {
         let (domain, cs, _) = keygen::create_domain::<C, ConcreteCircuit>(params.k());
         let mut num_fixed_columns_be_bytes = [0u8; 4];
-        reader.read(&mut num_fixed_columns_be_bytes)?;
+        reader.read_exact(&mut num_fixed_columns_be_bytes)?;
         let num_fixed_columns = u32::from_be_bytes(num_fixed_columns_be_bytes);
 
         let fixed_commitments: Vec<_> = (0..num_fixed_columns)
@@ -101,10 +101,10 @@ impl<C: CurveAffine> VerifyingKey<C> {
                 reader
                     .read_exact(&mut selector_bytes)
                     .expect("unable to read selector bytes");
-                for i in 0..selector.len() {
+                for (i, value) in selector.iter_mut().enumerate() {
                     let byte_index = i / 8;
                     let bit_index = i % 8;
-                    selector[i] = (selector_bytes[byte_index] >> bit_index) & 1 == 1;
+                    *value = (selector_bytes[byte_index] >> bit_index) & 1 == 1;
                 }
                 Ok(selector)
             })
@@ -242,7 +242,7 @@ impl<C: CurveAffine> ProvingKey<C> {
             fixed_cosets: self.fixed_cosets.clone(),
             permutation: self.permutation.clone(),
         };
-        bincode::serialize_into(writer, &partial_pkey).or_else(|err| Err(Error::Serde(err)))
+        bincode::serialize_into(writer, &partial_pkey).map_err(Error::Serde)
     }
     /// Reads a proving key from a buffer.
     /// Does so by reading verification key first, and then deserializing the rest of the file into the remaining proving key data.
@@ -253,7 +253,7 @@ impl<C: CurveAffine> ProvingKey<C> {
         let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(reader, params)?;
         let ev = Evaluator::new(vk.cs());
         let partial_pk: ProvingKeyWithoutVerifyingKey<C> =
-            bincode::deserialize_from(reader).or_else(|err| Err(Error::Serde(err)))?;
+            bincode::deserialize_from(reader).map_err(Error::Serde)?;
         Ok(Self {
             vk,
             l0: partial_pk.l0,
