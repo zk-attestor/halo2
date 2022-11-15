@@ -5,8 +5,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![forbid(unsafe_code)]
-#![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -134,7 +132,6 @@ pub trait Field:
 
 /// This represents an element of a prime field.
 pub trait PrimeField: Field + From<u64> {
-    const NUM_U64_LIMBS: usize = 4;
     /// The prime field can be converted back and forth into this binary
     /// representation.
     type Repr: Copy + Default + Send + Sync + 'static + AsRef<[u8]> + AsMut<[u8]>;

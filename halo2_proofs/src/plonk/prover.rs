@@ -141,7 +141,7 @@ pub fn create_proof<
     struct WitnessCollection<'a, F: Field> {
         k: u32,
         current_phase: sealed::Phase,
-        advice: Vec<Vec<Rc<Assigned<F>>>>,
+        advice: Vec<Polynomial<Assigned<F>, LagrangeCoeff>>,
         challenges: &'a HashMap<usize, F>,
         instances: &'a [&'a [F]],
         usable_rows: RangeTo<usize>,
@@ -206,10 +206,10 @@ pub fn create_proof<
                 .get_mut(column.index())
                 .and_then(|v| v.get_mut(row))
                 .ok_or(Error::BoundsFailure)?;
-            let rc_val = Rc::new(to.assign()?);
-            let val_ref = Rc::downgrade(&rc_val);
-            *advice_get_mut = rc_val;
-            Ok(Value::known(unsafe { &*val_ref.as_ptr() }))
+            *advice_get_mut = to.assign()?;
+
+            let immutable_raw_ptr = advice_get_mut as *const Assigned<F>;
+            Ok(Value::known(unsafe { &*immutable_raw_ptr }))
         }
 
         fn assign_fixed<V, VR, A, AR>(
@@ -300,11 +300,10 @@ pub fn create_proof<
             for ((circuit, advice), instances) in
                 circuits.iter().zip(advice.iter_mut()).zip(instances)
             {
-                let zero: Rc<Assigned<Scheme::Scalar>> = Rc::new(Assigned::Zero);
                 let mut witness = WitnessCollection {
                     k: params.k(),
                     current_phase,
-                    advice: vec![vec![zero; (1 << domain.k()) as usize]; meta.num_advice_columns],
+                    advice: vec![domain.empty_lagrange_assigned(); meta.num_advice_columns],
                     instances,
                     challenges: &challenges,
                     // The prover will not be allowed to assign values to advice
@@ -330,17 +329,6 @@ pub fn create_proof<
                         .enumerate()
                         .filter_map(|(column_index, advice)| {
                             if column_indices.contains(&column_index) {
-                                let advice = domain.lagrange_assigned_from_vec(
-                                    advice
-                                        .into_iter()
-                                        .map(|rc| {
-                                            /*if rc.as_ref() != &Assigned::Zero {
-                                                dbg!(rc.as_ref());
-                                            }*/
-                                            Rc::try_unwrap(rc).unwrap_or(Assigned::Zero)
-                                        })
-                                        .collect(),
-                                );
                                 Some(advice)
                             } else {
                                 None
