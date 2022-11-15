@@ -229,7 +229,7 @@ impl<'r, F: Field> Region<'r, F> {
         //annotation: A,
         column: Column<Advice>,
         offset: usize,
-        to: Value<F>, // For now only accept Value<F>, later might change to Value<Assigned<F>> for batch inversion
+        to: Value<Assigned<F>>, // For now only accept Value<F>, later might change to Value<Assigned<F>> for batch inversion
     ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error>
 /*
     where
@@ -240,9 +240,7 @@ impl<'r, F: Field> Region<'r, F> {
         //let mut value = Value::unknown();
         self.region.assign_advice(
             //&|| annotation().into(),
-            column,
-            offset,
-            to.into(),
+            column, offset, to,
         )
 
         /*

@@ -178,6 +178,10 @@ impl ff::Field for Fr {
         self.double()
     }
 
+    fn is_zero_vartime(&self) -> bool {
+        *self == Self::zero()
+    }
+
     #[inline(always)]
     fn square(&self) -> Self {
         self.square()

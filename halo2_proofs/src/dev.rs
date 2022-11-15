@@ -673,7 +673,8 @@ impl<F: FieldExt> MockProver<F> {
                     .map(|rc| match *rc {
                         AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a.as_ref() {
                             Assigned::Trivial(a) => *a,
-                            _ => unreachable!(),
+                            Assigned::Rational(a, b) => *a * b.invert().unwrap(),
+                            _ => F::zero(),
                         }),
                         AdviceCellValue::Poison(i) => CellValue::Poison(i),
                         AdviceCellValue::Unassigned => CellValue::Unassigned,
