@@ -300,7 +300,7 @@ impl ff::PrimeField for Fr {
             i128::from(tmp.0[0]) | (i128::from(tmp.0[1]) << 64)
         } else {
             // modulus - tmp
-            let (a0, borrow) = sbb(MODULUS.0[1], tmp.0[0], 0);
+            let (a0, borrow) = sbb(MODULUS.0[0], tmp.0[0], 0);
             let (a1, _) = sbb(MODULUS.0[1], tmp.0[1], borrow);
 
             -(i128::from(a0) | (i128::from(a1) << 64))
