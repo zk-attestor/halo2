@@ -266,6 +266,8 @@ mod tests {
             }
         }
 
+        const ZK: bool = true;
+
         let rng = OsRng;
 
         // Test swap case
@@ -275,7 +277,7 @@ mod tests {
                 b: Value::known(Base::random(rng)),
                 swap: Value::known(true),
             };
-            let prover = MockProver::<Base>::run(3, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run::<_, ZK>(3, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
 
@@ -286,7 +288,7 @@ mod tests {
                 b: Value::known(Base::random(rng)),
                 swap: Value::known(false),
             };
-            let prover = MockProver::<Base>::run(3, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run::<_, ZK>(3, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
     }

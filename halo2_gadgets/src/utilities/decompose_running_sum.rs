@@ -237,6 +237,8 @@ mod tests {
             strict: bool,
         }
 
+        const ZK: bool = true;
+
         impl<
                 F: FieldExt + PrimeFieldBits,
                 const WORD_NUM_BITS: usize,
@@ -309,7 +311,7 @@ mod tests {
                     alpha: Value::known(alpha),
                     strict: true,
                 };
-            let prover = MockProver::<pallas::Base>::run(8, &circuit, vec![]).unwrap();
+            let prover = MockProver::<pallas::Base>::run::<_, ZK>(8, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
 
@@ -327,7 +329,7 @@ mod tests {
                 alpha: Value::known(alpha),
                 strict: true,
             };
-            let prover = MockProver::<pallas::Base>::run(8, &circuit, vec![]).unwrap();
+            let prover = MockProver::<pallas::Base>::run::<_, ZK>(8, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
 
@@ -345,7 +347,7 @@ mod tests {
                 alpha: Value::known(alpha),
                 strict: true,
             };
-            let prover = MockProver::<pallas::Base>::run(8, &circuit, vec![]).unwrap();
+            let prover = MockProver::<pallas::Base>::run::<_, ZK>(8, &circuit, vec![]).unwrap();
             assert_eq!(
                 prover.verify(),
                 Err(vec![
@@ -384,7 +386,7 @@ mod tests {
                 alpha: Value::known(alpha),
                 strict: false,
             };
-            let prover = MockProver::<pallas::Base>::run(8, &circuit, vec![]).unwrap();
+            let prover = MockProver::<pallas::Base>::run::<_, ZK>(8, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
     }

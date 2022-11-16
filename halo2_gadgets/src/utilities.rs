@@ -312,15 +312,17 @@ mod tests {
             }
         }
 
+        const ZK: bool = true;
+
         for i in 0..8 {
             let circuit: MyCircuit<8> = MyCircuit(i);
-            let prover = MockProver::<pallas::Base>::run(3, &circuit, vec![]).unwrap();
+            let prover = MockProver::<pallas::Base>::run::<_, ZK>(3, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
 
         {
             let circuit: MyCircuit<8> = MyCircuit(8);
-            let prover = MockProver::<pallas::Base>::run(3, &circuit, vec![]).unwrap();
+            let prover = MockProver::<pallas::Base>::run::<_, ZK>(3, &circuit, vec![]).unwrap();
             assert_eq!(
                 prover.verify(),
                 Err(vec![VerifyFailure::ConstraintNotSatisfied {

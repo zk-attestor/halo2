@@ -895,9 +895,11 @@ pub(crate) mod tests {
 
     #[test]
     fn ecc_chip() {
+        const ZK: bool = true;
+
         let k = 13;
         let circuit = MyCircuit { test_errors: true };
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        let prover = MockProver::run::<_, ZK>(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()))
     }
 
@@ -906,13 +908,15 @@ pub(crate) mod tests {
     fn print_ecc_chip() {
         use plotters::prelude::*;
 
+        const ZK: bool = true;
+
         let root = BitMapBackend::new("ecc-chip-layout.png", (1024, 7680)).into_drawing_area();
         root.fill(&WHITE).unwrap();
         let root = root.titled("Ecc Chip Layout", ("sans-serif", 60)).unwrap();
 
         let circuit = MyCircuit { test_errors: false };
         halo2_proofs::dev::CircuitLayout::default()
-            .render(13, &circuit, &root)
+            .render::<_, _, _, ZK>(13, &circuit, &root)
             .unwrap();
     }
 }

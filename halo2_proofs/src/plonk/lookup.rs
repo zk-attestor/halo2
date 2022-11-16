@@ -34,8 +34,29 @@ impl<F: Field> Argument<F> {
         }
     }
 
-    pub(crate) fn required_degree(&self) -> usize {
+    pub(crate) fn required_degree<const ZK: bool>(&self) -> usize {
         assert_eq!(self.input_expressions.len(), self.table_expressions.len());
+
+        let mut input_degree = 1;
+        for expr in self.input_expressions.iter() {
+            input_degree = std::cmp::max(input_degree, expr.degree());
+        }
+        let mut table_degree = 1;
+        for expr in self.table_expressions.iter() {
+            table_degree = std::cmp::max(table_degree, expr.degree());
+        }
+
+        if !ZK {
+            // In basic grand-product the z(X) transition is enforced on every row,
+            // which also allow us to rely on wrap-around to check the last value of
+            // z(X) to be 1.
+            return std::cmp::max(
+                // z(\omega X) (a'(X) + \beta) (s'(X) + \gamma)
+                3,
+                // z(X) (\theta^{m-1} a_0(X) + ... + a_{m-1}(X) + \beta) (\theta^{m-1} s_0(X) + ... + s_{m-1}(X) + \gamma)
+                1 + input_degree + table_degree,
+            );
+        }
 
         // The first value in the permutation poly should be one.
         // degree 2:
@@ -61,15 +82,7 @@ impl<F: Field> Argument<F> {
         // value of a' is the same as the current value.
         // degree 3:
         // (1 - (l_last(X) + l_blind(X))) * (a′(X) − s′(X))⋅(a′(X) − a′(\omega^{-1} X)) = 0
-        let mut input_degree = 1;
-        for expr in self.input_expressions.iter() {
-            input_degree = std::cmp::max(input_degree, expr.degree());
-        }
-        let mut table_degree = 1;
-        for expr in self.table_expressions.iter() {
-            table_degree = std::cmp::max(table_degree, expr.degree());
-        }
-
+        //
         // In practice because input_degree and table_degree are initialized to
         // one, the latter half of this max() invocation is at least 4 always,
         // rendering this call pointless except to be explicit in case we change

@@ -32,6 +32,8 @@ use halo2_proofs::{
     transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
 
+const ZK: bool = true;
+
 #[derive(Clone, Copy)]
 struct HashCircuit<S, const WIDTH: usize, const RATE: usize, const L: usize>
 where
@@ -204,8 +206,9 @@ fn bench_poseidon<S, const WIDTH: usize, const RATE: usize, const L: usize>(
     };
 
     // Initialize the proving key
-    let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
-    let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
+    let vk = keygen_vk::<_, _, _, ZK>(&params, &empty_circuit).expect("keygen_vk should not fail");
+    let pk =
+        keygen_pk::<_, _, _, ZK>(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
 
     let prover_name = name.to_string() + "-prover";
     let verifier_name = name.to_string() + "-verifier";
@@ -228,7 +231,7 @@ fn bench_poseidon<S, const WIDTH: usize, const RATE: usize, const L: usize>(
         b.iter(|| {
             // Create a proof
             let mut transcript = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
-            create_proof::<IPACommitmentScheme<_>, ProverIPA<_>, _, _, _, _>(
+            create_proof::<IPACommitmentScheme<_>, ProverIPA<_>, _, _, _, _, ZK>(
                 &params,
                 &pk,
                 &[circuit],
@@ -242,7 +245,7 @@ fn bench_poseidon<S, const WIDTH: usize, const RATE: usize, const L: usize>(
 
     // Create a proof
     let mut transcript = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
-    create_proof::<IPACommitmentScheme<_>, ProverIPA<_>, _, _, _, _>(
+    create_proof::<IPACommitmentScheme<_>, ProverIPA<_>, _, _, _, _, ZK>(
         &params,
         &pk,
         &[circuit],
@@ -257,7 +260,14 @@ fn bench_poseidon<S, const WIDTH: usize, const RATE: usize, const L: usize>(
         b.iter(|| {
             let strategy = SingleStrategy::new(&params);
             let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-            assert!(verify_proof(&params, pk.get_vk(), strategy, &[&[]], &mut transcript).is_ok());
+            assert!(verify_proof::<_, _, _, _, _, ZK>(
+                &params,
+                pk.get_vk(),
+                strategy,
+                &[&[]],
+                &mut transcript
+            )
+            .is_ok());
         });
     });
 }

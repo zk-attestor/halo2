@@ -731,9 +731,11 @@ pub(crate) mod tests {
 
     #[test]
     fn sinsemilla_chip() {
+        const ZK: bool = true;
+
         let k = 11;
         let circuit = MyCircuit {};
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        let prover = MockProver::run::<_, ZK>(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()))
     }
 
@@ -742,6 +744,8 @@ pub(crate) mod tests {
     fn print_sinsemilla_chip() {
         use plotters::prelude::*;
 
+        const ZK: bool = true;
+
         let root =
             BitMapBackend::new("sinsemilla-hash-layout.png", (1024, 7680)).into_drawing_area();
         root.fill(&WHITE).unwrap();
@@ -749,7 +753,7 @@ pub(crate) mod tests {
 
         let circuit = MyCircuit {};
         halo2_proofs::dev::CircuitLayout::default()
-            .render(11, &circuit, &root)
+            .render::<_, _, _, ZK>(11, &circuit, &root)
             .unwrap();
     }
 }

@@ -711,9 +711,11 @@ mod tests {
 
     #[test]
     fn poseidon_permute() {
+        const ZK: bool = true;
+
         let k = 6;
         let circuit = PermuteCircuit::<OrchardNullifier, 3, 2>(PhantomData);
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        let prover = MockProver::run::<_, ZK>(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()))
     }
 
@@ -810,6 +812,8 @@ mod tests {
 
     #[test]
     fn poseidon_hash() {
+        const ZK: bool = true;
+
         let rng = OsRng;
 
         let message = [Fp::random(rng), Fp::random(rng)];
@@ -822,12 +826,14 @@ mod tests {
             output: Value::known(output),
             _spec: PhantomData,
         };
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        let prover = MockProver::run::<_, ZK>(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()))
     }
 
     #[test]
     fn poseidon_hash_longer_input() {
+        const ZK: bool = true;
+
         let rng = OsRng;
 
         let message = [Fp::random(rng), Fp::random(rng), Fp::random(rng)];
@@ -840,12 +846,14 @@ mod tests {
             output: Value::known(output),
             _spec: PhantomData,
         };
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        let prover = MockProver::run::<_, ZK>(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()))
     }
 
     #[test]
     fn hash_test_vectors() {
+        const ZK: bool = true;
+
         for tv in crate::poseidon::primitives::test_vectors::fp::hash() {
             let message = [
                 pallas::Base::from_repr(tv.input[0]).unwrap(),
@@ -860,7 +868,7 @@ mod tests {
                 output: Value::known(output),
                 _spec: PhantomData,
             };
-            let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+            let prover = MockProver::run::<_, ZK>(k, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
     }
@@ -869,6 +877,8 @@ mod tests {
     #[test]
     fn print_poseidon_chip() {
         use plotters::prelude::*;
+
+        const ZK: bool = true;
 
         let root = BitMapBackend::new("poseidon-chip-layout.png", (1024, 768)).into_drawing_area();
         root.fill(&WHITE).unwrap();
@@ -882,7 +892,7 @@ mod tests {
             _spec: PhantomData,
         };
         halo2_proofs::dev::CircuitLayout::default()
-            .render(6, &circuit, &root)
+            .render::<_, _, _, ZK>(6, &circuit, &root)
             .unwrap();
     }
 }

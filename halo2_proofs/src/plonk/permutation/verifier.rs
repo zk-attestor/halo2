@@ -34,12 +34,17 @@ impl Argument {
         C: CurveAffine,
         E: EncodedChallenge<C>,
         T: TranscriptRead<C, E>,
+        const ZK: bool,
     >(
         &self,
         vk: &plonk::VerifyingKey<C>,
         transcript: &mut T,
     ) -> Result<Committed<C>, Error> {
-        let chunk_len = vk.cs_degree - 2;
+        let chunk_len = if ZK || self.columns.len() >= vk.cs_degree {
+            vk.cs_degree - 2
+        } else {
+            vk.cs_degree - 1
+        };
 
         let permutation_product_commitments = self
             .columns
@@ -69,7 +74,7 @@ impl<C: CurveAffine> VerifyingKey<C> {
 }
 
 impl<C: CurveAffine> Committed<C> {
-    pub(crate) fn evaluate<E: EncodedChallenge<C>, T: TranscriptRead<C, E>>(
+    pub(crate) fn evaluate<E: EncodedChallenge<C>, T: TranscriptRead<C, E>, const ZK: bool>(
         self,
         transcript: &mut T,
     ) -> Result<Evaluated<C>, Error> {
@@ -80,7 +85,7 @@ impl<C: CurveAffine> Committed<C> {
         while let Some(permutation_product_commitment) = iter.next() {
             let permutation_product_eval = transcript.read_scalar()?;
             let permutation_product_next_eval = transcript.read_scalar()?;
-            let permutation_product_last_eval = if iter.len() > 0 {
+            let permutation_product_last_eval = if ZK && iter.len() > 0 {
                 Some(transcript.read_scalar()?)
             } else {
                 None
@@ -99,7 +104,7 @@ impl<C: CurveAffine> Committed<C> {
 }
 
 impl<C: CurveAffine> Evaluated<C> {
-    pub(in crate::plonk) fn expressions<'a>(
+    pub(in crate::plonk) fn expressions<'a, const ZK: bool>(
         &'a self,
         vk: &'a plonk::VerifyingKey<C>,
         p: &'a Argument,
@@ -114,7 +119,11 @@ impl<C: CurveAffine> Evaluated<C> {
         gamma: ChallengeGamma<C>,
         x: ChallengeX<C>,
     ) -> impl Iterator<Item = C::Scalar> + 'a {
-        let chunk_len = vk.cs_degree - 2;
+        let chunk_len = if ZK || p.columns.len() >= vk.cs_degree {
+            vk.cs_degree - 2
+        } else {
+            vk.cs_degree - 1
+        };
         iter::empty()
             // Enforce only for the first set.
             // l_0(X) * (1 - z_0(X)) = 0
@@ -124,14 +133,23 @@ impl<C: CurveAffine> Evaluated<C> {
                 }),
             )
             // Enforce only for the last set.
+            //
+            // ZK:
             // l_last(X) * (z_l(X)^2 - z_l(X)) = 0
-            .chain(self.sets.last().map(|last_set| {
-                (last_set.permutation_product_eval.square() - &last_set.permutation_product_eval)
-                    * &l_last
-            }))
+            .chain(if ZK {
+                self.sets.last().map(|last_set| {
+                    (last_set.permutation_product_eval.square()
+                        - &last_set.permutation_product_eval)
+                        * &l_last
+                })
+            } else {
+                None
+            })
             // Except for the first set, enforce.
+            //
+            // ZK:
             // l_0(X) * (z_i(X) - z_{i-1}(\omega^(last) X)) = 0
-            .chain(
+            .chain(if ZK {
                 self.sets
                     .iter()
                     .skip(1)
@@ -142,24 +160,65 @@ impl<C: CurveAffine> Evaluated<C> {
                             last_set.permutation_product_last_eval.unwrap(),
                         )
                     })
-                    .map(move |(set, prev_last)| (set - &prev_last) * &l_0),
-            )
+                    .map(move |(set, prev_last)| (set - &prev_last) * &l_0)
+                    .collect()
+            } else {
+                Vec::new()
+            })
             // And for all the sets we enforce:
+            //
+            // ZK:
             // (1 - (l_last(X) + l_blind(X))) * (
             //   z_i(\omega X) \prod (p(X) + \beta s_i(X) + \gamma)
             // - z_i(X) \prod (p(X) + \delta^i \beta X + \gamma)
             // )
+            //
+            // Non-ZK:
+            //
+            // ((1 - l_last(X)) * z_i(\omega X) + l_last(X) * z_{i+1}(\omega X)) * \prod_j (p(X) + \beta s_j(X) + \gamma)
+            // - z_i(X) \prod_j (p(X) + \delta^j \beta X + \gamma)
+            // = 0
             .chain(
                 self.sets
                     .iter()
+                    .zip(self.sets.iter().cycle().skip(1))
                     .zip(p.columns.chunks(chunk_len))
                     .zip(common.permutation_evals.chunks(chunk_len))
                     .enumerate()
-                    .map(move |(chunk_index, ((set, columns), permutation_evals))| {
-                        let mut left = set.permutation_product_next_eval;
-                        for (eval, permutation_eval) in columns
-                            .iter()
-                            .map(|&column| match column.column_type() {
+                    .map(
+                        move |(chunk_index, (((set, next_set), columns), permutation_evals))| {
+                            let mut left = if ZK || self.sets.len() == 1 {
+                                set.permutation_product_next_eval
+                            } else {
+                                (C::Scalar::one() - l_last) * set.permutation_product_next_eval
+                                    + l_last * next_set.permutation_product_next_eval
+                            };
+                            for (eval, permutation_eval) in columns
+                                .iter()
+                                .map(|&column| match column.column_type() {
+                                    Any::Advice(_) => {
+                                        advice_evals
+                                            [vk.cs.get_any_query_index(column, Rotation::cur())]
+                                    }
+                                    Any::Fixed => {
+                                        fixed_evals
+                                            [vk.cs.get_any_query_index(column, Rotation::cur())]
+                                    }
+                                    Any::Instance => {
+                                        instance_evals
+                                            [vk.cs.get_any_query_index(column, Rotation::cur())]
+                                    }
+                                })
+                                .zip(permutation_evals.iter())
+                            {
+                                left *= &(eval + &(*beta * permutation_eval) + &*gamma);
+                            }
+
+                            let mut right = set.permutation_product_eval;
+                            let mut current_delta = (*beta * &*x)
+                                * &(C::Scalar::DELTA
+                                    .pow_vartime(&[(chunk_index * chunk_len) as u64]));
+                            for eval in columns.iter().map(|&column| match column.column_type() {
                                 Any::Advice(_) => {
                                     advice_evals[vk.cs.get_any_query_index(column, Rotation::cur())]
                                 }
@@ -170,41 +229,27 @@ impl<C: CurveAffine> Evaluated<C> {
                                     instance_evals
                                         [vk.cs.get_any_query_index(column, Rotation::cur())]
                                 }
-                            })
-                            .zip(permutation_evals.iter())
-                        {
-                            left *= &(eval + &(*beta * permutation_eval) + &*gamma);
-                        }
+                            }) {
+                                right *= &(eval + &current_delta + &*gamma);
+                                current_delta *= &C::Scalar::DELTA;
+                            }
 
-                        let mut right = set.permutation_product_eval;
-                        let mut current_delta = (*beta * &*x)
-                            * &(C::Scalar::DELTA.pow_vartime(&[(chunk_index * chunk_len) as u64]));
-                        for eval in columns.iter().map(|&column| match column.column_type() {
-                            Any::Advice(_) => {
-                                advice_evals[vk.cs.get_any_query_index(column, Rotation::cur())]
+                            if ZK {
+                                (left - &right) * (C::Scalar::one() - &(l_last + &l_blind))
+                            } else {
+                                left - &right
                             }
-                            Any::Fixed => {
-                                fixed_evals[vk.cs.get_any_query_index(column, Rotation::cur())]
-                            }
-                            Any::Instance => {
-                                instance_evals[vk.cs.get_any_query_index(column, Rotation::cur())]
-                            }
-                        }) {
-                            right *= &(eval + &current_delta + &*gamma);
-                            current_delta *= &C::Scalar::DELTA;
-                        }
-
-                        (left - &right) * (C::Scalar::one() - &(l_last + &l_blind))
-                    }),
+                        },
+                    ),
             )
     }
 
-    pub(in crate::plonk) fn queries<'r, M: MSM<C> + 'r>(
+    pub(in crate::plonk) fn queries<'r, M: MSM<C> + 'r, const ZK: bool>(
         &'r self,
         vk: &'r plonk::VerifyingKey<C>,
         x: ChallengeX<C>,
     ) -> impl Iterator<Item = VerifierQuery<'r, C, M>> + Clone {
-        let blinding_factors = vk.cs.blinding_factors();
+        let blinding_factors = vk.cs.blinding_factors::<ZK>();
         let x_next = vk.domain.rotate_omega(*x, Rotation::next());
         let x_last = vk
             .domain
@@ -227,13 +272,22 @@ impl<C: CurveAffine> Evaluated<C> {
                     )))
             }))
             // Open it at \omega^{last} x for all but the last set
-            .chain(self.sets.iter().rev().skip(1).flat_map(move |set| {
-                Some(VerifierQuery::new_commitment(
-                    &set.permutation_product_commitment,
-                    x_last,
-                    set.permutation_product_last_eval.unwrap(),
-                ))
-            }))
+            .chain(if ZK {
+                self.sets
+                    .iter()
+                    .rev()
+                    .skip(1)
+                    .flat_map(move |set| {
+                        Some(VerifierQuery::new_commitment(
+                            &set.permutation_product_commitment,
+                            x_last,
+                            set.permutation_product_last_eval.unwrap(),
+                        ))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            })
     }
 }
 

@@ -295,6 +295,8 @@ mod tests {
     };
     use halo2curves::pasta::Fp;
 
+    const ZK: bool = true;
+
     #[test]
     fn lookup_table() {
         /// This represents an advice column at a certain row in the ConstraintSystem
@@ -439,7 +441,7 @@ mod tests {
 
         let circuit: MyCircuit = MyCircuit {};
 
-        let prover = match MockProver::<Fp>::run(17, &circuit, vec![]) {
+        let prover = match MockProver::<Fp>::run::<_, ZK>(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:?}", e),
         };

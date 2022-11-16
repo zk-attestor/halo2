@@ -272,6 +272,8 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
 
 // ANCHOR: dev-graph
 fn main() {
+    const ZK: bool = true;
+
     // Prepare the circuit you want to render.
     // You don't need to include any witness variables.
     let a = Fp::random(OsRng);
@@ -299,7 +301,7 @@ fn main() {
         .show_labels(false)
         // Render the circuit onto your area!
         // The first argument is the size parameter for the circuit.
-        .render(5, &circuit, &root)
+        .render::<_, _, _, ZK>(5, &circuit, &root)
         .unwrap();
 }
 // ANCHOR_END: dev-graph

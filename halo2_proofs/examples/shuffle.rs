@@ -253,12 +253,12 @@ impl<F: FieldExt, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W,
     }
 }
 
-fn test_mock_prover<F: FieldExt, const W: usize, const H: usize>(
+fn test_mock_prover<F: FieldExt, const W: usize, const H: usize, const ZK: bool>(
     k: u32,
     circuit: MyCircuit<F, W, H>,
     expected: Result<(), Vec<(metadata::Constraint, FailureLocation)>>,
 ) {
-    let prover = MockProver::run::<_>(k, &circuit, vec![]).unwrap();
+    let prover = MockProver::run::<_, ZK>(k, &circuit, vec![]).unwrap();
     match (prover.verify(), expected) {
         (Ok(_), Ok(_)) => {}
         (Err(err), Err(expected)) => {
@@ -280,19 +280,19 @@ fn test_mock_prover<F: FieldExt, const W: usize, const H: usize>(
     };
 }
 
-fn test_prover<C: CurveAffine, const W: usize, const H: usize>(
+fn test_prover<C: CurveAffine, const W: usize, const H: usize, const ZK: bool>(
     k: u32,
     circuit: MyCircuit<C::Scalar, W, H>,
     expected: bool,
 ) {
     let params = ParamsIPA::<C>::new(k);
-    let vk = keygen_vk(&params, &circuit).unwrap();
-    let pk = keygen_pk(&params, vk, &circuit).unwrap();
+    let vk = keygen_vk::<_, _, _, ZK>(&params, &circuit).unwrap();
+    let pk = keygen_pk::<_, _, _, ZK>(&params, vk, &circuit).unwrap();
 
     let proof = {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
-        create_proof::<IPACommitmentScheme<C>, ProverIPA<C>, _, _, _, _>(
+        create_proof::<IPACommitmentScheme<C>, ProverIPA<C>, _, _, _, _, ZK>(
             &params,
             &pk,
             &[circuit],
@@ -309,7 +309,7 @@ fn test_prover<C: CurveAffine, const W: usize, const H: usize>(
         let strategy = AccumulatorStrategy::new(&params);
         let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
-        verify_proof::<IPACommitmentScheme<C>, VerifierIPA<C>, _, _, _>(
+        verify_proof::<IPACommitmentScheme<C>, VerifierIPA<C>, _, _, _, ZK>(
             &params,
             pk.get_vk(),
             strategy,
@@ -324,6 +324,7 @@ fn test_prover<C: CurveAffine, const W: usize, const H: usize>(
 }
 
 fn main() {
+    const ZK: bool = true;
     const W: usize = 4;
     const H: usize = 32;
     const K: u32 = 8;
@@ -331,8 +332,8 @@ fn main() {
     let circuit = &MyCircuit::<_, W, H>::rand(&mut OsRng);
 
     {
-        test_mock_prover(K, circuit.clone(), Ok(()));
-        test_prover::<EqAffine, W, H>(K, circuit.clone(), true);
+        test_mock_prover::<_, W, H, ZK>(K, circuit.clone(), Ok(()));
+        test_prover::<EqAffine, W, H, ZK>(K, circuit.clone(), true);
     }
 
     #[cfg(not(feature = "sanity-checks"))]
@@ -345,7 +346,7 @@ fn main() {
             shuffled
         });
 
-        test_mock_prover(
+        test_mock_prover::<_, W, H, ZK>(
             K,
             circuit.clone(),
             Err(vec![(
@@ -356,6 +357,6 @@ fn main() {
                 },
             )]),
         );
-        test_prover::<EqAffine, W, H>(K, circuit, false);
+        test_prover::<EqAffine, W, H, ZK>(K, circuit, false);
     }
 }

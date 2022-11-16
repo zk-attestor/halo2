@@ -36,7 +36,7 @@ use crate::{
 ///
 /// let circuit = MyCircuit::default();
 /// let k = 5; // Suitable size for MyCircuit
-/// CircuitLayout::default().render(k, &circuit, &drawing_area).unwrap();
+/// CircuitLayout::default().render::<_, _, _, true>(k, &circuit, &drawing_area).unwrap();
 /// ```
 #[derive(Debug, Default)]
 pub struct CircuitLayout {
@@ -85,7 +85,7 @@ impl CircuitLayout {
     }
 
     /// Renders the given circuit on the given drawing area.
-    pub fn render<F: Field, ConcreteCircuit: Circuit<F>, DB: DrawingBackend>(
+    pub fn render<F: Field, ConcreteCircuit: Circuit<F>, DB: DrawingBackend, const ZK: bool>(
         self,
         k: u32,
         circuit: &ConcreteCircuit,
@@ -106,7 +106,7 @@ impl CircuitLayout {
             cs.constants.clone(),
         )
         .unwrap();
-        let (cs, selector_polys) = cs.compress_selectors(layout.selectors);
+        let (cs, selector_polys) = cs.compress_selectors::<ZK>(layout.selectors);
         let non_selector_fixed_columns = cs.num_fixed_columns - selector_polys.len();
 
         // Figure out what order to render the columns in.
@@ -171,7 +171,7 @@ impl CircuitLayout {
         }
 
         // Mark the unusable rows of the circuit.
-        let usable_rows = n - (cs.blinding_factors() + 1);
+        let usable_rows = n - (cs.blinding_factors::<ZK>() + 1);
         if view_bottom > usable_rows {
             root.draw(&Rectangle::new(
                 [(0, usable_rows), (total_columns, view_bottom)],

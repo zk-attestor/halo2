@@ -41,10 +41,15 @@ impl<C: CurveAffine> Argument<C> {
     pub(in crate::plonk) fn read_commitments_before_y<
         E: EncodedChallenge<C>,
         T: TranscriptRead<C, E>,
+        const ZK: bool,
     >(
         transcript: &mut T,
     ) -> Result<Committed<C>, Error> {
-        let random_poly_commitment = transcript.read_point()?;
+        let random_poly_commitment = if ZK {
+            transcript.read_point()?
+        } else {
+            C::default()
+        };
 
         Ok(Committed {
             random_poly_commitment,
@@ -72,11 +77,19 @@ impl<C: CurveAffine> Committed<C> {
 }
 
 impl<C: CurveAffine> Constructed<C> {
-    pub(in crate::plonk) fn evaluate_after_x<E: EncodedChallenge<C>, T: TranscriptRead<C, E>>(
+    pub(in crate::plonk) fn evaluate_after_x<
+        E: EncodedChallenge<C>,
+        T: TranscriptRead<C, E>,
+        const ZK: bool,
+    >(
         self,
         transcript: &mut T,
     ) -> Result<PartiallyEvaluated<C>, Error> {
-        let random_eval = transcript.read_scalar()?;
+        let random_eval = if ZK {
+            transcript.read_scalar()?
+        } else {
+            C::Scalar::zero()
+        };
 
         Ok(PartiallyEvaluated {
             h_commitments: self.h_commitments,
@@ -119,7 +132,7 @@ impl<C: CurveAffine> PartiallyEvaluated<C> {
 }
 
 impl<C: CurveAffine, M: MSM<C>> Evaluated<C, M> {
-    pub(in crate::plonk) fn queries(
+    pub(in crate::plonk) fn queries<const ZK: bool>(
         &self,
         x: ChallengeX<C>,
     ) -> impl Iterator<Item = VerifierQuery<C, M>> + Clone {
@@ -129,10 +142,14 @@ impl<C: CurveAffine, M: MSM<C>> Evaluated<C, M> {
                 *x,
                 self.expected_h_eval,
             )))
-            .chain(Some(VerifierQuery::new_commitment(
-                &self.random_poly_commitment,
-                *x,
-                self.random_eval,
-            )))
+            .chain(if ZK {
+                Some(VerifierQuery::new_commitment(
+                    &self.random_poly_commitment,
+                    *x,
+                    self.random_eval,
+                ))
+            } else {
+                None
+            })
     }
 }

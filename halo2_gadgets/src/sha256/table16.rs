@@ -460,6 +460,8 @@ mod tests {
     };
     use halo2curves::pasta::pallas;
 
+    const ZK: bool = true;
+
     #[test]
     fn print_sha256_circuit() {
         use plotters::prelude::*;
@@ -509,7 +511,7 @@ mod tests {
 
         let circuit = MyCircuit {};
         halo2_proofs::dev::CircuitLayout::default()
-            .render::<pallas::Base, _, _>(17, &circuit, &root)
+            .render::<pallas::Base, _, _, ZK>(17, &circuit, &root)
             .unwrap();
     }
 }

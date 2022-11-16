@@ -24,7 +24,7 @@ use crate::{
     },
 };
 
-pub(crate) fn create_domain<C, ConcreteCircuit>(
+pub(crate) fn create_domain<C, ConcreteCircuit, const ZK: bool>(
     k: u32,
 ) -> (
     EvaluationDomain<C::Scalar>,
@@ -38,7 +38,7 @@ where
     let mut cs = ConstraintSystem::default();
     let config = ConcreteCircuit::configure(&mut cs);
 
-    let degree = cs.degree();
+    let degree = cs.degree::<ZK>();
 
     let domain = EvaluationDomain::new(degree as u32, k);
 
@@ -192,7 +192,7 @@ impl<F: Field> Assignment<F> for Assembly<F> {
 }
 
 /// Generate a `VerifyingKey` from an instance of `Circuit`.
-pub fn keygen_vk<'params, C, P, ConcreteCircuit>(
+pub fn keygen_vk<'params, C, P, ConcreteCircuit, const ZK: bool>(
     params: &P,
     circuit: &ConcreteCircuit,
 ) -> Result<VerifyingKey<C>, Error>
@@ -201,9 +201,9 @@ where
     P: Params<'params, C>,
     ConcreteCircuit: Circuit<C::Scalar>,
 {
-    let (domain, cs, config) = create_domain::<C, ConcreteCircuit>(params.k());
+    let (domain, cs, config) = create_domain::<C, ConcreteCircuit, ZK>(params.k());
 
-    if (params.n() as usize) < cs.minimum_rows() {
+    if (params.n() as usize) < cs.minimum_rows::<ZK>() {
         return Err(Error::not_enough_rows_available(params.k()));
     }
 
@@ -212,7 +212,7 @@ where
         fixed: vec![domain.empty_lagrange_assigned(); cs.num_fixed_columns],
         permutation: permutation::keygen::Assembly::new(params.n() as usize, &cs.permutation),
         selectors: vec![vec![false; params.n() as usize]; cs.num_selectors],
-        usable_rows: 0..params.n() as usize - (cs.blinding_factors() + 1),
+        usable_rows: cs.usable_rows::<ZK>(params.n() as usize),
         _marker: std::marker::PhantomData,
     };
 
@@ -225,7 +225,7 @@ where
     )?;
 
     let mut fixed = batch_invert_assigned(assembly.fixed);
-    let (cs, selector_polys) = cs.compress_selectors(assembly.selectors);
+    let (cs, selector_polys) = cs.compress_selectors::<ZK>(assembly.selectors);
     fixed.extend(
         selector_polys
             .into_iter()
@@ -241,7 +241,7 @@ where
         .map(|poly| params.commit_lagrange(poly, Blind::default()).to_affine())
         .collect();
 
-    Ok(VerifyingKey::from_parts(
+    Ok(VerifyingKey::from_parts::<ZK>(
         domain,
         fixed_commitments,
         permutation_vk,
@@ -250,7 +250,7 @@ where
 }
 
 /// Generate a `ProvingKey` from a `VerifyingKey` and an instance of `Circuit`.
-pub fn keygen_pk<'params, C, P, ConcreteCircuit>(
+pub fn keygen_pk<'params, C, P, ConcreteCircuit, const ZK: bool>(
     params: &P,
     vk: VerifyingKey<C>,
     circuit: &ConcreteCircuit,
@@ -265,7 +265,7 @@ where
 
     let cs = cs;
 
-    if (params.n() as usize) < cs.minimum_rows() {
+    if (params.n() as usize) < cs.minimum_rows::<ZK>() {
         return Err(Error::not_enough_rows_available(params.k()));
     }
 
@@ -274,7 +274,7 @@ where
         fixed: vec![vk.domain.empty_lagrange_assigned(); cs.num_fixed_columns],
         permutation: permutation::keygen::Assembly::new(params.n() as usize, &cs.permutation),
         selectors: vec![vec![false; params.n() as usize]; cs.num_selectors],
-        usable_rows: 0..params.n() as usize - (cs.blinding_factors() + 1),
+        usable_rows: cs.usable_rows::<ZK>(params.n() as usize),
         _marker: std::marker::PhantomData,
     };
 
@@ -287,7 +287,7 @@ where
     )?;
 
     let mut fixed = batch_invert_assigned(assembly.fixed);
-    let (cs, selector_polys) = cs.compress_selectors(assembly.selectors);
+    let (cs, selector_polys) = cs.compress_selectors::<ZK>(assembly.selectors);
     fixed.extend(
         selector_polys
             .into_iter()
@@ -318,16 +318,31 @@ where
     // Compute l_blind(X) which evaluates to 1 for each blinding factor row
     // and 0 otherwise over the domain.
     let mut l_blind = vk.domain.empty_lagrange();
-    for evaluation in l_blind[..].iter_mut().rev().take(cs.blinding_factors()) {
+    for evaluation in l_blind[..]
+        .iter_mut()
+        .rev()
+        .take(cs.blinding_factors::<ZK>())
+    {
         *evaluation = C::Scalar::one();
     }
+
     let l_blind = vk.domain.lagrange_to_coeff(l_blind);
     let l_blind = vk.domain.coeff_to_extended(l_blind);
 
+    // ZK:
     // Compute l_last(X) which evaluates to 1 on the first inactive row (just
     // before the blinding factors) and 0 otherwise over the domain
+    //
+    // Non-ZK:
+    // Compute l_last(X) which evaluates to 1 on the last row and 0 otherwise
+    // over the domain
     let mut l_last = vk.domain.empty_lagrange();
-    l_last[params.n() as usize - cs.blinding_factors() - 1] = C::Scalar::one();
+    if ZK {
+        l_last[params.n() as usize - cs.blinding_factors::<ZK>() - 1] = C::Scalar::one();
+    } else {
+        l_last[params.n() as usize - 1] = C::Scalar::one();
+    }
+
     let l_last = vk.domain.lagrange_to_coeff(l_last);
     let l_last = vk.domain.coeff_to_extended(l_last);
 

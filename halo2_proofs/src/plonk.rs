@@ -53,14 +53,14 @@ pub struct VerifyingKey<C: CurveAffine> {
 }
 
 impl<C: CurveAffine> VerifyingKey<C> {
-    fn from_parts(
+    fn from_parts<const ZK: bool>(
         domain: EvaluationDomain<C::Scalar>,
         fixed_commitments: Vec<C>,
         permutation: permutation::VerifyingKey<C>,
         cs: ConstraintSystem<C::Scalar>,
     ) -> Self {
         // Compute cached values.
-        let cs_degree = cs.degree();
+        let cs_degree = cs.degree::<ZK>();
 
         let mut vk = Self {
             domain,

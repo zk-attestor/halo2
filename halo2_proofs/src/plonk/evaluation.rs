@@ -277,7 +277,7 @@ impl<C: CurveAffine> Evaluator<C> {
     }
 
     /// Evaluate h poly
-    pub(in crate::plonk) fn evaluate_h(
+    pub(in crate::plonk) fn evaluate_h<const ZK: bool>(
         &self,
         pk: &ProvingKey<C>,
         advice_polys: &[&[Polynomial<C::ScalarExt, Coeff>]],
@@ -364,9 +364,13 @@ impl<C: CurveAffine> Evaluator<C> {
             // Permutations
             let sets = &permutation.sets;
             if !sets.is_empty() {
-                let blinding_factors = pk.vk.cs.blinding_factors();
+                let blinding_factors = pk.vk.cs.blinding_factors::<ZK>();
                 let last_rotation = Rotation(-((blinding_factors + 1) as i32));
-                let chunk_len = pk.vk.cs.degree() - 2;
+                let chunk_len = if ZK || pk.vk.permutation.commitments().len() >= pk.vk.cs_degree {
+                    pk.vk.cs_degree - 2
+                } else {
+                    pk.vk.cs_degree - 1
+                };
                 let delta_start = beta * &C::Scalar::ZETA;
 
                 let first_set = sets.first().unwrap();
@@ -384,36 +388,49 @@ impl<C: CurveAffine> Evaluator<C> {
                         // l_0(X) * (1 - z_0(X)) = 0
                         *value = *value * y
                             + ((one - first_set.permutation_product_coset[idx]) * l0[idx]);
-                        // Enforce only for the last set.
-                        // l_last(X) * (z_l(X)^2 - z_l(X)) = 0
-                        *value = *value * y
-                            + ((last_set.permutation_product_coset[idx]
-                                * last_set.permutation_product_coset[idx]
-                                - last_set.permutation_product_coset[idx])
-                                * l_last[idx]);
-                        // Except for the first set, enforce.
-                        // l_0(X) * (z_i(X) - z_{i-1}(\omega^(last) X)) = 0
-                        for (set_idx, set) in sets.iter().enumerate() {
-                            if set_idx != 0 {
-                                *value = *value * y
-                                    + ((set.permutation_product_coset[idx]
-                                        - permutation.sets[set_idx - 1].permutation_product_coset
-                                            [r_last])
-                                        * l0[idx]);
+
+                        if ZK {
+                            // Enforce only for the last set.
+                            // l_last(X) * (z_l(X)^2 - z_l(X)) = 0
+                            *value = *value * y
+                                + ((last_set.permutation_product_coset[idx]
+                                    * last_set.permutation_product_coset[idx]
+                                    - last_set.permutation_product_coset[idx])
+                                    * l_last[idx]);
+
+                            // Except for the first set, enforce.
+                            // l_0(X) * (z_i(X) - z_{i-1}(\omega^(last) X)) = 0
+                            for (set_idx, set) in sets.iter().enumerate() {
+                                if set_idx != 0 {
+                                    *value = *value * y
+                                        + ((set.permutation_product_coset[idx]
+                                            - permutation.sets[set_idx - 1]
+                                                .permutation_product_coset[r_last])
+                                            * l0[idx]);
+                                }
                             }
                         }
+
                         // And for all the sets we enforce:
                         // (1 - (l_last(X) + l_blind(X))) * (
                         //   z_i(\omega X) \prod_j (p(X) + \beta s_j(X) + \gamma)
                         // - z_i(X) \prod_j (p(X) + \delta^j \beta X + \gamma)
                         // )
                         let mut current_delta = delta_start * beta_term;
-                        for ((set, columns), cosets) in sets
+                        for (((set, next_set), columns), cosets) in sets
                             .iter()
+                            .zip(sets.iter().cycle().skip(1))
                             .zip(p.columns.chunks(chunk_len))
                             .zip(pk.permutation.cosets.chunks(chunk_len))
                         {
-                            let mut left = set.permutation_product_coset[r_next];
+                            let mut left = if ZK || sets.len() == 1 {
+                                set.permutation_product_coset[r_next]
+                            } else {
+                                set.permutation_product_coset[r_next]
+                                    + l_last[idx]
+                                        * (next_set.permutation_product_coset[r_next]
+                                            - set.permutation_product_coset[r_next])
+                            };
                             for (values, permutation) in columns
                                 .iter()
                                 .map(|&column| match column.column_type() {
@@ -436,7 +453,12 @@ impl<C: CurveAffine> Evaluator<C> {
                                 current_delta *= &C::Scalar::DELTA;
                             }
 
-                            *value = *value * y + ((left - right) * l_active_row[idx]);
+                            *value = *value * y
+                                + if ZK {
+                                    (left - right) * l_active_row[idx]
+                                } else {
+                                    left - right
+                                };
                         }
                         beta_term *= &extended_omega;
                     }
@@ -487,33 +509,49 @@ impl<C: CurveAffine> Evaluator<C> {
                         let a_minus_s = permuted_input_coset[idx] - permuted_table_coset[idx];
                         // l_0(X) * (1 - z(X)) = 0
                         *value = *value * y + ((one - product_coset[idx]) * l0[idx]);
-                        // l_last(X) * (z(X)^2 - z(X)) = 0
-                        *value = *value * y
-                            + ((product_coset[idx] * product_coset[idx] - product_coset[idx])
-                                * l_last[idx]);
+                        if ZK {
+                            // l_last(X) * (z(X)^2 - z(X)) = 0
+                            *value = *value * y
+                                + ((product_coset[idx] * product_coset[idx] - product_coset[idx])
+                                    * l_last[idx]);
+                        }
                         // (1 - (l_last(X) + l_blind(X))) * (
                         //   z(\omega X) (a'(X) + \beta) (s'(X) + \gamma)
                         //   - z(X) (\theta^{m-1} a_0(X) + ... + a_{m-1}(X) + \beta)
                         //          (\theta^{m-1} s_0(X) + ... + s_{m-1}(X) + \gamma)
                         // ) = 0
                         *value = *value * y
-                            + ((product_coset[r_next]
-                                * (permuted_input_coset[idx] + beta)
-                                * (permuted_table_coset[idx] + gamma)
-                                - product_coset[idx] * table_value)
-                                * l_active_row[idx]);
-                        // Check that the first values in the permuted input expression and permuted
-                        // fixed expression are the same.
-                        // l_0(X) * (a'(X) - s'(X)) = 0
-                        *value = *value * y + (a_minus_s * l0[idx]);
+                            + if ZK {
+                                (product_coset[r_next]
+                                    * (permuted_input_coset[idx] + beta)
+                                    * (permuted_table_coset[idx] + gamma)
+                                    - product_coset[idx] * table_value)
+                                    * l_active_row[idx]
+                            } else {
+                                product_coset[r_next]
+                                    * (permuted_input_coset[idx] + beta)
+                                    * (permuted_table_coset[idx] + gamma)
+                                    - product_coset[idx] * table_value
+                            };
+                        if ZK {
+                            // Check that the first values in the permuted input expression and permuted
+                            // fixed expression are the same.
+                            // l_0(X) * (a'(X) - s'(X)) = 0
+                            *value = *value * y + (a_minus_s * l0[idx]);
+                        }
                         // Check that each value in the permuted lookup input expression is either
                         // equal to the value above it, or the value at the same index in the
                         // permuted table expression.
                         // (1 - (l_last + l_blind)) * (a′(X) − s′(X))⋅(a′(X) − a′(\omega^{-1} X)) = 0
                         *value = *value * y
-                            + (a_minus_s
-                                * (permuted_input_coset[idx] - permuted_input_coset[r_prev])
-                                * l_active_row[idx]);
+                            + if ZK {
+                                a_minus_s
+                                    * (permuted_input_coset[idx] - permuted_input_coset[r_prev])
+                                    * l_active_row[idx]
+                            } else {
+                                a_minus_s
+                                    * (permuted_input_coset[idx] - permuted_input_coset[r_prev])
+                            };
                     }
                 });
             }

@@ -947,6 +947,8 @@ mod tests {
     };
     use halo2curves::pasta::pallas;
 
+    const ZK: bool = true;
+
     #[test]
     fn compress() {
         struct MyCircuit {}
@@ -996,7 +998,7 @@ mod tests {
 
         let circuit: MyCircuit = MyCircuit {};
 
-        let prover = match MockProver::<pallas::Base>::run(17, &circuit, vec![]) {
+        let prover = match MockProver::<pallas::Base>::run::<_, ZK>(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:?}", e),
         };

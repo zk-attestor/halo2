@@ -31,6 +31,7 @@ pub fn verify_proof<
     E: EncodedChallenge<Scheme::Curve>,
     T: TranscriptRead<Scheme::Curve, E>,
     Strategy: VerificationStrategy<'params, Scheme, V>,
+    const ZK: bool,
 >(
     params: &'params Scheme::ParamsVerifier,
     vk: &VerifyingKey<Scheme::Curve>,
@@ -52,7 +53,10 @@ pub fn verify_proof<
                 instance
                     .iter()
                     .map(|instance| {
-                        if instance.len() > params.n() as usize - (vk.cs.blinding_factors() + 1) {
+                        if ZK
+                            && instance.len()
+                                > params.n() as usize - (vk.cs.blinding_factors::<ZK>() + 1)
+                        {
                             return Err(Error::InstanceTooLarge);
                         }
                         let mut poly = instance.to_vec();
@@ -142,7 +146,9 @@ pub fn verify_proof<
     let permutations_committed = (0..num_proofs)
         .map(|_| {
             // Hash each permutation product commitment
-            vk.cs.permutation.read_product_commitments(vk, transcript)
+            vk.cs
+                .permutation
+                .read_product_commitments::<_, _, _, ZK>(vk, transcript)
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -157,7 +163,7 @@ pub fn verify_proof<
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let vanishing = vanishing::Argument::read_commitments_before_y(transcript)?;
+    let vanishing = vanishing::Argument::read_commitments_before_y::<_, _, ZK>(transcript)?;
 
     // Sample y challenge, which keeps the gates linearly independent.
     let y: ChallengeY<_> = transcript.squeeze_challenge_scalar();
@@ -220,13 +226,13 @@ pub fn verify_proof<
 
     let fixed_evals = read_n_scalars(transcript, vk.cs.fixed_queries.len())?;
 
-    let vanishing = vanishing.evaluate_after_x(transcript)?;
+    let vanishing = vanishing.evaluate_after_x::<_, _, ZK>(transcript)?;
 
     let permutations_common = vk.permutation.evaluate(transcript)?;
 
     let permutations_evaluated = permutations_committed
         .into_iter()
-        .map(|permutation| permutation.evaluate(transcript))
+        .map(|permutation| permutation.evaluate::<_, _, ZK>(transcript))
         .collect::<Result<Vec<_>, _>>()?;
 
     let lookups_evaluated = lookups_committed
@@ -245,7 +251,7 @@ pub fn verify_proof<
         // x^n
         let xn = x.pow(&[params.n() as u64, 0, 0, 0]);
 
-        let blinding_factors = vk.cs.blinding_factors();
+        let blinding_factors = vk.cs.blinding_factors::<ZK>();
         let l_evals = vk
             .domain
             .l_i_range(*x, xn, (-((blinding_factors + 1) as i32))..=0);
@@ -283,7 +289,7 @@ pub fn verify_proof<
                             )
                         })
                     }))
-                    .chain(permutation.expressions(
+                    .chain(permutation.expressions::<ZK>(
                         vk,
                         &vk.cs.permutation,
                         &permutations_common,
@@ -302,7 +308,7 @@ pub fn verify_proof<
                             .iter()
                             .zip(vk.cs.lookups.iter())
                             .flat_map(move |(p, argument)| {
-                                p.expressions(
+                                p.expressions::<ZK>(
                                     l_0,
                                     l_last,
                                     l_blind,
@@ -362,7 +368,7 @@ pub fn verify_proof<
                             )
                         },
                     ))
-                    .chain(permutation.queries(vk, x))
+                    .chain(permutation.queries::<_, ZK>(vk, x))
                     .chain(
                         lookups
                             .iter()
@@ -385,7 +391,7 @@ pub fn verify_proof<
                 }),
         )
         .chain(permutations_common.queries(&vk.permutation, x))
-        .chain(vanishing.queries(x));
+        .chain(vanishing.queries::<ZK>(x));
 
     // We are now convinced the circuit is satisfied so long as the
     // polynomial commitments open to the correct values.

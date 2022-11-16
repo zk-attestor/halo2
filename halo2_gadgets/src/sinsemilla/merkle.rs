@@ -357,6 +357,8 @@ pub mod tests {
 
     #[test]
     fn merkle_chip() {
+        const ZK: bool = true;
+
         let mut rng = OsRng;
 
         // Choose a random leaf and position
@@ -376,7 +378,7 @@ pub mod tests {
             merkle_path: Value::known(path.try_into().unwrap()),
         };
 
-        let prover = MockProver::run(11, &circuit, vec![]).unwrap();
+        let prover = MockProver::run::<_, ZK>(11, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()))
     }
 
@@ -385,6 +387,8 @@ pub mod tests {
     fn print_merkle_chip() {
         use plotters::prelude::*;
 
+        const ZK: bool = true;
+
         let root = BitMapBackend::new("merkle-path-layout.png", (1024, 7680)).into_drawing_area();
         root.fill(&WHITE).unwrap();
         let root = root.titled("MerkleCRH Path", ("sans-serif", 60)).unwrap();
@@ -392,7 +396,7 @@ pub mod tests {
         let circuit = MyCircuit::default();
         halo2_proofs::dev::CircuitLayout::default()
             .show_labels(false)
-            .render(11, &circuit, &root)
+            .render::<_, _, _, ZK>(11, &circuit, &root)
             .unwrap();
     }
 }

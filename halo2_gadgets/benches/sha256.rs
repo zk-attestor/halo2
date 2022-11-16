@@ -29,6 +29,8 @@ use halo2_proofs::{
     transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
 
+const ZK: bool = true;
+
 #[allow(dead_code)]
 fn bench(name: &str, k: u32, c: &mut Criterion) {
     #[derive(Default)]
@@ -106,8 +108,9 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
     let empty_circuit: MyCircuit = MyCircuit {};
 
     // Initialize the proving key
-    let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
-    let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
+    let vk = keygen_vk::<_, _, _, ZK>(&params, &empty_circuit).expect("keygen_vk should not fail");
+    let pk =
+        keygen_pk::<_, _, _, ZK>(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
 
     let circuit: MyCircuit = MyCircuit {};
 
@@ -128,7 +131,7 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
     let proof_path = Path::new("./benches/sha256_assets/sha256_proof");
     if File::open(&proof_path).is_err() {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof::<IPACommitmentScheme<_>, ProverIPA<_>, _, _, _, _>(
+        create_proof::<IPACommitmentScheme<_>, ProverIPA<_>, _, _, _, _, ZK>(
             &params,
             &pk,
             &[circuit],
@@ -153,7 +156,7 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
             use halo2_proofs::poly::VerificationStrategy;
             let strategy = AccumulatorStrategy::new(&params);
             let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-            let strategy = verify_proof::<IPACommitmentScheme<_>, VerifierIPA<_>, _, _, _>(
+            let strategy = verify_proof::<IPACommitmentScheme<_>, VerifierIPA<_>, _, _, _, ZK>(
                 &params,
                 pk.get_vk(),
                 strategy,
