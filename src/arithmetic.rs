@@ -4,6 +4,8 @@
 //! This module is temporary, and the extension traits defined here are expected to be
 //! upstreamed into the `ff` and `group` crates after some refactoring.
 
+use std::hash::Hash;
+
 use subtle::{Choice, ConditionallySelectable, CtOption};
 
 pub trait CurveAffineExt: pasta_curves::arithmetic::CurveAffine {
@@ -15,6 +17,29 @@ pub trait CurveAffineExt: pasta_curves::arithmetic::CurveAffine {
         bases: &[Self],
         base_positions: &[u32],
     );
+}
+
+pub trait BigPrimeField: pasta_curves::arithmetic::FieldExt + From<u128> + Hash {
+    fn from_u64_digits(val: Vec<u64>) -> Self;
+
+    /// Returns the base 2^32 little endian representation of the prime field element
+    ///
+    /// Basically same as `to_repr` but does not go further into bytes
+    fn to_u32_digits(&self) -> Vec<u32>;
+
+    /// Returns the base `2^bit_len` little endian representation of the prime field element
+    /// up to `num_limbs` number of limbs (truncates any extra limbs)
+    ///
+    /// Basically same as `to_repr` but does not go further into bytes
+    fn to_u64_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u64>;
+
+    /// Returns the base `2^bit_len` little endian representation of the prime field element
+    /// up to `num_limbs` number of limbs (truncates any extra limbs)
+    ///
+    /// Basically same as `to_repr` but does not go further into bytes
+    fn to_u128_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u128>;
+
+    fn to_i128(&self) -> i128;
 }
 
 pub(crate) fn sqrt_tonelli_shanks<F: ff::PrimeField, S: AsRef<[u64]>>(
@@ -113,4 +138,65 @@ pub(crate) fn mul_512(a: [u64; 4], b: [u64; 4]) -> [u64; 8] {
     let (r6, carry_out) = mac(carry_out, a[3], b[3], carry);
 
     [r0, r1, r2, r3, r4, r5, r6, carry_out]
+}
+
+pub(crate) fn decompose_u64_digits_to_limbs(
+    e: impl IntoIterator<Item = u64>,
+    number_of_limbs: usize,
+    bit_len: usize,
+) -> Vec<u64> {
+    let mut e = e.into_iter();
+    let mut limbs = Vec::with_capacity(number_of_limbs);
+    let mask: u64 = (1u64 << bit_len) - 1u64;
+    let mut u64_digit = e.next().unwrap();
+    let mut rem = 64;
+    while limbs.len() < number_of_limbs {
+        if rem == 0 {
+            u64_digit = e.next().unwrap_or(0);
+            rem = 64;
+        }
+        if rem >= bit_len {
+            limbs.push(u64_digit & mask);
+            u64_digit >>= bit_len;
+            rem -= bit_len;
+        } else {
+            let mut limb = u64_digit;
+            u64_digit = e.next().unwrap_or(0);
+            limb |= (u64_digit & ((1 << (bit_len - rem)) - 1)) << rem;
+            limbs.push(limb);
+            u64_digit >>= bit_len - rem;
+            rem += 64 - bit_len;
+        }
+    }
+    limbs
+}
+
+pub(crate) fn u64_digits_to_u128_limbs(
+    e: impl IntoIterator<Item = u64>,
+    num_limbs: usize,
+    bit_len: usize,
+) -> Vec<u128> {
+    assert!(bit_len > 64 && bit_len <= 128);
+
+    let mut e = e.into_iter();
+    let mut u64_digit = e.next().unwrap_or(0);
+    let mut rem = 64;
+
+    (0..num_limbs)
+        .map(|_| {
+            let mut limb: u128 = u64_digit.into();
+            let mut bits = rem;
+            u64_digit = e.next().unwrap_or(0);
+            if bit_len - bits >= 64 {
+                limb |= (u64_digit as u128) << bits;
+                u64_digit = e.next().unwrap_or(0);
+                bits += 64;
+            }
+            rem = bit_len - bits;
+            limb |= ((u64_digit & ((1 << rem) - 1)) as u128) << bits;
+            u64_digit >>= rem;
+            rem = 64 - rem;
+            limb
+        })
+        .collect()
 }

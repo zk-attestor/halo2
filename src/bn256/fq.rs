@@ -2,7 +2,9 @@
 use super::assembly::assembly_field;
 
 use super::LegendreSymbol;
-use crate::arithmetic::{adc, mac, sbb};
+use crate::arithmetic::{
+    adc, decompose_u64_digits_to_limbs, mac, sbb, u64_digits_to_u128_limbs, BigPrimeField,
+};
 use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 
 use core::convert::TryInto;
@@ -258,63 +260,6 @@ impl ff::PrimeField for Fq {
         res
     }
 
-    fn from_u64_digits(mut val: Vec<u64>) -> Self {
-        assert!(val.len() <= 4);
-        val.extend((0..4 - val.len()).map(|_| 0u64));
-        let val: [u64; 4] = val.try_into().unwrap();
-        Self::from_raw(val)
-    }
-
-    fn to_u32_digits(&self) -> Vec<u32> {
-        // Turn into canonical form by computing
-        // (a.R) / R = a
-        #[cfg(feature = "asm")]
-        let tmp =
-            Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
-
-        #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
-
-        tmp.0
-            .iter()
-            .flat_map(|digit| [(digit & (u32::MAX as u64)) as u32, (digit >> 32) as u32])
-            .collect()
-    }
-
-    fn to_u128_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u128> {
-        assert!(bit_len > 64 && bit_len <= 128);
-        // Turn into canonical form by computing
-        // (a.R) / R = a
-        #[cfg(feature = "asm")]
-        let tmp =
-            Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
-
-        #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
-
-        let mut e = IntoIterator::into_iter(tmp.0);
-        let mut limbs = Vec::with_capacity(num_limbs);
-        let mut u64_digit = e.next().unwrap();
-        let mut rem = 64;
-
-        while limbs.len() != num_limbs {
-            let mut limb: u128 = u64_digit.into();
-            let mut bits = rem;
-            u64_digit = e.next().unwrap_or(0);
-            if bit_len - bits >= 64 {
-                limb |= (u64_digit as u128) << bits;
-                u64_digit = e.next().unwrap_or(0);
-                bits += 64;
-            }
-            rem = bit_len - bits;
-            limb |= ((u64_digit & ((1 << rem) - 1)) as u128) << bits;
-            u64_digit >>= rem;
-            rem = 64 - rem;
-            limbs.push(limb);
-        }
-        limbs
-    }
-
     fn is_odd(&self) -> Choice {
         Choice::from(self.to_repr()[0] & 1)
     }
@@ -339,6 +284,79 @@ impl SqrtRatio for Fq {
         let tmp = Fq::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         tmp.0[0] as u32
+    }
+}
+
+impl BigPrimeField for Fq {
+    fn from_u64_digits(mut val: Vec<u64>) -> Self {
+        assert!(val.len() <= 4);
+        val.extend(std::iter::repeat(0u64).take(4 - val.len()));
+        let val: [u64; 4] = val.try_into().unwrap();
+        Self::from_raw(val)
+    }
+
+    fn to_u32_digits(&self) -> Vec<u32> {
+        // Turn into canonical form by computing
+        // (a.R) / R = a
+        #[cfg(feature = "asm")]
+        let tmp =
+            Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
+
+        #[cfg(not(feature = "asm"))]
+        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        tmp.0
+            .iter()
+            .flat_map(|digit| [(digit & (u32::MAX as u64)) as u32, (digit >> 32) as u32])
+            .collect()
+    }
+
+    fn to_u64_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u64> {
+        // Turn into canonical form by computing
+        // (a.R) / R = a
+        #[cfg(feature = "asm")]
+        let tmp =
+            Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
+
+        #[cfg(not(feature = "asm"))]
+        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        decompose_u64_digits_to_limbs(tmp.0, num_limbs, bit_len)
+    }
+
+    fn to_u128_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u128> {
+        assert!(bit_len > 64 && bit_len <= 128);
+        // Turn into canonical form by computing
+        // (a.R) / R = a
+        #[cfg(feature = "asm")]
+        let tmp =
+            Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
+
+        #[cfg(not(feature = "asm"))]
+        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        u64_digits_to_u128_limbs(tmp.0, num_limbs, bit_len)
+    }
+
+    fn to_i128(&self) -> i128 {
+        // Turn into canonical form by computing
+        // (a.R) / R = a
+        #[cfg(feature = "asm")]
+        let tmp =
+            Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
+
+        #[cfg(not(feature = "asm"))]
+        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        if tmp.0[2] == 0 && tmp.0[3] == 0 {
+            i128::from(tmp.0[0]) | (i128::from(tmp.0[1]) << 64)
+        } else {
+            // modulus - tmp
+            let (a0, borrow) = sbb(MODULUS.0[0], tmp.0[0], 0);
+            let (a1, _) = sbb(MODULUS.0[1], tmp.0[1], borrow);
+
+            -(i128::from(a0) | (i128::from(a1) << 64))
+        }
     }
 }
 
