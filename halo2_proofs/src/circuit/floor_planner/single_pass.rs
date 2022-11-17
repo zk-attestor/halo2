@@ -1,9 +1,9 @@
 use std::cmp;
-use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 
 use ff::Field;
+use rustc_hash::FxHashMap;
 
 use crate::{
     circuit::{
@@ -40,10 +40,11 @@ impl FloorPlanner for SimpleFloorPlanner {
 pub struct SingleChipLayouter<'a, F: Field, CS: Assignment<F> + 'a> {
     cs: &'a mut CS,
     constants: Vec<Column<Fixed>>,
-    /// Stores the starting row for each region.
-    regions: Vec<RegionStart>,
+    // Stores the starting row for each region.
+    // Edit: modify to just one region with RegionStart(0)
+    // regions: Vec<RegionStart>,
     /// Stores the first empty row for each column.
-    columns: HashMap<RegionColumn, usize>,
+    columns: FxHashMap<RegionColumn, usize>,
     /// Stores the table fixed columns.
     table_columns: Vec<TableColumn>,
     _marker: PhantomData<F>,
@@ -52,7 +53,7 @@ pub struct SingleChipLayouter<'a, F: Field, CS: Assignment<F> + 'a> {
 impl<'a, F: Field, CS: Assignment<F> + 'a> fmt::Debug for SingleChipLayouter<'a, F, CS> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SingleChipLayouter")
-            .field("regions", &self.regions)
+            //.field("regions", &self.regions)
             .field("columns", &self.columns)
             .finish()
     }
@@ -64,8 +65,8 @@ impl<'a, F: Field, CS: Assignment<F>> SingleChipLayouter<'a, F, CS> {
         let ret = SingleChipLayouter {
             cs,
             constants,
-            regions: vec![],
-            columns: HashMap::default(),
+            // regions: vec![],
+            columns: FxHashMap::default(),
             table_columns: vec![],
             _marker: PhantomData,
         };
@@ -82,24 +83,24 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
         N: Fn() -> NR,
         NR: Into<String>,
     {
+        /*
         let region_index = self.regions.len();
 
         // Get shape of the region.
-        /*let mut shape = RegionShape::new(region_index.into());
+        let mut shape = RegionShape::new(region_index.into());
         {
             let region: &mut dyn RegionLayouter<F> = &mut shape;
             assignment(region.into())?;
-        }*/
+        }
 
         // Lay out this region. We implement the simplest approach here: position the
         // region starting at the earliest row for which none of the columns are in use.
-        let mut region_start = 0;
-        /*for column in &shape.columns {
+        let region_start = 0;
+        for column in &shape.columns {
             region_start = cmp::max(region_start, self.columns.get(column).cloned().unwrap_or(0));
-        }*/
-        self.regions.push(region_start.into());
+        }
+        // self.regions.push(region_start.into());
 
-        /*
         // Update column usage information.
         for column in shape.columns {
             self.columns.insert(column, region_start + shape.row_count);
@@ -107,7 +108,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
 
         // Assign region cells.
         self.cs.enter_region(name);
-        let mut region = SingleChipLayouterRegion::new(self, region_index.into());
+        let mut region = SingleChipLayouterRegion::new(self, 0.into()); //region_index.into());
         let result = {
             let region: &mut dyn RegionLayouter<F> = &mut region;
             assignment(region.into())
@@ -138,7 +139,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
                     constants_column.into(),
                     *next_constant_row,
                     advice.column,
-                    *self.regions[*advice.region_index] + advice.row_offset,
+                    advice.row_offset, // *self.regions[*advice.region_index] + advice.row_offset,
                 )?;
                 *next_constant_row += 1;
             }
@@ -209,7 +210,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
     ) -> Result<(), Error> {
         self.cs.copy(
             cell.column,
-            *self.regions[*cell.region_index] + cell.row_offset,
+            cell.row_offset, // *self.regions[*cell.region_index] + cell.row_offset,
             instance.into(),
             row,
         )
@@ -274,9 +275,8 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         offset: usize,
     ) -> Result<(), Error> {
         self.layouter.cs.enable_selector(
-            annotation,
-            selector,
-            *self.layouter.regions[*self.region_index] + offset,
+            annotation, selector,
+            offset, // *self.layouter.regions[*self.region_index] + offset,
         )
     }
 
@@ -289,15 +289,14 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
     ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error> {
         let value = self.layouter.cs.assign_advice(
             // annotation,
-            column,
-            *self.layouter.regions[*self.region_index] + offset,
+            column, offset, //*self.layouter.regions[*self.region_index] + offset,
             to,
         )?;
 
         Ok(AssignedCell {
             value,
             cell: Cell {
-                region_index: self.region_index,
+                // region_index: self.region_index,
                 row_offset: offset,
                 column: column.into(),
             },
@@ -307,7 +306,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
 
     fn assign_advice_from_constant<'v>(
         &'v mut self,
-        annotation: &'v (dyn Fn() -> String + 'v),
+        _annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,
         constant: Assigned<F>,
@@ -322,7 +321,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
 
     fn assign_advice_from_instance<'v>(
         &mut self,
-        annotation: &'v (dyn Fn() -> String + 'v),
+        _annotation: &'v (dyn Fn() -> String + 'v),
         instance: Column<Instance>,
         row: usize,
         advice: Column<Advice>,
@@ -336,7 +335,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
 
         self.layouter.cs.copy(
             cell.column,
-            *self.layouter.regions[*cell.region_index] + cell.row_offset,
+            cell.row_offset, // *self.layouter.regions[*cell.region_index] + cell.row_offset,
             instance.into(),
             row,
         )?;
@@ -352,14 +351,13 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         to: &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
     ) -> Result<Cell, Error> {
         self.layouter.cs.assign_fixed(
-            annotation,
-            column,
-            *self.layouter.regions[*self.region_index] + offset,
+            annotation, column,
+            offset, // *self.layouter.regions[*self.region_index] + offset,
             to,
         )?;
 
         Ok(Cell {
-            region_index: self.region_index,
+            // region_index: self.region_index,
             row_offset: offset,
             column: column.into(),
         })
@@ -373,9 +371,9 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
     fn constrain_equal(&mut self, left: Cell, right: Cell) -> Result<(), Error> {
         self.layouter.cs.copy(
             left.column,
-            *self.layouter.regions[*left.region_index] + left.row_offset,
+            left.row_offset, // *self.layouter.regions[*left.region_index] + left.row_offset,
             right.column,
-            *self.layouter.regions[*right.region_index] + right.row_offset,
+            right.row_offset, // *self.layouter.regions[*right.region_index] + right.row_offset,
         )?;
 
         Ok(())
@@ -395,7 +393,7 @@ pub(crate) struct SimpleTableLayouter<'r, 'a, F: Field, CS: Assignment<F> + 'a> 
     cs: &'a mut CS,
     used_columns: &'r [TableColumn],
     // maps from a fixed column to a pair (default value, vector saying which rows are assigned)
-    pub(crate) default_and_assigned: HashMap<TableColumn, (DefaultTableValue<F>, Vec<bool>)>,
+    pub(crate) default_and_assigned: FxHashMap<TableColumn, (DefaultTableValue<F>, Vec<bool>)>,
 }
 
 impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> fmt::Debug for SimpleTableLayouter<'r, 'a, F, CS> {
@@ -412,7 +410,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> SimpleTableLayouter<'r, 'a, F, CS
         SimpleTableLayouter {
             cs,
             used_columns,
-            default_and_assigned: HashMap::default(),
+            default_and_assigned: FxHashMap::default(),
         }
     }
 }

@@ -336,7 +336,7 @@ fn decompose_u64_digits_to_limbs(
     let mut rem = 64;
     while limbs.len() < number_of_limbs {
         if rem == 0 {
-            u64_digit = e.next().expect("not enough limbs");
+            u64_digit = e.next().unwrap_or_else(|| 0);
             rem = 64;
         }
         if rem >= bit_len {
@@ -345,7 +345,7 @@ fn decompose_u64_digits_to_limbs(
             rem -= bit_len;
         } else {
             let mut limb = u64_digit;
-            u64_digit = e.next().expect("not enough limbs");
+            u64_digit = e.next().unwrap_or_else(|| 0);
             limb |= (u64_digit & ((1 << (bit_len - rem)) - 1)) << rem;
             limbs.push(limb);
             u64_digit >>= bit_len - rem;

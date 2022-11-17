@@ -125,6 +125,7 @@ pub trait TableLayouter<F: Field>: fmt::Debug {
 /// The shape of a region. For a region at a certain index, we track
 /// the set of columns it uses as well as the number of rows it uses.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct RegionShape {
     pub(super) region_index: RegionIndex,
     pub(super) columns: HashSet<RegionColumn>,
