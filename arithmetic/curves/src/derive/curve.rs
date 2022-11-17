@@ -36,10 +36,13 @@ macro_rules! batch_add {
                 #[cfg(all(feature = "prefetch", target_arch = "x86_64"))]
                 if i < num_points - 2 {
                     if LOAD_POINTS {
-                        crate::prefetch::<Self>(bases, base_positions[i + 2] as usize);
-                        crate::prefetch::<Self>(bases, base_positions[i + 3] as usize);
+                        $crate::prefetch::<Self>(bases, base_positions[i + 2] as usize);
+                        $crate::prefetch::<Self>(bases, base_positions[i + 3] as usize);
                     }
-                    crate::prefetch::<Self>(points, output_indices[(i >> 1) + 1] as usize - offset);
+                    $crate::prefetch::<Self>(
+                        points,
+                        output_indices[(i >> 1) + 1] as usize - offset,
+                    );
                 }
                 if LOAD_POINTS {
                     points[i] = get_point(base_positions[i]);
@@ -208,7 +211,7 @@ macro_rules! new_curve_impl {
                         };
 
 
-                        use crate::group::cofactor::CofactorGroup;
+                        use $crate::group::cofactor::CofactorGroup;
                         let p = p.to_curve();
                         return p.clear_cofactor().to_affine()
                     }

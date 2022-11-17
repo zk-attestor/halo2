@@ -2,11 +2,7 @@
 members = [
     "halo2",
     "halo2_proofs",
-    "arithmetic/ff",
-    "arithmetic/group",
     "arithmetic/curves",
-    "arithmetic/pasta_curves",
-    "primitives/poseidon"
 ]
 
 [profile.bench]

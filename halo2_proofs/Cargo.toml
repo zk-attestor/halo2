@@ -46,8 +46,8 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 [dependencies]
 backtrace = { version = "0.3", optional = true }
 rayon = "1.5.1"
-ff = { path = "../arithmetic/ff" }
-group = { path = "../arithmetic/group" }
+ff = "0.12"
+group = "0.12"
 halo2curves = { path = "../arithmetic/curves", package = "curves" }
 rand_core = { version = "0.6", default-features = false }
 tracing = "0.1"

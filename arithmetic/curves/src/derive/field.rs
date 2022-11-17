@@ -116,6 +116,12 @@ macro_rules! field_common {
             }
         }
 
+        impl From<u128> for $field {
+            fn from(v: u128) -> $field {
+                $field::from_raw([v as u64, (v >> 64) as u64, 0, 0])
+            }
+        }
+
         impl ConstantTimeEq for $field {
             fn ct_eq(&self, other: &Self) -> Choice {
                 self.0[0].ct_eq(&other.0[0])
