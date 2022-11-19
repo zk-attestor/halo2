@@ -48,7 +48,7 @@ backtrace = { version = "0.3", optional = true }
 rayon = "1.5.1"
 ff = "0.12"
 group = "0.12"
-halo2curves = { path = "../arithmetic/curves", package = "curves" }
+halo2curves = { path = "../arithmetic/curves" }
 rand_core = { version = "0.6", default-features = false }
 tracing = "0.1"
 blake2b_simd = "1"
