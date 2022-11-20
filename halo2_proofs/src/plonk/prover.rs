@@ -201,15 +201,31 @@ pub fn create_proof<
                 return Err(Error::not_enough_rows_available(self.k));
             }
 
-            let advice_get_mut = self
-                .advice
+            self.advice
                 .get_mut(column.index())
                 .and_then(|v| v.get_mut(row))
-                .ok_or(Error::BoundsFailure)?;
-            *advice_get_mut = to.assign()?;
+                .map(|advice_get_mut| {
+                    to.assign().map(|to| {
+                        *advice_get_mut = to;
+                        let immutable_raw_ptr = advice_get_mut as *const Assigned<F>;
+                        Value::known(unsafe { &*immutable_raw_ptr })
+                    })
+                })
+                .unwrap_or(Err(Error::BoundsFailure))
 
+            // We can get another 3-4% decrease in witness gen time by using the following unsafe code, but this skips all array bound checks so we should use it only if the performance gain is really necessary:
+            /*
+            let advice_get_mut = unsafe {
+                self.advice
+                    .get_unchecked_mut(column.index())
+                    .get_unchecked_mut(row)
+            };
+            *advice_get_mut = to
+                .assign()
+                .expect("No Value::unknown() in advice column allowed during create_proof");
             let immutable_raw_ptr = advice_get_mut as *const Assigned<F>;
             Ok(Value::known(unsafe { &*immutable_raw_ptr }))
+            */
         }
 
         fn assign_fixed<V, VR, A, AR>(
