@@ -152,34 +152,26 @@ impl<F: Field> AssignedCell<Assigned<F>, F> {
     }
 }
 
-/*
-impl<V: Clone, F: Field> AssignedCell<V, F>
-where
-    for<'v> Assigned<F>: From<&'v V>,
-{
+impl<'v, F: Field> AssignedCell<&'v Assigned<F>, F> {
     /// Copies the value to a given advice cell and constrains them to be equal.
     ///
     /// Returns an error if either this cell or the given cell are in columns
     /// where equality has not been enabled.
-    pub fn copy_advice<A, AR>(
+    pub fn copy_advice(
         &self,
-        annotation: A,
         region: &mut Region<'_, F>,
         column: Column<Advice>,
         offset: usize,
-    ) -> Result<Self, Error>
-    where
-        A: Fn() -> AR,
-        AR: Into<String>,
-    {
-        let assigned_cell =
-            region.assign_advice(annotation, column, offset, || self.value.clone())?;
-        region.constrain_equal(assigned_cell.cell(), self.cell())?;
-
-        Ok(assigned_cell)
+    ) -> Result<AssignedCell<&'_ Assigned<F>, F>, Error> {
+        region
+            .assign_advice(column, offset, self.value.map(|v| *v))
+            .and_then(|assigned_cell| {
+                region
+                    .constrain_equal(assigned_cell.cell(), self.cell())
+                    .map(|_| assigned_cell)
+            })
     }
 }
-*/
 
 /// A region of the circuit in which a [`Chip`] can assign cells.
 ///
