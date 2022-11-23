@@ -17,6 +17,9 @@ pub trait CurveAffineExt: pasta_curves::arithmetic::CurveAffine {
         bases: &[Self],
         base_positions: &[u32],
     );
+
+    /// Unlike the `Coordinates` trait, this just returns the raw affine coordinantes without checking `is_on_curve`
+    fn into_coordinates(self) -> (Self::Base, Self::Base);
 }
 
 pub trait BigPrimeField: pasta_curves::arithmetic::FieldExt + From<u128> + Hash {

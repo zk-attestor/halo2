@@ -69,6 +69,10 @@ new_curve_impl!(
 
 impl CurveAffineExt for Secp256k1Affine {
     batch_add!();
+
+    fn into_coordinates(self) -> (Self::Base, Self::Base) {
+        (self.x, self.y)
+    }
 }
 
 #[test]

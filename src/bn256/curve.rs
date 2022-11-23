@@ -46,10 +46,18 @@ new_curve_impl!(
 
 impl CurveAffineExt for G1Affine {
     batch_add!();
+
+    fn into_coordinates(self) -> (Self::Base, Self::Base) {
+        (self.x, self.y)
+    }
 }
 
 impl CurveAffineExt for G2Affine {
     batch_add!();
+
+    fn into_coordinates(self) -> (Self::Base, Self::Base) {
+        (self.x, self.y)
+    }
 }
 
 const G1_GENERATOR_X: Fq = Fq::one();
