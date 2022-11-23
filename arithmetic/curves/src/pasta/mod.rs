@@ -1,3 +1,6 @@
+use std::mem::uninitialized;
+
+use pasta_curves::arithmetic::CurveAffine;
 pub use pasta_curves::{pallas, vesta, Ep, EpAffine, Eq, EqAffine, Fp, Fq};
 
 impl crate::CurveAffineExt for EpAffine {
@@ -11,6 +14,9 @@ impl crate::CurveAffineExt for EpAffine {
     ) {
         unimplemented!();
     }
+    fn into_coordinates(self) -> (Self::Base, Self::Base) {
+        unimplemented!()
+    }
 }
 
 impl crate::CurveAffineExt for EqAffine {
@@ -23,5 +29,8 @@ impl crate::CurveAffineExt for EqAffine {
         _: &[u32],
     ) {
         unimplemented!();
+    }
+    fn into_coordinates(self) -> (Self::Base, Self::Base) {
+        unimplemented!()
     }
 }
