@@ -126,6 +126,14 @@ impl<V, F: Field> AssignedCell<V, F> {
     pub fn cell(&self) -> Cell {
         self.cell
     }
+
+    pub fn row_offset(&self) -> usize {
+        self.cell.row_offset
+    }
+
+    pub fn column(&self) -> &Column<Any> {
+        &self.cell.column
+    }
 }
 
 impl<V, F: Field> AssignedCell<V, F>
