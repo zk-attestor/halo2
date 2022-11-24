@@ -130,17 +130,17 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
                 .or_default();
             for (constant, advice) in constants_to_assign {
                 self.cs.assign_fixed(
-                    || format!("Constant({:?})", constant.evaluate()),
+                    //|| format!("Constant({:?})", constant.evaluate()),
                     constants_column,
                     *next_constant_row,
-                    || Value::known(constant),
-                )?;
+                    constant,
+                );
                 self.cs.copy(
                     constants_column.into(),
                     *next_constant_row,
                     advice.column,
                     advice.row_offset, // *self.regions[*advice.region_index] + advice.row_offset,
-                )?;
+                );
                 *next_constant_row += 1;
             }
         }
@@ -202,18 +202,13 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
         Ok(())
     }
 
-    fn constrain_instance(
-        &mut self,
-        cell: Cell,
-        instance: Column<Instance>,
-        row: usize,
-    ) -> Result<(), Error> {
+    fn constrain_instance(&mut self, cell: Cell, instance: Column<Instance>, row: usize) {
         self.cs.copy(
             cell.column,
             cell.row_offset, // *self.regions[*cell.region_index] + cell.row_offset,
             instance.into(),
             row,
-        )
+        );
     }
 
     fn get_challenge(&self, challenge: Challenge) -> Value<F> {
@@ -338,29 +333,28 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
             cell.row_offset, // *self.layouter.regions[*cell.region_index] + cell.row_offset,
             instance.into(),
             row,
-        )?;
+        );
 
         Ok((cell, value))
     }
 
-    fn assign_fixed<'v>(
-        &'v mut self,
-        annotation: &'v (dyn Fn() -> String + 'v),
+    fn assign_fixed(
+        &mut self,
+        // annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Fixed>,
         offset: usize,
-        to: &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<Cell, Error> {
+        to: Assigned<F>,
+    ) -> Cell {
         self.layouter.cs.assign_fixed(
-            annotation, column,
-            offset, // *self.layouter.regions[*self.region_index] + offset,
+            column, offset, // *self.layouter.regions[*self.region_index] + offset,
             to,
-        )?;
+        );
 
-        Ok(Cell {
+        Cell {
             // region_index: self.region_index,
             row_offset: offset,
             column: column.into(),
-        })
+        }
     }
 
     fn constrain_constant(&mut self, cell: Cell, constant: Assigned<F>) -> Result<(), Error> {
@@ -368,15 +362,13 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         Ok(())
     }
 
-    fn constrain_equal(&mut self, left: Cell, right: Cell) -> Result<(), Error> {
+    fn constrain_equal(&mut self, left: &Cell, right: &Cell) {
         self.layouter.cs.copy(
             left.column,
             left.row_offset, // *self.layouter.regions[*left.region_index] + left.row_offset,
             right.column,
             right.row_offset, // *self.layouter.regions[*right.region_index] + right.row_offset,
-        )?;
-
-        Ok(())
+        );
     }
 }
 
@@ -433,15 +425,15 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> TableLayouter<F>
 
         let mut value = Value::unknown();
         self.cs.assign_fixed(
-            annotation,
+            // annotation,
             column.inner(),
             offset, // tables are always assigned starting at row 0
-            || {
+            {
                 let res = to();
                 value = res;
-                res
+                res.assign()?
             },
-        )?;
+        );
 
         match (entry.0.is_none(), offset) {
             // Use the value at offset 0 as the default value for this table column.

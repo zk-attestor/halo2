@@ -85,13 +85,13 @@ pub trait RegionLayouter<F: Field>: fmt::Debug {
     ) -> Result<(Cell, Value<F>), Error>;
 
     /// Assign a fixed value
-    fn assign_fixed<'v>(
-        &'v mut self,
-        annotation: &'v (dyn Fn() -> String + 'v),
+    fn assign_fixed(
+        &mut self,
+        // annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Fixed>,
         offset: usize,
-        to: &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<Cell, Error>;
+        to: Assigned<F>,
+    ) -> Cell;
 
     /// Constrains a cell to have a constant value.
     ///
@@ -101,7 +101,7 @@ pub trait RegionLayouter<F: Field>: fmt::Debug {
     /// Constraint two cells to have the same value.
     ///
     /// Returns an error if either of the cells is not within the given permutation.
-    fn constrain_equal(&mut self, left: Cell, right: Cell) -> Result<(), Error>;
+    fn constrain_equal(&mut self, left: &Cell, right: &Cell);
 }
 
 /// Helper trait for implementing a custom [`Layouter`].

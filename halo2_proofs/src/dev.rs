@@ -411,21 +411,9 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
         Ok(circuit::Value::known(unsafe { &*val_ref.as_ptr() }))
     }
 
-    fn assign_fixed<V, VR, A, AR>(
-        &mut self,
-        _: A,
-        column: Column<Fixed>,
-        row: usize,
-        to: V,
-    ) -> Result<(), Error>
-    where
-        V: FnOnce() -> circuit::Value<VR>,
-        VR: Into<Assigned<F>>,
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-    {
+    fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>) {
         if !self.usable_rows.contains(&row) {
-            return Err(Error::not_enough_rows_available(self.k));
+            panic!("{:?}", Error::not_enough_rows_available(self.k));
         }
 
         if let Some(region) = self.current_region.as_mut() {
@@ -441,10 +429,8 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
             .fixed
             .get_mut(column.index())
             .and_then(|v| v.get_mut(row))
-            .ok_or(Error::BoundsFailure)? =
-            CellValue::Assigned(to().into_field().evaluate().assign()?);
-
-        Ok(())
+            .unwrap_or_else(|| panic!("{:?}", Error::BoundsFailure)) =
+            CellValue::Assigned(to.evaluate());
     }
 
     fn copy(
@@ -453,13 +439,14 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
         left_row: usize,
         right_column: Column<Any>,
         right_row: usize,
-    ) -> Result<(), crate::plonk::Error> {
+    ) {
         if !self.usable_rows.contains(&left_row) || !self.usable_rows.contains(&right_row) {
-            return Err(Error::not_enough_rows_available(self.k));
+            panic!("{:?}", Error::not_enough_rows_available(self.k));
         }
 
         self.permutation
             .copy(left_column, left_row, right_column, right_row)
+            .unwrap_or_else(|err| panic!("{err:?}"))
     }
 
     fn fill_from_row(
@@ -473,7 +460,7 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
         }
 
         for row in self.usable_rows.clone().skip(from_row) {
-            self.assign_fixed(|| "", col, row, || to)?;
+            self.assign_fixed(col, row, to.assign()?);
         }
 
         Ok(())
@@ -1365,7 +1352,7 @@ mod tests {
     use crate::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         plonk::{
-            Advice, Any, Circuit, Column, ConstraintSystem, Error, Expression, Selector,
+            Advice, Any, Assigned, Circuit, Column, ConstraintSystem, Error, Expression, Selector,
             TableColumn,
         },
         poly::Rotation,
@@ -1423,7 +1410,7 @@ mod tests {
                         region.assign_advice(
                             /*|| "a",*/ config.a,
                             0,
-                            Value::known(Fp::zero()),
+                            Value::known(Assigned::Trivial(Fp::zero())),
                         )?;
 
                         // BUG: Forget to assign b = 0! This could go unnoticed during
@@ -1521,13 +1508,13 @@ mod tests {
                             // || "a = 2",
                             config.a,
                             0,
-                            Value::known(Fp::from(2)),
+                            Value::known(Assigned::Trivial(Fp::from(2))),
                         )?;
                         region.assign_advice(
                             // || "a = 6",
                             config.a,
                             1,
-                            Value::known(Fp::from(6)),
+                            Value::known(Assigned::Trivial(Fp::from(6))),
                         )?;
 
                         Ok(())
@@ -1546,7 +1533,7 @@ mod tests {
                             // || "a = 4",
                             config.a,
                             0,
-                            Value::known(Fp::from(4)),
+                            Value::known(Assigned::Trivial(Fp::from(4))),
                         )?;
 
                         // BUG: Assign a = 5, which doesn't exist in the table!
@@ -1554,7 +1541,7 @@ mod tests {
                             // || "a = 5",
                             config.a,
                             1,
-                            Value::known(Fp::from(5)),
+                            Value::known(Assigned::Trivial(Fp::from(5))),
                         )?;
 
                         Ok(())

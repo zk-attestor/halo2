@@ -123,8 +123,8 @@ impl<V, F: Field> AssignedCell<V, F> {
     }
 
     /// Returns the cell.
-    pub fn cell(&self) -> Cell {
-        self.cell
+    pub fn cell(&self) -> &Cell {
+        &self.cell
     }
 
     pub fn row_offset(&self) -> usize {
@@ -170,14 +170,12 @@ impl<'v, F: Field> AssignedCell<&'v Assigned<F>, F> {
         region: &mut Region<'_, F>,
         column: Column<Advice>,
         offset: usize,
-    ) -> Result<AssignedCell<&'_ Assigned<F>, F>, Error> {
-        region
+    ) -> AssignedCell<&'_ Assigned<F>, F> {
+        let assigned_cell = region
             .assign_advice(column, offset, self.value.map(|v| *v))
-            .and_then(|assigned_cell| {
-                region
-                    .constrain_equal(assigned_cell.cell(), self.cell())
-                    .map(|_| assigned_cell)
-            })
+            .unwrap_or_else(|err| panic!("{err:?}"));
+        region.constrain_equal(&assigned_cell.cell, &self.cell);
+        assigned_cell
     }
 }
 
@@ -223,20 +221,14 @@ impl<'r, F: Field> Region<'r, F> {
     ///
     /// Even though `to` has `FnMut` bounds, it is guaranteed to be called at most once.
     // The returned &'v Assigned<F> lives longer than the mutable borrow of &mut self
-    pub fn assign_advice<'b, 'v>(
+    pub fn assign_advice<'v>(
         //, V, VR, A, AR>(
-        &'b mut self,
+        &mut self,
         //annotation: A,
         column: Column<Advice>,
         offset: usize,
         to: Value<Assigned<F>>, // For now only accept Value<F>, later might change to Value<Assigned<F>> for batch inversion
-    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error>
-/*
-    where
-        V: FnMut() -> Value<VR> + 'v,
-        for<'vr> Assigned<F>: From<&'vr VR>,
-        A: Fn() -> AR,
-        AR: Into<String>,*/ {
+    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error> {
         //let mut value = Value::unknown();
         self.region.assign_advice(
             //&|| annotation().into(),
@@ -318,34 +310,21 @@ impl<'r, F: Field> Region<'r, F> {
     /// Assign a fixed value.
     ///
     /// Even though `to` has `FnMut` bounds, it is guaranteed to be called at most once.
-    pub fn assign_fixed<'v, V, VR, A, AR>(
-        &'v mut self,
-        annotation: A,
+    pub fn assign_fixed(
+        &mut self,
+        // annotation: A,
         column: Column<Fixed>,
         offset: usize,
-        mut to: V,
-    ) -> Result<AssignedCell<VR, F>, Error>
-    where
-        V: FnMut() -> Value<VR> + 'v,
-        for<'vr> Assigned<F>: From<&'vr VR>,
-        A: Fn() -> AR,
-        AR: Into<String>,
-    {
-        let mut value = Value::unknown();
-        let cell =
-            self.region
-                .assign_fixed(&|| annotation().into(), column, offset, &mut || {
-                    let v = to();
-                    let value_f = v.to_field();
-                    value = v;
-                    value_f
-                })?;
-
+        to: Assigned<F>,
+    ) -> Cell {
+        self.region.assign_fixed(column, offset, to)
+        /*
         Ok(AssignedCell {
             value,
             cell,
             _marker: PhantomData,
         })
+        */
     }
 
     /// Constrains a cell to have a constant value.
@@ -362,8 +341,8 @@ impl<'r, F: Field> Region<'r, F> {
     ///
     /// Returns an error if either of the cells are in columns where equality
     /// has not been enabled.
-    pub fn constrain_equal(&mut self, left: Cell, right: Cell) -> Result<(), Error> {
-        self.region.constrain_equal(left, right)
+    pub fn constrain_equal(&mut self, left: &Cell, right: &Cell) {
+        self.region.constrain_equal(left, right);
     }
 }
 
@@ -449,12 +428,7 @@ pub trait Layouter<F: Field> {
 
     /// Constrains a [`Cell`] to equal an instance column's row value at an
     /// absolute position.
-    fn constrain_instance(
-        &mut self,
-        cell: Cell,
-        column: Column<Instance>,
-        row: usize,
-    ) -> Result<(), Error>;
+    fn constrain_instance(&mut self, cell: Cell, column: Column<Instance>, row: usize);
 
     /// Queries the value of the given challenge.
     ///
@@ -517,13 +491,8 @@ impl<'a, F: Field, L: Layouter<F> + 'a> Layouter<F> for NamespacedLayouter<'a, F
         self.0.assign_table(name, assignment)
     }
 
-    fn constrain_instance(
-        &mut self,
-        cell: Cell,
-        column: Column<Instance>,
-        row: usize,
-    ) -> Result<(), Error> {
-        self.0.constrain_instance(cell, column, row)
+    fn constrain_instance(&mut self, cell: Cell, column: Column<Instance>, row: usize) {
+        self.0.constrain_instance(cell, column, row);
     }
 
     fn get_challenge(&self, challenge: Challenge) -> Value<F> {

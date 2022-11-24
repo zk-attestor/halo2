@@ -565,18 +565,7 @@ pub trait Assignment<F: Field> {
     // AR: Into<String>;
 
     /// Assign a fixed value
-    fn assign_fixed<V, VR, A, AR>(
-        &mut self,
-        annotation: A,
-        column: Column<Fixed>,
-        row: usize,
-        to: V,
-    ) -> Result<(), Error>
-    where
-        V: FnOnce() -> Value<VR>,
-        VR: Into<Assigned<F>>,
-        A: FnOnce() -> AR,
-        AR: Into<String>;
+    fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>);
 
     /// Assign two cells to have the same value
     fn copy(
@@ -585,7 +574,7 @@ pub trait Assignment<F: Field> {
         left_row: usize,
         right_column: Column<Any>,
         right_row: usize,
-    ) -> Result<(), Error>;
+    );
 
     /// Fills a fixed `column` starting from the given `row` with value `to`.
     fn fill_from_row(

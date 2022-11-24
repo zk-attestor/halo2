@@ -228,34 +228,12 @@ pub fn create_proof<
             */
         }
 
-        fn assign_fixed<V, VR, A, AR>(
-            &mut self,
-            _: A,
-            _: Column<Fixed>,
-            _: usize,
-            _: V,
-        ) -> Result<(), Error>
-        where
-            V: FnOnce() -> Value<VR>,
-            VR: Into<Assigned<F>>,
-            A: FnOnce() -> AR,
-            AR: Into<String>,
-        {
+        fn assign_fixed(&mut self, _: Column<Fixed>, _: usize, _: Assigned<F>) {
             // We only care about advice columns here
-
-            Ok(())
         }
 
-        fn copy(
-            &mut self,
-            _: Column<Any>,
-            _: usize,
-            _: Column<Any>,
-            _: usize,
-        ) -> Result<(), Error> {
+        fn copy(&mut self, _: Column<Any>, _: usize, _: Column<Any>, _: usize) {
             // We only care about advice columns here
-
-            Ok(())
         }
 
         fn fill_from_row(
@@ -523,7 +501,7 @@ pub fn create_proof<
     let vanishing = vanishing.construct(params, domain, h_poly, &mut rng, transcript)?;
 
     let x: ChallengeX<_> = transcript.squeeze_challenge_scalar();
-    let xn = x.pow(&[params.n() as u64, 0, 0, 0]);
+    let xn = x.pow(&[params.n(), 0, 0, 0]);
 
     if P::QUERY_INSTANCE {
         // Compute and hash instance evals for each circuit instance

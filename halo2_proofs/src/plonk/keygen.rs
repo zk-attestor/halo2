@@ -104,30 +104,16 @@ impl<F: Field> Assignment<F> for Assembly<F> {
         Ok(Value::unknown())
     }
 
-    fn assign_fixed<V, VR, A, AR>(
-        &mut self,
-        _: A,
-        column: Column<Fixed>,
-        row: usize,
-        to: V,
-    ) -> Result<(), Error>
-    where
-        V: FnOnce() -> Value<VR>,
-        VR: Into<Assigned<F>>,
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-    {
+    fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>) {
         if !self.usable_rows.contains(&row) {
-            return Err(Error::not_enough_rows_available(self.k));
+            panic!("{:?}", Error::not_enough_rows_available(self.k));
         }
 
         *self
             .fixed
             .get_mut(column.index())
             .and_then(|v| v.get_mut(row))
-            .ok_or(Error::BoundsFailure)? = to().into_field().assign()?;
-
-        Ok(())
+            .unwrap_or_else(|| panic!("{:?}", Error::BoundsFailure)) = to;
     }
 
     fn copy(
@@ -136,13 +122,14 @@ impl<F: Field> Assignment<F> for Assembly<F> {
         left_row: usize,
         right_column: Column<Any>,
         right_row: usize,
-    ) -> Result<(), Error> {
+    ) {
         if !self.usable_rows.contains(&left_row) || !self.usable_rows.contains(&right_row) {
-            return Err(Error::not_enough_rows_available(self.k));
+            panic!("{:?}", Error::not_enough_rows_available(self.k));
         }
 
         self.permutation
             .copy(left_column, left_row, right_column, right_row)
+            .unwrap_or_else(|err| panic!("{err:?}"))
     }
 
     fn fill_from_row(

@@ -248,11 +248,11 @@ impl SqrtRatio for Fp {
 }
 
 impl BigPrimeField for Fp {
-    fn from_u64_digits(mut val: Vec<u64>) -> Self {
-        assert!(val.len() <= 4);
-        val.extend(std::iter::repeat(0u64).take(4 - val.len()));
-        let val: [u64; 4] = val.try_into().unwrap();
-        Self::from_raw(val)
+    fn from_u64_digits(val: Vec<u64>) -> Self {
+        debug_assert!(val.len() <= 4);
+        let mut raw = [0u64; 4];
+        raw[..val.len()].copy_from_slice(&val);
+        Self::from_raw(raw)
     }
 
     fn to_u32_digits(&self) -> Vec<u32> {
