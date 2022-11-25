@@ -9,7 +9,6 @@ authors = [
 ]
 license = "MIT/Apache-2.0"
 edition = "2018"
-repository = "https://github.com/kilic/pairing"
 readme = "README.md"
 description = "Elliptic curve implementations and wrappers for halo2 library"
 

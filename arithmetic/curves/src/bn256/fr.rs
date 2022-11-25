@@ -2,7 +2,7 @@
 use super::assembly::assembly_field;
 
 use crate::arithmetic::{
-    adc, decompose_u64_digits_to_limbs, mac, sbb, u64_digits_to_u128_limbs, BigPrimeField,
+    adc, decompose_u64_digits_to_limbs, mac, macx, sbb, u64_digits_to_u128_limbs, BigPrimeField,
 };
 use core::convert::TryInto;
 use core::fmt;
@@ -66,7 +66,7 @@ const R3: Fr = Fr([
 
 /// `GENERATOR = 7 mod r` is a generator of the `r - 1` order multiplicative
 /// subgroup, or in other words a primitive root of the field.
-const GENERATOR: Fr = Fr::from_raw([0x07, 0x00, 0x00, 0x00]);
+const GENERATOR: Fr = Fr::const_from_raw([0x07, 0x00, 0x00, 0x00]);
 
 const S: u32 = 28;
 
@@ -74,7 +74,7 @@ const S: u32 = 28;
 /// with t odd. In other words, this
 /// is a 2^s root of unity.
 /// `0x3ddb9f5166d18b798865ea93dd31f743215cf6dd39329c8d34f1ed960c37c9c`
-const ROOT_OF_UNITY: Fr = Fr::from_raw([
+const ROOT_OF_UNITY: Fr = Fr::const_from_raw([
     0xd34f1ed960c37c9c,
     0x3215cf6dd39329c8,
     0x98865ea93dd31f74,
@@ -82,7 +82,7 @@ const ROOT_OF_UNITY: Fr = Fr::from_raw([
 ]);
 
 /// 1 / 2 mod r
-const TWO_INV: Fr = Fr::from_raw([
+const TWO_INV: Fr = Fr::const_from_raw([
     0xa1f0fac9f8000001,
     0x9419f4243cdcb848,
     0xdc2822db40c0ac2e,
@@ -90,7 +90,7 @@ const TWO_INV: Fr = Fr::from_raw([
 ]);
 
 /// 1 / ROOT_OF_UNITY mod r
-const ROOT_OF_UNITY_INV: Fr = Fr::from_raw([
+const ROOT_OF_UNITY_INV: Fr = Fr::const_from_raw([
     0x0ed3e50a414e6dba,
     0xb22625f59115aba7,
     0x1bbe587180f34361,
@@ -101,7 +101,7 @@ const ROOT_OF_UNITY_INV: Fr = Fr::from_raw([
 /// with t odd. In other words, this
 /// is a t root of unity.
 // 0x09226b6e22c6f0ca64ec26aad4c86e715b5f898e5e963f25870e56bbe533e9a2
-const DELTA: Fr = Fr::from_raw([
+const DELTA: Fr = Fr::const_from_raw([
     0x870e56bbe533e9a2,
     0x5b5f898e5e963f25,
     0x64ec26aad4c86e71,
@@ -109,7 +109,7 @@ const DELTA: Fr = Fr::from_raw([
 ]);
 
 /// `ZETA^3 = 1 mod r` where `ZETA^2 != 1 mod r`
-const ZETA: Fr = Fr::from_raw([
+const ZETA: Fr = Fr::const_from_raw([
     0xb8ca0b2d36636f23,
     0xcc37a73fec2bc5e9,
     0x048b6e193fd84104,
@@ -191,7 +191,7 @@ impl ff::Field for Fr {
 
     /// Computes the square root of this element, if it exists.
     fn sqrt(&self) -> CtOption<Self> {
-        crate::arithmetic::sqrt_tonelli_shanks(self, &<Self as SqrtRatio>::T_MINUS1_OVER2)
+        crate::arithmetic::sqrt_tonelli_shanks(self, <Self as SqrtRatio>::T_MINUS1_OVER2)
     }
 
     /// Computes the multiplicative inverse of this element,
@@ -224,7 +224,7 @@ impl ff::PrimeField for Fr {
         tmp.0[3] = u64::from_le_bytes(repr[24..32].try_into().unwrap());
 
         // Try to subtract the modulus
-        let (_, borrow) = sbb(tmp.0[0], MODULUS.0[0], 0);
+        let (_, borrow) = tmp.0[0].overflowing_sub(MODULUS.0[0]);
         let (_, borrow) = sbb(tmp.0[1], MODULUS.0[1], borrow);
         let (_, borrow) = sbb(tmp.0[2], MODULUS.0[2], borrow);
         let (_, borrow) = sbb(tmp.0[3], MODULUS.0[3], borrow);
@@ -248,7 +248,7 @@ impl ff::PrimeField for Fr {
         let tmp = Fr::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         #[cfg(not(feature = "asm"))]
-        let tmp = Fr::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Fr::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         let mut res = [0; 32];
         res[0..8].copy_from_slice(&tmp.0[0].to_le_bytes());
@@ -283,7 +283,7 @@ impl SqrtRatio for Fr {
 
     fn get_lower_32(&self) -> u32 {
         #[cfg(not(feature = "asm"))]
-        let tmp = Fr::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Fr::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         #[cfg(feature = "asm")]
         let tmp = Fr::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
@@ -308,7 +308,7 @@ impl BigPrimeField for Fr {
             Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         decompose_u64_digits_to_limbs(tmp.0, num_limbs, bit_len)
     }
@@ -321,7 +321,7 @@ impl BigPrimeField for Fr {
             Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         tmp.0
             .iter()
@@ -338,7 +338,7 @@ impl BigPrimeField for Fr {
             Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         u64_digits_to_u128_limbs(tmp.0, num_limbs, bit_len)
     }
@@ -351,13 +351,13 @@ impl BigPrimeField for Fr {
             Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         if tmp.0[2] == 0 && tmp.0[3] == 0 {
             i128::from(tmp.0[0]) | (i128::from(tmp.0[1]) << 64)
         } else {
             // modulus - tmp
-            let (a0, borrow) = sbb(MODULUS.0[0], tmp.0[0], 0);
+            let (a0, borrow) = MODULUS.0[0].overflowing_sub(tmp.0[0]);
             let (a1, _) = sbb(MODULUS.0[1], tmp.0[1], borrow);
 
             -(i128::from(a0) | (i128::from(a1) << 64))
@@ -392,7 +392,7 @@ mod test {
     #[test]
     fn test_root_of_unity() {
         assert_eq!(
-            Fr::root_of_unity().pow_vartime(&[1 << Fr::S, 0, 0, 0]),
+            Fr::root_of_unity().pow_vartime([1 << Fr::S, 0, 0, 0]),
             Fr::one()
         );
     }

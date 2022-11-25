@@ -9,7 +9,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 
 use crate::arithmetic::{
-    adc, decompose_u64_digits_to_limbs, mac, sbb, u64_digits_to_u128_limbs, BigPrimeField,
+    adc, decompose_u64_digits_to_limbs, mac, macx, sbb, u64_digits_to_u128_limbs, BigPrimeField,
 };
 
 /// This represents an element of $\mathbb{F}_p$ where
@@ -64,7 +64,7 @@ const R2: Fp = Fp([0x000007a2000e90a1, 0x1, 0, 0]);
 const R3: Fp = Fp([0x002bb1e33795f671, 0x100000b73, 0, 0]);
 
 /// 1 / 2 mod p
-const TWO_INV: Fp = Fp::from_raw([
+const TWO_INV: Fp = Fp::const_from_raw([
     0xffffffff7ffffe18,
     0xffffffffffffffff,
     0xffffffffffffffff,
@@ -149,7 +149,7 @@ impl ff::Field for Fp {
     /// Computes the multiplicative inverse of this element,
     /// failing if the element is zero.
     fn invert(&self) -> CtOption<Self> {
-        let tmp = self.pow_vartime(&[
+        let tmp = self.pow_vartime([
             0xfffffffefffffc2d,
             0xffffffffffffffff,
             0xffffffffffffffff,
@@ -194,7 +194,7 @@ impl ff::PrimeField for Fp {
         tmp.0[3] = u64::from_le_bytes(repr[24..32].try_into().unwrap());
 
         // Try to subtract the modulus
-        let (_, borrow) = sbb(tmp.0[0], MODULUS.0[0], 0);
+        let (_, borrow) = tmp.0[0].overflowing_sub(MODULUS.0[0]);
         let (_, borrow) = sbb(tmp.0[1], MODULUS.0[1], borrow);
         let (_, borrow) = sbb(tmp.0[2], MODULUS.0[2], borrow);
         let (_, borrow) = sbb(tmp.0[3], MODULUS.0[3], borrow);
@@ -214,7 +214,7 @@ impl ff::PrimeField for Fp {
     fn to_repr(&self) -> Self::Repr {
         // Turn into canonical form by computing
         // (a.R) / R = a
-        let tmp = Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Fp::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         let mut res = [0; 32];
         res[0..8].copy_from_slice(&tmp.0[0].to_le_bytes());
@@ -242,7 +242,7 @@ impl SqrtRatio for Fp {
     const T_MINUS1_OVER2: [u64; 4] = [0, 0, 0, 0];
 
     fn get_lower_32(&self) -> u32 {
-        let tmp = Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Fp::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
         tmp.0[0] as u32
     }
 }
@@ -256,7 +256,7 @@ impl BigPrimeField for Fp {
     }
 
     fn to_u32_digits(&self) -> Vec<u32> {
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
         tmp.0
             .iter()
             .flat_map(|digit| [(digit & (u32::MAX as u64)) as u32, (digit >> 32) as u32])
@@ -264,23 +264,23 @@ impl BigPrimeField for Fp {
     }
 
     fn to_u64_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u64> {
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
         decompose_u64_digits_to_limbs(tmp.0, num_limbs, bit_len)
     }
 
     fn to_u128_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u128> {
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
         u64_digits_to_u128_limbs(tmp.0, num_limbs, bit_len)
     }
 
     fn to_i128(&self) -> i128 {
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         if tmp.0[2] == 0 && tmp.0[3] == 0 {
             i128::from(tmp.0[0]) | (i128::from(tmp.0[1]) << 64)
         } else {
             // modulus - tmp
-            let (a0, borrow) = sbb(MODULUS.0[0], tmp.0[0], 0);
+            let (a0, borrow) = MODULUS.0[0].overflowing_sub(tmp.0[0]);
             let (a1, _) = sbb(MODULUS.0[1], tmp.0[1], borrow);
 
             -(i128::from(a0) | (i128::from(a1) << 64))

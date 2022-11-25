@@ -31,8 +31,8 @@ fn equality<G: CurveExt>() {
     let a = G::generator();
     let b = G::identity();
 
-    assert!(a == a);
-    assert!(b == b);
+    assert!(a.eq(&a));
+    assert!(b.eq(&b));
     assert!(a != b);
     assert!(b != a);
 
@@ -40,16 +40,16 @@ fn equality<G: CurveExt>() {
         let a = G::random(OsRng);
         let b = G::random(OsRng);
 
-        assert!(a == a);
-        assert!(b == b);
+        assert!(a.eq(&a));
+        assert!(b.eq(&b));
         assert!(a != b);
         assert!(b != a);
 
         let a: G::AffineExt = a.into();
         let b: G::AffineExt = b.into();
 
-        assert!(a == a);
-        assert!(b == b);
+        assert!(a.eq(&a));
+        assert!(b.eq(&b));
         assert!(a != b);
         assert!(b != a);
     }
@@ -109,7 +109,7 @@ fn projective_addition<G: CurveExt>() {
     let a = G::random(OsRng);
     let b = G::random(OsRng);
     let c = G::random(OsRng);
-    assert!(a + b == b + a);
+    assert!((a + b).eq(&(b + a)));
     assert!(a - b == -(b - a));
     assert!(c + (a + b) == a + (c + b));
     assert!((a - b) - c == (a - c) - b);

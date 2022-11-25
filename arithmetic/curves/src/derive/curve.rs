@@ -107,7 +107,10 @@ macro_rules! batch_add {
 
                 #[cfg(all(feature = "prefetch", target_arch = "x86_64"))]
                 if i > 0 {
-                    crate::prefetch::<Self>(points, output_indices[(i >> 1) - 1] as usize - offset);
+                    $crate::prefetch::<Self>(
+                        points,
+                        output_indices[(i >> 1) - 1] as usize - offset,
+                    );
                 }
 
                 if COMPLETE {

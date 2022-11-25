@@ -206,13 +206,13 @@ impl Fq2 {
     }
 
     pub fn mul(&self, other: &Self) -> Self {
-        let mut t = other.clone();
+        let mut t = *other;
         t.mul_assign(self);
         t
     }
 
     pub fn square(&self) -> Self {
-        let mut t = self.clone();
+        let mut t = *self;
         t.square_assign();
         t
     }
@@ -433,7 +433,7 @@ impl FieldExt for Fq2 {
         c1: Fq::zero(),
     };
     const TWO_INV: Self = Fq2 {
-        c0: Fq::from_raw([
+        c0: Fq::const_from_raw([
             0x9e10460b6c3e7ea4,
             0xcbc0b548b438e546,
             0xdc2822db40c0ac2e,
@@ -614,7 +614,7 @@ fn test_fq2_ordering() {
         c1: Fq::zero(),
     };
 
-    let mut b = a.clone();
+    let mut b = a;
 
     assert!(a.cmp(&b) == Ordering::Equal);
     b.c0 += &Fq::one();
@@ -695,7 +695,7 @@ fn test_fq2_mul_nonresidue() {
         0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
         0xe5,
     ]);
-    let nine = Fq::one().double().double().double() + &Fq::one();
+    let nine = Fq::one().double().double().double() + Fq::one();
     let nqr = Fq2 {
         c0: nine,
         c1: Fq::one(),
@@ -775,7 +775,7 @@ fn test_frobenius() {
     ]);
 
     for _ in 0..100 {
-        for i in 0..(14) {
+        for i in 0..14 {
             let mut a = Fq2::random(&mut rng);
             let mut b = a;
 

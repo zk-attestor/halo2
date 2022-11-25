@@ -7,7 +7,7 @@ use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use crate::arithmetic::{
-    adc, decompose_u64_digits_to_limbs, mac, sbb, u64_digits_to_u128_limbs, BigPrimeField,
+    adc, decompose_u64_digits_to_limbs, mac, macx, sbb, u64_digits_to_u128_limbs, BigPrimeField,
 };
 
 use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
@@ -75,13 +75,13 @@ const R3: Fq = Fq([
 
 /// `GENERATOR = 7 mod r` is a generator of the `q - 1` order multiplicative
 /// subgroup, or in other words a primitive root of the field.
-const GENERATOR: Fq = Fq::from_raw([0x07, 0x00, 0x00, 0x00]);
+const GENERATOR: Fq = Fq::const_from_raw([0x07, 0x00, 0x00, 0x00]);
 
 /// GENERATOR^t where t * 2^s + 1 = r
 /// with t odd. In other words, this
 /// is a 2^s root of unity.
 /// `0xc1dc060e7a91986df9879a3fbc483a898bdeab680756045992f4b5402b052f2`
-const ROOT_OF_UNITY: Fq = Fq::from_raw([
+const ROOT_OF_UNITY: Fq = Fq::const_from_raw([
     0x992f4b5402b052f2,
     0x98bdeab680756045,
     0xdf9879a3fbc483a8,
@@ -89,7 +89,7 @@ const ROOT_OF_UNITY: Fq = Fq::from_raw([
 ]);
 
 /// 1 / ROOT_OF_UNITY mod q
-const ROOT_OF_UNITY_INV: Fq = Fq::from_raw([
+const ROOT_OF_UNITY_INV: Fq = Fq::const_from_raw([
     0xb6fb30a0884f0d1c,
     0x77a275910aa413c3,
     0xefc7b0c75b8cbb72,
@@ -97,7 +97,7 @@ const ROOT_OF_UNITY_INV: Fq = Fq::from_raw([
 ]);
 
 /// 1 / 2 mod q
-const TWO_INV: Fq = Fq::from_raw([
+const TWO_INV: Fq = Fq::const_from_raw([
     0xdfe92f46681b20a1,
     0x5d576e7357a4501d,
     0xffffffffffffffff,
@@ -168,13 +168,13 @@ impl ff::Field for Fq {
 
     /// Computes the square root of this element, if it exists.
     fn sqrt(&self) -> CtOption<Self> {
-        crate::arithmetic::sqrt_tonelli_shanks(self, &<Self as SqrtRatio>::T_MINUS1_OVER2)
+        crate::arithmetic::sqrt_tonelli_shanks(self, <Self as SqrtRatio>::T_MINUS1_OVER2)
     }
 
     /// Computes the multiplicative inverse of this element,
     /// failing if the element is zero.
     fn invert(&self) -> CtOption<Self> {
-        let tmp = self.pow_vartime(&[
+        let tmp = self.pow_vartime([
             0xbfd25e8cd036413f,
             0xbaaedce6af48a03b,
             0xfffffffffffffffe,
@@ -219,7 +219,7 @@ impl ff::PrimeField for Fq {
         tmp.0[3] = u64::from_le_bytes(repr[24..32].try_into().unwrap());
 
         // Try to subtract the modulus
-        let (_, borrow) = sbb(tmp.0[0], MODULUS.0[0], 0);
+        let (_, borrow) = tmp.0[0].overflowing_sub(MODULUS.0[0]);
         let (_, borrow) = sbb(tmp.0[1], MODULUS.0[1], borrow);
         let (_, borrow) = sbb(tmp.0[2], MODULUS.0[2], borrow);
         let (_, borrow) = sbb(tmp.0[3], MODULUS.0[3], borrow);
@@ -239,7 +239,7 @@ impl ff::PrimeField for Fq {
     fn to_repr(&self) -> Self::Repr {
         // Turn into canonical form by computing
         // (a.R) / R = a
-        let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Fq::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         let mut res = [0; 32];
         res[0..8].copy_from_slice(&tmp.0[0].to_le_bytes());
@@ -272,7 +272,7 @@ impl SqrtRatio for Fq {
     ];
 
     fn get_lower_32(&self) -> u32 {
-        let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Fq::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
         tmp.0[0] as u32
     }
 }
@@ -286,7 +286,7 @@ impl BigPrimeField for Fq {
     }
 
     fn to_u32_digits(&self) -> Vec<u32> {
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
         tmp.0
             .iter()
             .flat_map(|digit| [(digit & (u32::MAX as u64)) as u32, (digit >> 32) as u32])
@@ -294,23 +294,23 @@ impl BigPrimeField for Fq {
     }
 
     fn to_u64_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u64> {
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
         decompose_u64_digits_to_limbs(tmp.0, num_limbs, bit_len)
     }
 
     fn to_u128_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u128> {
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
         u64_digits_to_u128_limbs(tmp.0, num_limbs, bit_len)
     }
 
     fn to_i128(&self) -> i128 {
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         if tmp.0[2] == 0 && tmp.0[3] == 0 {
             i128::from(tmp.0[0]) | (i128::from(tmp.0[1]) << 64)
         } else {
             // modulus - tmp
-            let (a0, borrow) = sbb(MODULUS.0[0], tmp.0[0], 0);
+            let (a0, borrow) = MODULUS.0[0].overflowing_sub(tmp.0[0]);
             let (a1, _) = sbb(MODULUS.0[1], tmp.0[1], borrow);
 
             -(i128::from(a0) | (i128::from(a1) << 64))
@@ -346,7 +346,7 @@ mod test {
     #[test]
     fn test_root_of_unity() {
         assert_eq!(
-            Fq::root_of_unity().pow_vartime(&[1 << Fq::S, 0, 0, 0]),
+            Fq::root_of_unity().pow_vartime([1 << Fq::S, 0, 0, 0]),
             Fq::one()
         );
     }
