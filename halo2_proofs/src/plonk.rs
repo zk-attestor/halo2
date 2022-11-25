@@ -7,10 +7,9 @@
 
 use blake2b_simd::Params as Blake2bParams;
 use group::ff::Field;
-use serde::{Deserialize, Serialize};
 
 use crate::arithmetic::{CurveAffine, FieldExt};
-use crate::helpers::CurveRead;
+use crate::helpers::{CurveRead, SerdePrimeField};
 use crate::poly::{
     commitment::Params, Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff,
     PinnedEvaluationDomain, Polynomial,
@@ -37,6 +36,7 @@ pub use prover::*;
 pub use verifier::*;
 
 use evaluation::Evaluator;
+use permutation::{read_polynomial_vec, write_polynomial_slice};
 use std::io;
 
 /// This is a verifying key which allows for the verification of proofs for a
@@ -231,38 +231,41 @@ impl<C: CurveAffine> ProvingKey<C> {
     }
     /// Writes a proving key to a buffer.
     /// Does so by first writing the verifying key and then serializing the rest of the data (in the form of field polynomials)
-    pub fn write<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+    pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         self.vk.write(writer)?;
-        let partial_pkey = ProvingKeyWithoutVerifyingKey {
-            l0: self.l0.clone(),
-            l_last: self.l_last.clone(),
-            l_active_row: self.l_active_row.clone(),
-            fixed_values: self.fixed_values.clone(),
-            fixed_polys: self.fixed_polys.clone(),
-            fixed_cosets: self.fixed_cosets.clone(),
-            permutation: self.permutation.clone(),
-        };
-        bincode::serialize_into(writer, &partial_pkey).map_err(Error::Serde)
+        self.l0.write(writer)?;
+        self.l_last.write(writer)?;
+        self.l_active_row.write(writer)?;
+        write_polynomial_slice(&self.fixed_values, writer)?;
+        write_polynomial_slice(&self.fixed_polys, writer)?;
+        write_polynomial_slice(&self.fixed_cosets, writer)?;
+        self.permutation.write(writer)?;
+        Ok(())
     }
     /// Reads a proving key from a buffer.
     /// Does so by reading verification key first, and then deserializing the rest of the file into the remaining proving key data.
     pub fn read<'params, R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
         reader: &mut R,
         params: &impl Params<'params, C>,
-    ) -> Result<Self, Error> {
+    ) -> io::Result<Self> {
         let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(reader, params)?;
+        let l0 = Polynomial::read(reader)?;
+        let l_last = Polynomial::read(reader)?;
+        let l_active_row = Polynomial::read(reader)?;
+        let fixed_values = read_polynomial_vec(reader)?;
+        let fixed_polys = read_polynomial_vec(reader)?;
+        let fixed_cosets = read_polynomial_vec(reader)?;
+        let permutation = permutation::ProvingKey::read(reader)?;
         let ev = Evaluator::new(vk.cs());
-        let partial_pk: ProvingKeyWithoutVerifyingKey<C> =
-            bincode::deserialize_from(reader).map_err(Error::Serde)?;
         Ok(Self {
             vk,
-            l0: partial_pk.l0,
-            l_last: partial_pk.l_last,
-            l_active_row: partial_pk.l_active_row,
-            fixed_values: partial_pk.fixed_values,
-            fixed_polys: partial_pk.fixed_polys,
-            fixed_cosets: partial_pk.fixed_cosets,
-            permutation: partial_pk.permutation,
+            l0,
+            l_last,
+            l_active_row,
+            fixed_values,
+            fixed_polys,
+            fixed_cosets,
+            permutation,
             ev,
         })
     }
@@ -273,19 +276,6 @@ impl<C: CurveAffine> VerifyingKey<C> {
     pub fn get_domain(&self) -> &EvaluationDomain<C::Scalar> {
         &self.domain
     }
-}
-
-#[allow(missing_docs)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(bound = "C: CurveAffine")]
-struct ProvingKeyWithoutVerifyingKey<C: CurveAffine> {
-    l0: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
-    l_last: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
-    l_active_row: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
-    fixed_values: Vec<Polynomial<C::Scalar, LagrangeCoeff>>,
-    fixed_polys: Vec<Polynomial<C::Scalar, Coeff>>,
-    fixed_cosets: Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>,
-    permutation: permutation::ProvingKey<C>,
 }
 
 #[derive(Clone, Copy, Debug)]

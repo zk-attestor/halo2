@@ -1,3 +1,5 @@
+use ff::PrimeField;
+
 use super::circuit::{Any, Column};
 use crate::{
     arithmetic::CurveAffine,
@@ -101,9 +103,56 @@ impl<C: CurveAffine> VerifyingKey<C> {
 }
 
 /// The proving key for a single permutation argument.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug)]
 pub(crate) struct ProvingKey<C: CurveAffine> {
     permutations: Vec<Polynomial<C::Scalar, LagrangeCoeff>>,
     polys: Vec<Polynomial<C::Scalar, Coeff>>,
     pub(super) cosets: Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>,
+}
+
+impl<C: CurveAffine> ProvingKey<C> {
+    /// Reads proving key for a single permutation argument from buffer using `Polynomial::read`.  
+    pub(super) fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let permutations = read_polynomial_vec(reader)?;
+        let polys = read_polynomial_vec(reader)?;
+        let cosets = read_polynomial_vec(reader)?;
+        Ok(ProvingKey {
+            permutations,
+            polys,
+            cosets,
+        })
+    }
+
+    /// Writes proving key for a single permutation argument to buffer using `Polynomial::write`.  
+    pub(super) fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        write_polynomial_slice(&self.permutations, writer)?;
+        write_polynomial_slice(&self.polys, writer)?;
+        write_polynomial_slice(&self.cosets, writer)?;
+        Ok(())
+    }
+}
+
+/// Reads a vector of polynomials from buffer
+pub(super) fn read_polynomial_vec<R: io::Read, F: PrimeField, B>(
+    reader: &mut R,
+) -> io::Result<Vec<Polynomial<F, B>>> {
+    let mut len_be_bytes = [0u8; 8];
+    reader.read_exact(&mut len_be_bytes)?;
+    let len = u64::from_be_bytes(len_be_bytes);
+
+    (0..len)
+        .map(|_| Polynomial::<F, B>::read(reader))
+        .collect::<io::Result<Vec<_>>>()
+}
+
+/// Writes a slice of polynomials to buffer
+pub(super) fn write_polynomial_slice<W: io::Write, F: PrimeField, B>(
+    slice: &[Polynomial<F, B>],
+    writer: &mut W,
+) -> io::Result<()> {
+    writer.write_all(&(slice.len() as u64).to_be_bytes())?;
+    for poly in slice.iter() {
+        poly.write(writer)?;
+    }
+    Ok(())
 }
