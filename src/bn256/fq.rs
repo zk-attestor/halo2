@@ -3,7 +3,7 @@ use super::assembly::assembly_field;
 
 use super::LegendreSymbol;
 use crate::arithmetic::{
-    adc, decompose_u64_digits_to_limbs, mac, sbb, u64_digits_to_u128_limbs, BigPrimeField,
+    adc, decompose_u64_digits_to_limbs, mac, macx, sbb, u64_digits_to_u128_limbs, BigPrimeField,
 };
 use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 
@@ -70,7 +70,7 @@ pub const NEGATIVE_ONE: Fq = Fq([
 
 const MODULUS_STR: &str = "0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47";
 
-const TWO_INV: Fq = Fq::from_raw([
+const TWO_INV: Fq = Fq::const_from_raw([
     0x9e10460b6c3e7ea4,
     0xcbc0b548b438e546,
     0xdc2822db40c0ac2e,
@@ -84,7 +84,7 @@ const ROOT_OF_UNITY_INV: Fq = Fq::zero();
 const DELTA: Fq = Fq::zero();
 
 /// `ZETA^3 = 1 mod r` where `ZETA^2 != 1 mod r`
-const ZETA: Fq = Fq::from_raw([
+const ZETA: Fq = Fq::const_from_raw([
     0x5763473177fffffeu64,
     0xd4f263f1acdb5c4fu64,
     0x59e26bcea0d48bacu64,
@@ -224,7 +224,7 @@ impl ff::PrimeField for Fq {
         tmp.0[3] = u64::from_le_bytes(repr[24..32].try_into().unwrap());
 
         // Try to subtract the modulus
-        let (_, borrow) = sbb(tmp.0[0], MODULUS.0[0], 0);
+        let (_, borrow) = tmp.0[0].overflowing_sub(MODULUS.0[0]);
         let (_, borrow) = sbb(tmp.0[1], MODULUS.0[1], borrow);
         let (_, borrow) = sbb(tmp.0[2], MODULUS.0[2], borrow);
         let (_, borrow) = sbb(tmp.0[3], MODULUS.0[3], borrow);
@@ -249,7 +249,7 @@ impl ff::PrimeField for Fq {
             Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         let mut res = [0; 32];
         res[0..8].copy_from_slice(&tmp.0[0].to_le_bytes());
@@ -278,7 +278,7 @@ impl SqrtRatio for Fq {
 
     fn get_lower_32(&self) -> u32 {
         #[cfg(not(feature = "asm"))]
-        let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Fq::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         #[cfg(feature = "asm")]
         let tmp = Fq::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
@@ -303,7 +303,7 @@ impl BigPrimeField for Fq {
             Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         tmp.0
             .iter()
@@ -319,13 +319,12 @@ impl BigPrimeField for Fq {
             Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         decompose_u64_digits_to_limbs(tmp.0, num_limbs, bit_len)
     }
 
     fn to_u128_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u128> {
-        assert!(bit_len > 64 && bit_len <= 128);
         // Turn into canonical form by computing
         // (a.R) / R = a
         #[cfg(feature = "asm")]
@@ -333,7 +332,7 @@ impl BigPrimeField for Fq {
             Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         u64_digits_to_u128_limbs(tmp.0, num_limbs, bit_len)
     }
@@ -346,13 +345,13 @@ impl BigPrimeField for Fq {
             Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
         if tmp.0[2] == 0 && tmp.0[3] == 0 {
             i128::from(tmp.0[0]) | (i128::from(tmp.0[1]) << 64)
         } else {
             // modulus - tmp
-            let (a0, borrow) = sbb(MODULUS.0[0], tmp.0[0], 0);
+            let (a0, borrow) = MODULUS.0[0].overflowing_sub(tmp.0[0]);
             let (a1, _) = sbb(MODULUS.0[1], tmp.0[1], borrow);
 
             -(i128::from(a0) | (i128::from(a1) << 64))

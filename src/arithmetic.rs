@@ -34,12 +34,16 @@ pub trait BigPrimeField: pasta_curves::arithmetic::FieldExt + From<u128> + Hash 
     /// up to `num_limbs` number of limbs (truncates any extra limbs)
     ///
     /// Basically same as `to_repr` but does not go further into bytes
+    ///
+    /// Undefined behavior if `bit_len > 64`
     fn to_u64_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u64>;
 
     /// Returns the base `2^bit_len` little endian representation of the prime field element
     /// up to `num_limbs` number of limbs (truncates any extra limbs)
     ///
     /// Basically same as `to_repr` but does not go further into bytes
+    ///
+    /// Undefined behavor if `bit_len <= 64` or `bit_len > 128`
     fn to_u128_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u128>;
 
     fn to_i128(&self) -> i128;
@@ -90,31 +94,33 @@ pub(crate) fn sqrt_tonelli_shanks<F: ff::PrimeField, S: AsRef<[u64]>>(
 }
 
 /// Compute a + b + carry, returning the result and the new carry over.
+/// The carry input must be 0 or 1; otherwise the behavior is undefined.
+/// The carryOut output is guaranteed to be 0 or 1.
 #[inline(always)]
-pub(crate) const fn adc(a: u64, b: u64, carry: u64) -> (u64, u64) {
-    let ret = (a as u128) + (b as u128) + (carry as u128);
-    (ret as u64, (ret >> 64) as u64)
+pub(crate) const fn adc(a: u64, b: u64, carry: bool) -> (u64, bool) {
+    a.carrying_add(b, carry)
 }
 
-/// Compute a - (b + borrow), returning the result and the new borrow.
+/// Compute a - b - borrow, returning the result and the new borrow.
 #[inline(always)]
-pub(crate) const fn sbb(a: u64, b: u64, borrow: u64) -> (u64, u64) {
-    let ret = (a as u128).wrapping_sub((b as u128) + ((borrow >> 63) as u128));
-    (ret as u64, (ret >> 64) as u64)
-}
-
-/// Compute a + (b * c) + carry, returning the result and the new carry over.
-#[inline(always)]
-pub(crate) const fn mac(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
-    let ret = (a as u128) + ((b as u128) * (c as u128)) + (carry as u128);
-    (ret as u64, (ret >> 64) as u64)
+pub(crate) const fn sbb(a: u64, b: u64, borrow: bool) -> (u64, bool) {
+    a.borrowing_sub(b, borrow)
 }
 
 /// Compute a + (b * c), returning the result and the new carry over.
+// Alias madd1
 #[inline(always)]
 pub(crate) const fn macx(a: u64, b: u64, c: u64) -> (u64, u64) {
-    let res = (a as u128) + ((b as u128) * (c as u128));
-    (res as u64, (res >> 64) as u64)
+    b.carrying_mul(c, a)
+}
+
+/// Compute a + (b * c) + carry, returning the result and the new carry over.
+// Alias madd2
+#[inline(always)]
+pub(crate) const fn mac(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
+    let (lo, hi) = b.carrying_mul(c, a);
+    let (lo, carry) = lo.overflowing_add(carry);
+    (lo, hi + carry as u64)
 }
 
 /// Compute a * b, returning the result.
@@ -143,35 +149,42 @@ pub(crate) fn mul_512(a: [u64; 4], b: [u64; 4]) -> [u64; 8] {
     [r0, r1, r2, r3, r4, r5, r6, carry_out]
 }
 
+#[inline(always)]
 pub(crate) fn decompose_u64_digits_to_limbs(
     e: impl IntoIterator<Item = u64>,
     number_of_limbs: usize,
     bit_len: usize,
 ) -> Vec<u64> {
+    debug_assert!(bit_len <= 64);
+
     let mut e = e.into_iter();
-    let mut limbs = Vec::with_capacity(number_of_limbs);
     let mask: u64 = (1u64 << bit_len) - 1u64;
     let mut u64_digit = e.next().unwrap();
     let mut rem = 64;
-    while limbs.len() < number_of_limbs {
-        if rem == 0 {
-            u64_digit = e.next().unwrap_or(0);
-            rem = 64;
-        }
-        if rem >= bit_len {
-            limbs.push(u64_digit & mask);
-            u64_digit >>= bit_len;
-            rem -= bit_len;
-        } else {
-            let mut limb = u64_digit;
-            u64_digit = e.next().unwrap_or(0);
-            limb |= (u64_digit & ((1 << (bit_len - rem)) - 1)) << rem;
-            limbs.push(limb);
-            u64_digit >>= bit_len - rem;
-            rem += 64 - bit_len;
-        }
-    }
-    limbs
+    (0..number_of_limbs)
+        .map(|_| match rem.cmp(&bit_len) {
+            core::cmp::Ordering::Greater => {
+                let limb = u64_digit & mask;
+                u64_digit >>= bit_len;
+                rem -= bit_len;
+                limb
+            }
+            core::cmp::Ordering::Equal => {
+                let limb = u64_digit & mask;
+                u64_digit = e.next().unwrap_or(0);
+                rem = 64;
+                limb
+            }
+            core::cmp::Ordering::Less => {
+                let mut limb = u64_digit;
+                u64_digit = e.next().unwrap_or(0);
+                limb |= (u64_digit & ((1 << (bit_len - rem)) - 1)) << rem;
+                u64_digit >>= bit_len - rem;
+                rem += 64 - bit_len;
+                limb
+            }
+        })
+        .collect()
 }
 
 pub(crate) fn u64_digits_to_u128_limbs(
@@ -179,17 +192,21 @@ pub(crate) fn u64_digits_to_u128_limbs(
     num_limbs: usize,
     bit_len: usize,
 ) -> Vec<u128> {
-    assert!(bit_len > 64 && bit_len <= 128);
+    debug_assert!(bit_len > 64 && bit_len <= 128);
 
     let mut e = e.into_iter();
+    let mut limb0 = e.next().unwrap_or(0) as u128;
+    let mut rem = bit_len - 64;
     let mut u64_digit = e.next().unwrap_or(0);
-    let mut rem = 64;
+    limb0 |= ((u64_digit & ((1 << rem) - 1)) as u128) << 64;
+    u64_digit >>= rem;
 
-    (0..num_limbs)
-        .map(|_| {
+    core::iter::once(limb0)
+        .chain((1..num_limbs).map(|_| {
             let mut limb: u128 = u64_digit.into();
             let mut bits = rem;
             u64_digit = e.next().unwrap_or(0);
+            // only possible if bit_len > 96
             if bit_len - bits >= 64 {
                 limb |= (u64_digit as u128) << bits;
                 u64_digit = e.next().unwrap_or(0);
@@ -200,6 +217,6 @@ pub(crate) fn u64_digits_to_u128_limbs(
             u64_digit >>= rem;
             rem = 64 - rem;
             limb
-        })
+        }))
         .collect()
 }

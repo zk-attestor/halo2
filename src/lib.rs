@@ -1,4 +1,6 @@
 #![cfg_attr(feature = "asm", feature(asm_const))]
+#![feature(bigint_helper_methods)]
+#![feature(const_bigint_helper_methods)]
 
 mod arithmetic;
 
