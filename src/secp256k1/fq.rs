@@ -277,47 +277,6 @@ impl SqrtRatio for Fq {
     }
 }
 
-impl BigPrimeField for Fq {
-    fn from_u64_digits(val: Vec<u64>) -> Self {
-        debug_assert!(val.len() <= 4);
-        let mut raw = [0u64; 4];
-        raw[..val.len()].copy_from_slice(&val);
-        Self::from_raw(raw)
-    }
-
-    fn to_u32_digits(&self) -> Vec<u32> {
-        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
-        tmp.0
-            .iter()
-            .flat_map(|digit| [(digit & (u32::MAX as u64)) as u32, (digit >> 32) as u32])
-            .collect()
-    }
-
-    fn to_u64_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u64> {
-        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
-        decompose_u64_digits_to_limbs(tmp.0, num_limbs, bit_len)
-    }
-
-    fn to_u128_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u128> {
-        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
-        u64_digits_to_u128_limbs(tmp.0, num_limbs, bit_len)
-    }
-
-    fn to_i128(&self) -> i128 {
-        let tmp = Self::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
-
-        if tmp.0[2] == 0 && tmp.0[3] == 0 {
-            i128::from(tmp.0[0]) | (i128::from(tmp.0[1]) << 64)
-        } else {
-            // modulus - tmp
-            let (a0, borrow) = MODULUS.0[0].overflowing_sub(tmp.0[0]);
-            let (a1, _) = sbb(MODULUS.0[1], tmp.0[1], borrow);
-
-            -(i128::from(a0) | (i128::from(a1) << 64))
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
