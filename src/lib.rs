@@ -12,7 +12,7 @@ pub mod secp256k1;
 #[macro_use]
 mod derive;
 
-pub use arithmetic::{BigPrimeField, CurveAffineExt};
+pub use arithmetic::CurveAffineExt;
 pub use pasta_curves::arithmetic::{Coordinates, CurveAffine, CurveExt, FieldExt, Group};
 
 pub extern crate group;
