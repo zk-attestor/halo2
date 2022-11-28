@@ -2,9 +2,7 @@
 use super::assembly::assembly_field;
 
 use super::LegendreSymbol;
-use crate::arithmetic::{
-    adc, decompose_u64_digits_to_limbs, mac, macx, sbb, u64_digits_to_u128_limbs, BigPrimeField,
-};
+use crate::arithmetic::{adc, mac, macx, sbb};
 use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 
 use core::convert::TryInto;

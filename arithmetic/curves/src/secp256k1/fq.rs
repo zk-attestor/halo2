@@ -6,9 +6,7 @@ use ff::PrimeField;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-use crate::arithmetic::{
-    adc, decompose_u64_digits_to_limbs, mac, macx, sbb, u64_digits_to_u128_limbs, BigPrimeField,
-};
+use crate::arithmetic::{adc, mac, macx, sbb};
 
 use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 

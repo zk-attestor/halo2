@@ -217,6 +217,12 @@ macro_rules! field_common {
             }
         }
 
+        impl From<[u64; 4]> for $field {
+            fn from(digits: [u64; 4]) -> Self {
+                Self::from_raw(digits)
+            }
+        }
+
         impl From<$field> for [u64; 4] {
             fn from(elt: $field) -> [u64; 4] {
                 // Turn into canonical form by computing
@@ -242,6 +248,21 @@ macro_rules! field_common {
         impl<'a> From<&'a $field> for [u8; 32] {
             fn from(value: &'a $field) -> [u8; 32] {
                 value.to_repr()
+            }
+        }
+
+        impl From<$field> for i128 {
+            fn from(value: $field) -> i128 {
+                let tmp: [u64; 4] = value.into();
+                if tmp[2] == 0 && tmp[3] == 0 {
+                    i128::from(tmp[0]) | (i128::from(tmp[1]) << 64)
+                } else {
+                    // modulus - tmp
+                    let (a0, borrow) = $modulus.0[0].overflowing_sub(tmp[0]);
+                    let (a1, _) = sbb($modulus.0[1], tmp[1], borrow);
+
+                    -(i128::from(a0) | (i128::from(a1) << 64))
+                }
             }
         }
 
@@ -276,45 +297,6 @@ macro_rules! field_common {
                     $field::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
 
                 u128::from(tmp.0[0]) | (u128::from(tmp.0[1]) << 64)
-            }
-        }
-
-        impl BigPrimeField for $field {
-            fn from_u64_digits(val: Vec<u64>) -> Self {
-                debug_assert!(val.len() <= 4);
-                let mut raw = [0u64; 4];
-                raw[..val.len()].copy_from_slice(&val);
-                Self::from_raw(raw)
-            }
-
-            fn to_u32_digits(&self) -> Vec<u32> {
-                let tmp: [u64; 4] = (*self).into();
-                tmp.iter()
-                    .flat_map(|digit| [(digit & (u32::MAX as u64)) as u32, (digit >> 32) as u32])
-                    .collect()
-            }
-
-            fn to_u64_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u64> {
-                let tmp: [u64; 4] = (*self).into();
-                decompose_u64_digits_to_limbs(tmp, num_limbs, bit_len)
-            }
-
-            fn to_u128_limbs(&self, num_limbs: usize, bit_len: usize) -> Vec<u128> {
-                let tmp: [u64; 4] = (*self).into();
-                u64_digits_to_u128_limbs(tmp, num_limbs, bit_len)
-            }
-
-            fn to_i128(&self) -> i128 {
-                let tmp: [u64; 4] = (*self).into();
-                if tmp[2] == 0 && tmp[3] == 0 {
-                    i128::from(tmp[0]) | (i128::from(tmp[1]) << 64)
-                } else {
-                    // modulus - tmp
-                    let (a0, borrow) = $modulus.0[0].overflowing_sub(tmp[0]);
-                    let (a1, _) = sbb($modulus.0[1], tmp[1], borrow);
-
-                    -(i128::from(a0) | (i128::from(a1) << 64))
-                }
             }
         }
     };
