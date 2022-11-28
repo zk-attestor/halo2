@@ -4,22 +4,25 @@
 //! This module is temporary, and the extension traits defined here are expected to be
 //! upstreamed into the `ff` and `group` crates after some refactoring.
 
-use std::hash::Hash;
-
 use subtle::{Choice, ConditionallySelectable, CtOption};
 
 pub trait CurveAffineExt: pasta_curves::arithmetic::CurveAffine {
     fn batch_add<const COMPLETE: bool, const LOAD_POINTS: bool>(
-        points: &mut [Self],
-        output_indices: &[u32],
-        num_points: usize,
-        offset: usize,
-        bases: &[Self],
-        base_positions: &[u32],
-    );
+        _points: &mut [Self],
+        _output_indices: &[u32],
+        _num_points: usize,
+        _offset: usize,
+        _bases: &[Self],
+        _base_positions: &[u32],
+    ) {
+        unimplemented!()
+    }
 
     /// Unlike the `Coordinates` trait, this just returns the raw affine coordinantes without checking `is_on_curve`
-    fn into_coordinates(self) -> (Self::Base, Self::Base);
+    fn into_coordinates(self) -> (Self::Base, Self::Base) {
+        let coordinates = self.coordinates().unwrap();
+        (*coordinates.x(), *coordinates.y())
+    }
 }
 
 pub(crate) fn sqrt_tonelli_shanks<F: ff::PrimeField, S: AsRef<[u64]>>(
