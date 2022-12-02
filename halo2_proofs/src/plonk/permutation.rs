@@ -1,11 +1,12 @@
-use ff::PrimeField;
-
 use super::circuit::{Any, Column};
 use crate::{
     arithmetic::CurveAffine,
-    helpers::CurveRead,
+    helpers::{
+        polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice, CurveRead,
+    },
     poly::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial},
 };
+use ff::PrimeField;
 
 pub(crate) mod keygen;
 pub(crate) mod prover;
@@ -100,6 +101,10 @@ impl<C: CurveAffine> VerifyingKey<C> {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(VerifyingKey { commitments })
     }
+
+    pub(crate) fn bytes_length(&self) -> usize {
+        self.commitments.len() * C::default().to_bytes().as_ref().len()
+    }
 }
 
 /// The proving key for a single permutation argument.
@@ -130,29 +135,11 @@ impl<C: CurveAffine> ProvingKey<C> {
         write_polynomial_slice(&self.cosets, writer)?;
         Ok(())
     }
-}
 
-/// Reads a vector of polynomials from buffer
-pub(super) fn read_polynomial_vec<R: io::Read, F: PrimeField, B>(
-    reader: &mut R,
-) -> io::Result<Vec<Polynomial<F, B>>> {
-    let mut len_be_bytes = [0u8; 8];
-    reader.read_exact(&mut len_be_bytes)?;
-    let len = u64::from_be_bytes(len_be_bytes);
-
-    (0..len)
-        .map(|_| Polynomial::<F, B>::read(reader))
-        .collect::<io::Result<Vec<_>>>()
-}
-
-/// Writes a slice of polynomials to buffer
-pub(super) fn write_polynomial_slice<W: io::Write, F: PrimeField, B>(
-    slice: &[Polynomial<F, B>],
-    writer: &mut W,
-) -> io::Result<()> {
-    writer.write_all(&(slice.len() as u64).to_be_bytes())?;
-    for poly in slice.iter() {
-        poly.write(writer)?;
+    /// Gets the total number of bytes in the serialization of `self`
+    pub(super) fn bytes_length(&self) -> usize {
+        polynomial_slice_byte_length(&self.permutations)
+            + polynomial_slice_byte_length(&self.polys)
+            + polynomial_slice_byte_length(&self.cosets)
     }
-    Ok(())
 }

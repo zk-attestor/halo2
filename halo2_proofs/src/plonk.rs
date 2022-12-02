@@ -6,10 +6,14 @@
 //! [plonk]: https://eprint.iacr.org/2019/953
 
 use blake2b_simd::Params as Blake2bParams;
+use ff::PrimeField;
 use group::ff::Field;
 
 use crate::arithmetic::{CurveAffine, FieldExt};
-use crate::helpers::{CurveRead, SerdePrimeField};
+use crate::helpers::{
+    polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice, CurveRead,
+    SerdePrimeField,
+};
 use crate::poly::{
     commitment::Params, Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff,
     PinnedEvaluationDomain, Polynomial,
@@ -36,7 +40,6 @@ pub use prover::*;
 pub use verifier::*;
 
 use evaluation::Evaluator;
-use permutation::{read_polynomial_vec, write_polynomial_slice};
 use std::io;
 
 /// This is a verifying key which allows for the verification of proofs for a
@@ -65,15 +68,11 @@ impl<C: CurveAffine> VerifyingKey<C> {
 
         // write self.selectors
         for selector in &self.selectors {
-            let mut selector_bytes = vec![0u8; selector.len() / 8 + 1];
-            for (i, value) in selector.iter().enumerate() {
-                let byte_index = i / 8;
-                let bit_index = i % 8;
-                selector_bytes[byte_index] |= (*value as u8) << bit_index;
+            // since `selector` is filled with `bool`, we pack them 8 at a time into bytes and then write
+            for bits in selector.chunks(8) {
+                writer.write_all(&[crate::helpers::pack(bits)])?;
             }
-            writer.write_all(&selector_bytes)?;
         }
-
         Ok(())
     }
 
@@ -97,18 +96,14 @@ impl<C: CurveAffine> VerifyingKey<C> {
         let selectors: Vec<Vec<bool>> = vec![vec![false; params.n() as usize]; cs.num_selectors]
             .into_iter()
             .map(|mut selector| {
-                let mut selector_bytes = vec![0u8; selector.len() / 8 + 1];
-                reader
-                    .read_exact(&mut selector_bytes)
-                    .expect("unable to read selector bytes");
-                for (i, value) in selector.iter_mut().enumerate() {
-                    let byte_index = i / 8;
-                    let bit_index = i % 8;
-                    *value = (selector_bytes[byte_index] >> bit_index) & 1 == 1;
+                let mut selector_bytes = vec![0u8; (selector.len() + 7) / 8];
+                reader.read_exact(&mut selector_bytes)?;
+                for (bits, byte) in selector.chunks_mut(8).into_iter().zip(selector_bytes) {
+                    crate::helpers::unpack(byte, bits);
                 }
                 Ok(selector)
             })
-            .collect::<Result<Vec<Vec<bool>>, &str>>()
+            .collect::<io::Result<Vec<Vec<bool>>>>()
             .unwrap();
         let (cs, _) = cs.compress_selectors(selectors.clone());
 
@@ -119,6 +114,32 @@ impl<C: CurveAffine> VerifyingKey<C> {
             cs,
             selectors,
         ))
+    }
+
+    /// Writes a verifying key to a vector of bytes.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::<u8>::with_capacity(self.bytes_length());
+        Self::write(self, &mut bytes).expect("Writing to vector should not fail");
+        bytes
+    }
+
+    /// Reads a verification key from a slice of bytes.
+    pub fn from_bytes<'params, ConcreteCircuit: Circuit<C::Scalar>>(
+        mut bytes: &[u8],
+        params: &impl Params<'params, C>,
+    ) -> io::Result<Self> {
+        Self::read::<_, ConcreteCircuit>(&mut bytes, params)
+    }
+
+    fn bytes_length(&self) -> usize {
+        4 + (self.fixed_commitments.len() * C::default().to_bytes().as_ref().len())
+            + self.permutation.bytes_length()
+            + self.selectors.len()
+                * (self
+                    .selectors
+                    .get(0)
+                    .map(|selector| selector.len() / 8 + 1)
+                    .unwrap_or(0))
     }
 
     fn from_parts(
@@ -229,6 +250,7 @@ impl<C: CurveAffine> ProvingKey<C> {
     pub fn get_vk(&self) -> &VerifyingKey<C> {
         &self.vk
     }
+
     /// Writes a proving key to a buffer.
     /// Does so by first writing the verifying key and then serializing the rest of the data (in the form of field polynomials)
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
@@ -242,6 +264,7 @@ impl<C: CurveAffine> ProvingKey<C> {
         self.permutation.write(writer)?;
         Ok(())
     }
+
     /// Reads a proving key from a buffer.
     /// Does so by reading verification key first, and then deserializing the rest of the file into the remaining proving key data.
     pub fn read<'params, R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
@@ -268,6 +291,33 @@ impl<C: CurveAffine> ProvingKey<C> {
             permutation,
             ev,
         })
+    }
+
+    /// Writes a proving key to a vector of bytes.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::<u8>::with_capacity(self.bytes_length());
+        Self::write(self, &mut bytes).expect("Writing to vector should not fail");
+        bytes
+    }
+
+    /// Reads a proving key from a slice of bytes.
+    pub fn from_bytes<'params, ConcreteCircuit: Circuit<C::Scalar>>(
+        mut bytes: &[u8],
+        params: &impl Params<'params, C>,
+    ) -> io::Result<Self> {
+        Self::read::<_, ConcreteCircuit>(&mut bytes, params)
+    }
+
+    /// Gets the total number of bytes in the serialization of `self`
+    fn bytes_length(&self) -> usize {
+        let scalar_len = C::Scalar::default().to_repr().as_ref().len();
+        self.vk.bytes_length()
+            + 12
+            + scalar_len * (self.l0.len() + self.l_last.len() + self.l_active_row.len())
+            + polynomial_slice_byte_length(&self.fixed_values)
+            + polynomial_slice_byte_length(&self.fixed_polys)
+            + polynomial_slice_byte_length(&self.fixed_cosets)
+            + self.permutation.bytes_length()
     }
 }
 
