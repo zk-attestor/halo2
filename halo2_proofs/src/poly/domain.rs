@@ -85,8 +85,8 @@ impl<G: Group> EvaluationDomain<G> {
         {
             // Compute the evaluations of t(X) = X^n - 1 in the coset evaluation domain.
             // We don't have to compute all of them, because it will repeat.
-            let orig = G::Scalar::ZETA.pow_vartime(&[n as u64, 0, 0, 0]);
-            let step = extended_omega.pow_vartime(&[n as u64, 0, 0, 0]);
+            let orig = G::Scalar::ZETA.pow_vartime([n]);
+            let step = extended_omega.pow_vartime([n]);
             let mut cur = orig;
             loop {
                 t_evaluations.push(cur);

@@ -525,7 +525,10 @@ impl<F: FieldExt> MockProver<F> {
         let usable_rows = n - (blinding_factors + 1);
         let advice = vec![
             {
-                let mut column = vec![AdviceCellValue::Unassigned; n];
+                // let mut column = vec![AdviceCellValue::Unassigned; n];
+                // Assign advice to 0 by default so we can have gates that query unassigned rotations to minimize number of distinct rotation sets, for SHPLONK optimization
+                let mut column =
+                    vec![AdviceCellValue::Assigned(Rc::new(Assigned::Trivial(F::zero()))); n];
                 // Poison unusable rows.
                 for (i, cell) in column.iter_mut().enumerate().skip(usable_rows) {
                     *cell = AdviceCellValue::Poison(i);
@@ -609,6 +612,9 @@ impl<F: FieldExt> MockProver<F> {
 
         // Check that within each region, all cells used in instantiated gates have been
         // assigned to.
+
+        // Turn off this check because we might query unassigned cells to increase the rotation set size of a gate (for SHPLONK optimization)
+        /*
         let selector_errors = self.regions.iter().enumerate().flat_map(|(r_i, r)| {
             r.enabled_selectors.iter().flat_map(move |(selector, at)| {
                 // Find the gates enabled by this selector
@@ -650,6 +656,7 @@ impl<F: FieldExt> MockProver<F> {
                     })
             })
         });
+        */
 
         let advice = self
             .advice
@@ -930,7 +937,7 @@ impl<F: FieldExt> MockProver<F> {
         };
 
         let mut errors: Vec<_> = iter::empty()
-            .chain(selector_errors)
+            //.chain(selector_errors)
             .chain(gate_errors)
             .chain(lookup_errors)
             .chain(perm_errors)

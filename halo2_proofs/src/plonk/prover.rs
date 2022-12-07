@@ -86,17 +86,19 @@ pub fn create_proof<
                     let mut poly = domain.empty_lagrange();
                     assert_eq!(poly.len(), params.n() as usize);
                     if values.len() > (poly.len() - (meta.blinding_factors() + 1)) {
-                        return Err(Error::InstanceTooLarge);
+                        panic!("Error::InstanceTooLarge");
                     }
                     for (poly, value) in poly.iter_mut().zip(values.iter()) {
                         if !P::QUERY_INSTANCE {
-                            transcript.common_scalar(*value)?;
+                            transcript
+                                .common_scalar(*value)
+                                .expect("Writing common scalar to transcript should not fail");
                         }
                         *poly = *value;
                     }
-                    Ok(poly)
+                    poly
                 })
-                .collect::<Result<Vec<_>, _>>()?;
+                .collect::<Vec<_>>();
 
             if P::QUERY_INSTANCE {
                 let instance_commitments_projective: Vec<_> = instance_values
@@ -193,9 +195,9 @@ pub fn create_proof<
         ) -> Result<Value<&'v Assigned<F>>, Error> {
             // TODO: better to assign all at once, deal with phases later
             // Ignore assignment of advice column in different phase than current one.
-            // if self.current_phase != column.column_type().phase {
-            //    return Ok(to.as_ref());
-            // }
+            if self.current_phase.0 < column.column_type().phase.0 {
+                return Ok(Value::unknown());
+            }
 
             if !self.usable_rows.contains(&row) {
                 return Err(Error::not_enough_rows_available(self.k));

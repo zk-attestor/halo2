@@ -169,12 +169,9 @@ impl<'params, E: Engine + Debug> Params<'params, E::G1Affine> for ParamsKZG<E> {
         poly: &Polynomial<E::Scalar, LagrangeCoeff>,
         _: Blind<E::Scalar>,
     ) -> E::G1 {
-        let mut scalars = Vec::with_capacity(poly.len());
-        scalars.extend(poly.iter());
-        let bases = &self.g_lagrange;
-        let size = scalars.len();
-        assert!(bases.len() >= size);
-        best_multiexp(&scalars, &bases[0..size])
+        let size = poly.len();
+        assert!(self.n() >= size as u64);
+        best_multiexp(poly, &self.g_lagrange[0..size])
     }
 
     /// Writes params to a buffer.
@@ -263,12 +260,9 @@ impl<'params, E: Engine + Debug> ParamsProver<'params, E::G1Affine> for ParamsKZ
     }
 
     fn commit(&self, poly: &Polynomial<E::Scalar, Coeff>, _: Blind<E::Scalar>) -> E::G1 {
-        let mut scalars = Vec::with_capacity(poly.len());
-        scalars.extend(poly.iter());
-        let bases = &self.g;
-        let size = scalars.len();
-        assert!(bases.len() >= size);
-        best_multiexp(&scalars, &bases[0..size])
+        let size = poly.len();
+        assert!(self.n() >= size as u64);
+        best_multiexp(poly, &self.g[0..size])
     }
 
     fn get_g(&self) -> &[E::G1Affine] {

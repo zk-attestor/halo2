@@ -66,7 +66,7 @@ impl<C: ColumnType> PartialOrd for Column<C> {
 pub(crate) mod sealed {
     /// Phase of advice column
     #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-    pub struct Phase(pub(super) u8);
+    pub struct Phase(pub(crate) u8);
 
     impl Phase {
         pub fn prev(&self) -> Option<Phase> {
