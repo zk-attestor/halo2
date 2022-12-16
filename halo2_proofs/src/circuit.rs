@@ -410,7 +410,7 @@ pub trait Layouter<F: Field> {
     /// ```
     fn assign_region<A, AR, N, NR>(&mut self, name: N, assignment: A) -> Result<AR, Error>
     where
-        A: FnMut(Region<'_, F>) -> Result<AR, Error>,
+        A: FnOnce(Region<'_, F>) -> Result<AR, Error>,
         N: Fn() -> NR,
         NR: Into<String>;
 
@@ -477,7 +477,7 @@ impl<'a, F: Field, L: Layouter<F> + 'a> Layouter<F> for NamespacedLayouter<'a, F
 
     fn assign_region<A, AR, N, NR>(&mut self, name: N, assignment: A) -> Result<AR, Error>
     where
-        A: FnMut(Region<'_, F>) -> Result<AR, Error>,
+        A: FnOnce(Region<'_, F>) -> Result<AR, Error>,
         N: Fn() -> NR,
         NR: Into<String>,
     {

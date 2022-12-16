@@ -106,7 +106,10 @@ impl<F: Field> Assignment<F> for Assembly<F> {
 
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>) {
         if !self.usable_rows.contains(&row) {
-            panic!("{:?}", Error::not_enough_rows_available(self.k));
+            panic!(
+                "Assign Fixed {:?}",
+                Error::not_enough_rows_available(self.k)
+            );
         }
 
         *self
