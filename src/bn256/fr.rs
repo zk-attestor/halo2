@@ -8,6 +8,7 @@ use core::ops::{Add, Mul, Neg, Sub};
 use ff::PrimeField;
 use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 use rand::RngCore;
+use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 /// This represents an element of $\mathbb{F}_r$ where
@@ -18,7 +19,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 // The internal representation of this type is four 64-bit unsigned
 // integers in little-endian order. `Fr` values are always in
 // Montgomery form; i.e., Fr(a) = aR mod r, with R = 2^256.
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Fr(pub(crate) [u64; 4]);
 
 /// Constant representing the modulus
