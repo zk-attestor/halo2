@@ -317,9 +317,9 @@ impl<'r, F: Field> Region<'r, F> {
         // annotation: A,
         column: Column<Fixed>,
         offset: usize,
-        to: Assigned<F>,
+        to: impl Into<Assigned<F>>,
     ) -> Cell {
-        self.region.assign_fixed(column, offset, to)
+        self.region.assign_fixed(column, offset, to.into())
         /*
         Ok(AssignedCell {
             value,

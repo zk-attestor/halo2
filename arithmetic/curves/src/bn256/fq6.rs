@@ -3,9 +3,10 @@ use super::fq2::Fq2;
 use core::ops::{Add, Mul, Neg, Sub};
 use ff::Field;
 use rand::RngCore;
+use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Hash, Serialize, Deserialize)]
 pub struct Fq6 {
     pub c0: Fq2,
     pub c1: Fq2,

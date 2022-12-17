@@ -60,6 +60,7 @@ pub struct VerifyingKey<C: CurveAffine> {
 impl<C: CurveAffine> VerifyingKey<C> {
     /// Writes a verifying key to a buffer.
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        // writer.write_all(&(self.domain.k().to_be_bytes()))?;
         writer.write_all(&(self.fixed_commitments.len() as u32).to_be_bytes())?;
         for commitment in &self.fixed_commitments {
             writer.write_all(commitment.to_bytes().as_ref())?;
@@ -81,6 +82,10 @@ impl<C: CurveAffine> VerifyingKey<C> {
         reader: &mut R,
         params: &impl Params<'params, C>,
     ) -> io::Result<Self> {
+        // let mut k_be_bytes = [0u8; 4];
+        // reader.read_exact(&mut k_be_bytes)?;
+        // let k = u32::from_be_bytes(k_be_bytes);
+
         let (domain, cs, _) = keygen::create_domain::<C, ConcreteCircuit>(params.k());
         let mut num_fixed_columns_be_bytes = [0u8; 4];
         reader.read_exact(&mut num_fixed_columns_be_bytes)?;

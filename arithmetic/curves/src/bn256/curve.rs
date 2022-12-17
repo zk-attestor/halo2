@@ -12,6 +12,7 @@ use group::Curve;
 use group::{cofactor::CofactorGroup, prime::PrimeCurveAffine, Group as _, GroupEncoding};
 use pasta_curves::arithmetic::FieldExt;
 use rand::RngCore;
+use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use crate::{

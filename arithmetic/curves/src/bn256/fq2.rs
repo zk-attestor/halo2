@@ -5,11 +5,12 @@ use core::ops::{Add, Mul, Neg, Sub};
 use ff::Field;
 use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 use rand::RngCore;
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 /// An element of Fq2, represented by c0 + c1 * u.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Fq2 {
     pub c0: Fq,
     pub c1: Fq,

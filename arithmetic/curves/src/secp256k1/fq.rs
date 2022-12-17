@@ -4,6 +4,7 @@ use core::ops::{Add, Mul, Neg, Sub};
 
 use ff::PrimeField;
 use rand::RngCore;
+use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use crate::arithmetic::{adc, mac, macx, sbb};
@@ -18,7 +19,7 @@ use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 // The internal representation of this type is four 64-bit unsigned
 // integers in little-endian order. `Fq` values are always in
 // Montgomery form; i.e., Fq(a) = aR mod q, with R = 2^256.
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Fq(pub(crate) [u64; 4]);
 
 /// Constant representing the modulus

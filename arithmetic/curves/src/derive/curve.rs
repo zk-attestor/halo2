@@ -153,20 +153,20 @@ macro_rules! new_curve_impl {
     $curve_id:literal,
     ) => {
 
-        #[derive(Copy, Clone, Debug)]
+        #[derive(Copy, Clone, Debug, PartialEq, Hash, Serialize, Deserialize)]
         $($privacy)* struct $name {
             pub x: $base,
             pub y: $base,
             pub z: $base,
         }
 
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, PartialEq, Hash, Serialize, Deserialize)]
         $($privacy)* struct $name_affine {
             pub x: $base,
             pub y: $base,
         }
 
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, Hash)]
         $($privacy)* struct $name_compressed([u8; $base::size()]);
 
 
@@ -299,12 +299,6 @@ macro_rules! new_curve_impl {
                     y: $base::conditional_select(&a.y, &b.y, choice),
                     z: $base::conditional_select(&a.z, &b.z, choice),
                 }
-            }
-        }
-
-        impl PartialEq for $name {
-            fn eq(&self, other: &Self) -> bool {
-                self.ct_eq(other).into()
             }
         }
 
@@ -552,12 +546,6 @@ macro_rules! new_curve_impl {
                     x: $base::conditional_select(&a.x, &b.x, choice),
                     y: $base::conditional_select(&a.y, &b.y, choice),
                 }
-            }
-        }
-
-        impl PartialEq for $name_affine {
-            fn eq(&self, other: &Self) -> bool {
-                self.ct_eq(other).into()
             }
         }
 
