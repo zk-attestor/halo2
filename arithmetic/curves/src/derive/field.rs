@@ -290,6 +290,60 @@ macro_rules! field_common {
                 u128::from(tmp.0[0]) | (u128::from(tmp.0[1]) << 64)
             }
         }
+
+        impl $crate::serde::SerdeObject for $field {
+            fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+                assert_eq!(bytes.len(), 32);
+                let inner =
+                    [0, 8, 16, 24].map(|i| u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap()));
+                Self(inner)
+            }
+            fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+                if bytes.len() != 32 {
+                    return None;
+                }
+                let elt = Self::from_raw_bytes_unchecked(bytes);
+                Self::is_less_than(&elt.0, &$modulus.0).then(|| elt)
+            }
+            fn to_raw_bytes(&self) -> Vec<u8> {
+                let mut res = Vec::with_capacity(32);
+                for limb in self.0.iter() {
+                    res.extend_from_slice(&limb.to_le_bytes());
+                }
+                res
+            }
+            fn read_raw_unchecked<R: std::io::Read>(reader: &mut R) -> Self {
+                let inner = [(); 4].map(|_| {
+                    let mut buf = [0; 8];
+                    reader.read_exact(&mut buf).unwrap();
+                    u64::from_le_bytes(buf)
+                });
+                Self(inner)
+            }
+            fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+                let mut inner = [0u64; 4];
+                for limb in inner.iter_mut() {
+                    let mut buf = [0; 8];
+                    reader.read_exact(&mut buf)?;
+                    *limb = u64::from_le_bytes(buf);
+                }
+                let elt = Self(inner);
+                Self::is_less_than(&elt.0, &$modulus.0)
+                    .then(|| elt)
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "input number is not less than field modulus",
+                        )
+                    })
+            }
+            fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                for limb in self.0.iter() {
+                    writer.write_all(&limb.to_le_bytes())?;
+                }
+                Ok(())
+            }
+        }
     };
 }
 
@@ -309,22 +363,22 @@ macro_rules! field_arithmetic {
             pub const fn const_mul(&self, rhs: &Self) -> $field {
                 // Schoolbook multiplication
 
-                let (r0, carry) = self.0[0].widening_mul(rhs.0[0]);
-                let (r1, carry) = macx(carry, self.0[0], rhs.0[1]);
-                let (r2, carry) = macx(carry, self.0[0], rhs.0[2]);
-                let (r3, r4) = macx(carry, self.0[0], rhs.0[3]);
+                let (r0, carry) = mac(0, self.0[0], rhs.0[0], 0);
+                let (r1, carry) = mac(0, self.0[0], rhs.0[1], carry);
+                let (r2, carry) = mac(0, self.0[0], rhs.0[2], carry);
+                let (r3, r4) = mac(0, self.0[0], rhs.0[3], carry);
 
-                let (r1, carry) = macx(r1, self.0[1], rhs.0[0]);
+                let (r1, carry) = mac(r1, self.0[1], rhs.0[0], 0);
                 let (r2, carry) = mac(r2, self.0[1], rhs.0[1], carry);
                 let (r3, carry) = mac(r3, self.0[1], rhs.0[2], carry);
                 let (r4, r5) = mac(r4, self.0[1], rhs.0[3], carry);
 
-                let (r2, carry) = macx(r2, self.0[2], rhs.0[0]);
+                let (r2, carry) = mac(r2, self.0[2], rhs.0[0], 0);
                 let (r3, carry) = mac(r3, self.0[2], rhs.0[1], carry);
                 let (r4, carry) = mac(r4, self.0[2], rhs.0[2], carry);
                 let (r5, r6) = mac(r5, self.0[2], rhs.0[3], carry);
 
-                let (r3, carry) = macx(r3, self.0[3], rhs.0[0]);
+                let (r3, carry) = mac(r3, self.0[3], rhs.0[0], 0);
                 let (r4, carry) = mac(r4, self.0[3], rhs.0[1], carry);
                 let (r5, carry) = mac(r5, self.0[3], rhs.0[2], carry);
                 let (r6, r7) = mac(r6, self.0[3], rhs.0[3], carry);
@@ -454,7 +508,7 @@ macro_rules! field_arithmetic {
                 (r2, r3) = mac(r2, k, $modulus.0[3], r3);
 
                 // Result may be within MODULUS of the correct value
-                if !$field::is_less_than([r0, r1, r2, r3], $modulus.0) {
+                if !$field::is_less_than(&[r0, r1, r2, r3], &$modulus.0) {
                     let mut borrow;
                     (r0, borrow) = r0.overflowing_sub($modulus.0[0]);
                     (r1, borrow) = sbb(r1, $modulus.0[1], borrow);
@@ -566,7 +620,7 @@ macro_rules! field_specific {
                 t3 = r0 + r1;
 
                 // Result may be within MODULUS of the correct value
-                if !$field::is_less_than([t0, t1, t2, t3], $modulus.0) {
+                if !$field::is_less_than(&[t0, t1, t2, t3], &$modulus.0) {
                     let mut borrow;
                     (t0, borrow) = t0.overflowing_sub($modulus.0[0]);
                     (t1, borrow) = sbb(t1, $modulus.0[1], borrow);

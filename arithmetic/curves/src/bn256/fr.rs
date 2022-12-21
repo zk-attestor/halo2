@@ -363,4 +363,9 @@ mod test {
             ])
         );
     }
+
+    #[test]
+    fn test_serialization() {
+        crate::tests::field::random_serialization_test::<Fr>("fr".to_string());
+    }
 }

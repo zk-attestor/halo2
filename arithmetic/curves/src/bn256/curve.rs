@@ -26,6 +26,7 @@ new_curve_impl!(
     G1,
     G1Affine,
     G1Compressed,
+    Fq::size(),
     Fq,
     Fr,
     (G1_GENERATOR_X,G1_GENERATOR_Y),
@@ -38,6 +39,7 @@ new_curve_impl!(
     G2,
     G2Affine,
     G2Compressed,
+    Fq2::size(),
     Fq2,
     Fr,
     (G2_GENERATOR_X, G2_GENERATOR_Y),
@@ -291,6 +293,12 @@ mod tests {
         let exp_affine: G1Affine = expected.into();
 
         assert_eq!(res_affine, exp_affine);
+    }
+
+    #[test]
+    fn test_serialization() {
+        crate::tests::curve::random_serialization_test::<G1>();
+        crate::tests::curve::random_serialization_test::<G2>();
     }
 }
 

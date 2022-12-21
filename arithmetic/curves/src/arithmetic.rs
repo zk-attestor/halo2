@@ -8,18 +8,17 @@ use subtle::{Choice, ConditionallySelectable, CtOption};
 
 pub trait CurveAffineExt: pasta_curves::arithmetic::CurveAffine {
     fn batch_add<const COMPLETE: bool, const LOAD_POINTS: bool>(
-        _points: &mut [Self],
-        _output_indices: &[u32],
-        _num_points: usize,
-        _offset: usize,
-        _bases: &[Self],
-        _base_positions: &[u32],
-    ) {
-        unimplemented!()
-    }
+        points: &mut [Self],
+        output_indices: &[u32],
+        num_points: usize,
+        offset: usize,
+        bases: &[Self],
+        base_positions: &[u32],
+    );
 
-    /// Unlike the `Coordinates` trait, this just returns the raw affine coordinantes without checking `is_on_curve`
+    /// Unlike the `Coordinates` trait, this just returns the raw affine coordinates without checking `is_on_curve`
     fn into_coordinates(self) -> (Self::Base, Self::Base) {
+        // fallback implementation
         let coordinates = self.coordinates().unwrap();
         (*coordinates.x(), *coordinates.y())
     }
