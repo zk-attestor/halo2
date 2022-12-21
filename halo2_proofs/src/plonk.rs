@@ -11,7 +11,7 @@ use group::ff::Field;
 
 use crate::arithmetic::{CurveAffine, FieldExt};
 use crate::helpers::{
-    polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice, CurveRead,
+    polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice, SerdeCurveAffine,
     SerdePrimeField,
 };
 use crate::poly::{
@@ -57,9 +57,13 @@ pub struct VerifyingKey<C: CurveAffine> {
     selectors: Vec<Vec<bool>>,
 }
 
-impl<C: CurveAffine> VerifyingKey<C> {
+impl<C: SerdeCurveAffine> VerifyingKey<C>
+where
+    C::Scalar: SerdePrimeField,
+{
     /// Writes a verifying key to a buffer.
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        writer.write_all(&self.domain.k().to_be_bytes())?;
         writer.write_all(&(self.fixed_commitments.len() as u32).to_be_bytes())?;
         for commitment in &self.fixed_commitments {
             writer.write_all(commitment.to_bytes().as_ref())?;
@@ -77,11 +81,13 @@ impl<C: CurveAffine> VerifyingKey<C> {
     }
 
     /// Reads a verification key from a buffer.
-    pub fn read<'params, R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
+    pub fn read<R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
         reader: &mut R,
-        params: &impl Params<'params, C>,
     ) -> io::Result<Self> {
-        let (domain, cs, _) = keygen::create_domain::<C, ConcreteCircuit>(params.k());
+        let mut k = [0u8; 4];
+        reader.read_exact(&mut k)?;
+        let k = u32::from_be_bytes(k);
+        let (domain, cs, _) = keygen::create_domain::<C, ConcreteCircuit>(k);
         let mut num_fixed_columns_be_bytes = [0u8; 4];
         reader.read_exact(&mut num_fixed_columns_be_bytes)?;
         let num_fixed_columns = u32::from_be_bytes(num_fixed_columns_be_bytes);
@@ -93,7 +99,7 @@ impl<C: CurveAffine> VerifyingKey<C> {
         let permutation = permutation::VerifyingKey::read(reader, &cs.permutation)?;
 
         // read selectors
-        let selectors: Vec<Vec<bool>> = vec![vec![false; params.n() as usize]; cs.num_selectors]
+        let selectors: Vec<Vec<bool>> = vec![vec![false; 1 << k]; cs.num_selectors]
             .into_iter()
             .map(|mut selector| {
                 let mut selector_bytes = vec![0u8; (selector.len() + 7) / 8];
@@ -124,15 +130,14 @@ impl<C: CurveAffine> VerifyingKey<C> {
     }
 
     /// Reads a verification key from a slice of bytes.
-    pub fn from_bytes<'params, ConcreteCircuit: Circuit<C::Scalar>>(
-        mut bytes: &[u8],
-        params: &impl Params<'params, C>,
-    ) -> io::Result<Self> {
-        Self::read::<_, ConcreteCircuit>(&mut bytes, params)
+    pub fn from_bytes<ConcreteCircuit: Circuit<C::Scalar>>(mut bytes: &[u8]) -> io::Result<Self> {
+        Self::read::<_, ConcreteCircuit>(&mut bytes)
     }
+}
 
+impl<C: CurveAffine> VerifyingKey<C> {
     fn bytes_length(&self) -> usize {
-        4 + (self.fixed_commitments.len() * C::default().to_bytes().as_ref().len())
+        8 + (self.fixed_commitments.len() * C::default().to_bytes().as_ref().len())
             + self.permutation.bytes_length()
             + self.selectors.len()
                 * (self
@@ -251,6 +256,23 @@ impl<C: CurveAffine> ProvingKey<C> {
         &self.vk
     }
 
+    /// Gets the total number of bytes in the serialization of `self`
+    fn bytes_length(&self) -> usize {
+        let scalar_len = C::Scalar::default().to_repr().as_ref().len();
+        self.vk.bytes_length()
+            + 12
+            + scalar_len * (self.l0.len() + self.l_last.len() + self.l_active_row.len())
+            + polynomial_slice_byte_length(&self.fixed_values)
+            + polynomial_slice_byte_length(&self.fixed_polys)
+            + polynomial_slice_byte_length(&self.fixed_cosets)
+            + self.permutation.bytes_length()
+    }
+}
+
+impl<C: SerdeCurveAffine> ProvingKey<C>
+where
+    C::Scalar: SerdePrimeField,
+{
     /// Writes a proving key to a buffer.
     /// Does so by first writing the verifying key and then serializing the rest of the data (in the form of field polynomials)
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
@@ -267,11 +289,10 @@ impl<C: CurveAffine> ProvingKey<C> {
 
     /// Reads a proving key from a buffer.
     /// Does so by reading verification key first, and then deserializing the rest of the file into the remaining proving key data.
-    pub fn read<'params, R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
+    pub fn read<R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
         reader: &mut R,
-        params: &impl Params<'params, C>,
     ) -> io::Result<Self> {
-        let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(reader, params)?;
+        let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(reader)?;
         let l0 = Polynomial::read(reader)?;
         let l_last = Polynomial::read(reader)?;
         let l_active_row = Polynomial::read(reader)?;
@@ -301,23 +322,8 @@ impl<C: CurveAffine> ProvingKey<C> {
     }
 
     /// Reads a proving key from a slice of bytes.
-    pub fn from_bytes<'params, ConcreteCircuit: Circuit<C::Scalar>>(
-        mut bytes: &[u8],
-        params: &impl Params<'params, C>,
-    ) -> io::Result<Self> {
-        Self::read::<_, ConcreteCircuit>(&mut bytes, params)
-    }
-
-    /// Gets the total number of bytes in the serialization of `self`
-    fn bytes_length(&self) -> usize {
-        let scalar_len = C::Scalar::default().to_repr().as_ref().len();
-        self.vk.bytes_length()
-            + 12
-            + scalar_len * (self.l0.len() + self.l_last.len() + self.l_active_row.len())
-            + polynomial_slice_byte_length(&self.fixed_values)
-            + polynomial_slice_byte_length(&self.fixed_polys)
-            + polynomial_slice_byte_length(&self.fixed_cosets)
-            + self.permutation.bytes_length()
+    pub fn from_bytes<ConcreteCircuit: Circuit<C::Scalar>>(mut bytes: &[u8]) -> io::Result<Self> {
+        Self::read::<_, ConcreteCircuit>(&mut bytes)
     }
 }
 
