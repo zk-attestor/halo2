@@ -1,8 +1,11 @@
 use crate::poly::Polynomial;
 use ff::PrimeField;
-use halo2curves::CurveAffine;
+#[cfg(feature = "serde-raw")]
+use halo2curves::serde::SerdeObject;
+use halo2curves::{pairing::Engine, CurveAffine};
 use std::io;
 
+// Keep this trait for compatibility with IPA serialization
 pub(crate) trait CurveRead: CurveAffine {
     /// Reads a compressed element from the buffer and attempts to parse it
     /// using `from_bytes`.
@@ -13,10 +16,48 @@ pub(crate) trait CurveRead: CurveAffine {
             .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid point encoding in proof"))
     }
 }
-
 impl<C: CurveAffine> CurveRead for C {}
 
-pub(crate) trait SerdePrimeField: PrimeField {
+#[cfg(not(feature = "serde-raw"))]
+pub trait SerdeCurveAffine: CurveAffine {
+    /// Reads a compressed element from the buffer and attempts to parse it
+    /// using `from_bytes`.
+    fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        <Self as CurveRead>::read(reader)
+    }
+    /// Writes a curve element as a compressed affine point in bytes.
+    fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        writer.write_all(self.to_bytes().as_ref())
+    }
+}
+#[cfg(not(feature = "serde-raw"))]
+impl<C: CurveAffine> SerdeCurveAffine for C {}
+
+#[cfg(feature = "serde-raw")]
+pub trait SerdeCurveAffine: CurveAffine + SerdeObject {
+    /// Reads a curve element from raw bytes.
+    /// The curve element is stored exactly as it is in memory (two field elements in Montgomery representation).
+    fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        #[cfg(feature = "raw-unchecked")]
+        {
+            Ok(Self::read_raw_unchecked(reader))
+        }
+        #[cfg(not(feature = "raw-unchecked"))]
+        {
+            Self::read_raw(reader)
+        }
+    }
+    /// Writes a curve element into raw bytes.
+    /// The curve element is stored exactly as it is in memory (two field elements in Montgomery representation).
+    fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        self.write_raw(writer)
+    }
+}
+#[cfg(feature = "serde-raw")]
+impl<C: CurveAffine + SerdeObject> SerdeCurveAffine for C {}
+
+#[cfg(not(feature = "serde-raw"))]
+pub trait SerdePrimeField: PrimeField {
     /// Reads a field element as bytes from the buffer using `from_repr`.
     /// Endianness is specified by `PrimeField` implementation.
     fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
@@ -33,8 +74,30 @@ pub(crate) trait SerdePrimeField: PrimeField {
         writer.write_all(self.to_repr().as_ref())
     }
 }
-
+#[cfg(not(feature = "serde-raw"))]
 impl<F: PrimeField> SerdePrimeField for F {}
+
+#[cfg(feature = "serde-raw")]
+pub trait SerdePrimeField: PrimeField + SerdeObject {
+    /// Reads a field element from raw bytes in its internal Montgomery representation.
+    fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        #[cfg(feature = "raw-unchecked")]
+        {
+            Ok(Self::read_raw_unchecked(reader))
+        }
+        #[cfg(not(feature = "raw-unchecked"))]
+        {
+            Self::read_raw(reader)
+        }
+    }
+    /// Writes a field element into raw bytes in its internal Montgomery representation,
+    /// WITHOUT performing the expensive Montgomery reduction.
+    fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        self.write_raw(writer)
+    }
+}
+#[cfg(feature = "serde-raw")]
+impl<F: PrimeField + SerdeObject> SerdePrimeField for F {}
 
 /// Convert a slice of `bool` into a `u8`.
 ///
@@ -56,12 +119,12 @@ pub fn unpack(byte: u8, bits: &mut [bool]) {
 }
 
 /// Reads a vector of polynomials from buffer
-pub(crate) fn read_polynomial_vec<R: io::Read, F: PrimeField, B>(
+pub(crate) fn read_polynomial_vec<R: io::Read, F: SerdePrimeField, B>(
     reader: &mut R,
 ) -> io::Result<Vec<Polynomial<F, B>>> {
-    let mut len_be_bytes = [0u8; 4];
-    reader.read_exact(&mut len_be_bytes)?;
-    let len = u32::from_be_bytes(len_be_bytes);
+    let mut len = [0u8; 4];
+    reader.read_exact(&mut len)?;
+    let len = u32::from_be_bytes(len);
 
     (0..len)
         .map(|_| Polynomial::<F, B>::read(reader))
@@ -69,7 +132,7 @@ pub(crate) fn read_polynomial_vec<R: io::Read, F: PrimeField, B>(
 }
 
 /// Writes a slice of polynomials to buffer
-pub(crate) fn write_polynomial_slice<W: io::Write, F: PrimeField, B>(
+pub(crate) fn write_polynomial_slice<W: io::Write, F: SerdePrimeField, B>(
     slice: &[Polynomial<F, B>],
     writer: &mut W,
 ) -> io::Result<()> {

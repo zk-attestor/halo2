@@ -146,12 +146,12 @@ impl<F, B> Polynomial<F, B> {
     }
 }
 
-impl<F: PrimeField, B> Polynomial<F, B> {
+impl<F: SerdePrimeField, B> Polynomial<F, B> {
     /// Reads polynomial from buffer using `SerdePrimeField::read`.  
     pub(crate) fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let mut poly_len_be_bytes = [0u8; 4];
-        reader.read_exact(&mut poly_len_be_bytes)?;
-        let poly_len = u32::from_be_bytes(poly_len_be_bytes);
+        let mut poly_len = [0u8; 4];
+        reader.read_exact(&mut poly_len)?;
+        let poly_len = u32::from_be_bytes(poly_len);
 
         (0..poly_len)
             .map(|_| F::read(reader))
