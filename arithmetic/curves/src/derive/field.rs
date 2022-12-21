@@ -133,19 +133,16 @@ macro_rules! field_common {
 
         impl core::cmp::Ord for $field {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-                match self.0[3].cmp(&other.0[3]) {
-                    core::cmp::Ordering::Equal => {}
-                    ne => return ne,
-                }
-                match self.0[2].cmp(&other.0[2]) {
-                    core::cmp::Ordering::Equal => {}
-                    ne => return ne,
-                }
-                match self.0[1].cmp(&other.0[1]) {
-                    core::cmp::Ordering::Equal => {}
-                    ne => return ne,
-                }
-                self.0[0].cmp(&other.0[0])
+                let left = self.to_repr();
+                let right = other.to_repr();
+                left.iter()
+                    .zip(right.iter())
+                    .rev()
+                    .find_map(|(left_byte, right_byte)| match left_byte.cmp(right_byte) {
+                        core::cmp::Ordering::Equal => None,
+                        res => Some(res),
+                    })
+                    .unwrap_or(core::cmp::Ordering::Equal)
             }
         }
 
@@ -469,7 +466,7 @@ macro_rules! field_arithmetic {
             }
 
             #[inline(always)]
-            fn is_less_than(x: [u64; 4], y: [u64; 4]) -> bool {
+            fn is_less_than(x: &[u64; 4], y: &[u64; 4]) -> bool {
                 match x[3].cmp(&y[3]) {
                     core::cmp::Ordering::Less => return true,
                     core::cmp::Ordering::Greater => return false,
