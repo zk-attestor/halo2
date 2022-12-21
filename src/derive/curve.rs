@@ -146,6 +146,7 @@ macro_rules! new_curve_impl {
     $name:ident,
     $name_affine:ident,
     $name_compressed:ident,
+    $compressed_size:expr,
     $base:ident,
     $scalar:ident,
     $generator:expr,
@@ -153,7 +154,7 @@ macro_rules! new_curve_impl {
     $curve_id:literal,
     ) => {
 
-        #[derive(Copy, Clone, Debug, PartialEq, Hash, Serialize, Deserialize)]
+        #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
         $($privacy)* struct $name {
             pub x: $base,
             pub y: $base,
@@ -167,8 +168,7 @@ macro_rules! new_curve_impl {
         }
 
         #[derive(Copy, Clone, Hash)]
-        $($privacy)* struct $name_compressed([u8; $base::size()]);
-
+        $($privacy)* struct $name_compressed([u8; $compressed_size]);
 
         impl $name {
             pub fn generator() -> Self {
@@ -232,7 +232,7 @@ macro_rules! new_curve_impl {
 
         impl Default for $name_compressed {
             fn default() -> Self {
-                $name_compressed([0; $base::size()])
+                $name_compressed([0; $compressed_size])
             }
         }
 
@@ -299,6 +299,12 @@ macro_rules! new_curve_impl {
                     y: $base::conditional_select(&a.y, &b.y, choice),
                     z: $base::conditional_select(&a.z, &b.z, choice),
                 }
+            }
+        }
+
+        impl PartialEq for $name {
+            fn eq(&self, other: &Self) -> bool {
+                self.ct_eq(other).into()
             }
         }
 
@@ -473,6 +479,46 @@ macro_rules! new_curve_impl {
             }
         }
 
+        impl $crate::serde::SerdeObject for $name {
+            fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+                assert_eq!(bytes.len(), 3 * $base::size());
+                let [x, y, z] = [0, 1, 2]
+                    .map(|i| $base::from_raw_bytes_unchecked(&bytes[i * $base::size()..(i + 1) * $base::size()]));
+                Self { x, y, z }
+            }
+            fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+                if bytes.len() != 3 * $base::size() {
+                    return None;
+                }
+                let [x, y, z] =
+                    [0, 1, 2].map(|i| $base::from_raw_bytes(&bytes[i * $base::size()..(i + 1) * $base::size()]));
+                x.zip(y).zip(z).and_then(|((x, y), z)| {
+                    let res = Self { x, y, z };
+                    // Check that the point is on the curve.
+                    bool::from(res.is_on_curve()).then(|| res)
+                })
+            }
+            fn to_raw_bytes(&self) -> Vec<u8> {
+                let mut res = Vec::with_capacity(3 * $base::size());
+                Self::write_raw(self, &mut res).unwrap();
+                res
+            }
+            fn read_raw_unchecked<R: std::io::Read>(reader: &mut R) -> Self {
+                let [x, y, z] = [(); 3].map(|_| $base::read_raw_unchecked(reader));
+                Self { x, y, z }
+            }
+            fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+                let x = $base::read_raw(reader)?;
+                let y = $base::read_raw(reader)?;
+                let z = $base::read_raw(reader)?;
+                Ok(Self { x, y, z })
+            }
+            fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                self.x.write_raw(writer)?;
+                self.y.write_raw(writer)?;
+                self.z.write_raw(writer)
+            }
+        }
 
         impl group::prime::PrimeGroup for $name {}
 
@@ -557,10 +603,12 @@ macro_rules! new_curve_impl {
             fn from_bytes(bytes: &Self::Repr) -> CtOption<Self> {
                 let bytes = &bytes.0;
                 let mut tmp = *bytes;
-                let ysign = Choice::from(tmp[$base::size() - 1] >> 7);
-                tmp[$base::size() - 1] &= 0b0111_1111;
+                let ysign = Choice::from(tmp[$compressed_size - 1] >> 7);
+                tmp[$compressed_size - 1] &= 0b0111_1111;
+                let mut xbytes = [0u8; $base::size()];
+                xbytes.copy_from_slice(&tmp[ ..$base::size()]);
 
-                $base::from_bytes(&tmp).and_then(|x| {
+                $base::from_bytes(&xbytes).and_then(|x| {
                     CtOption::new(Self::identity(), x.is_zero() & (!ysign)).or_else(|| {
                         let x3 = x.square() * x;
                         (x3 + $name::curve_constant_b()).sqrt().and_then(|y| {
@@ -590,10 +638,49 @@ macro_rules! new_curve_impl {
                 } else {
                     let (x, y) = (self.x, self.y);
                     let sign = (y.to_bytes()[0] & 1) << 7;
-                    let mut xbytes = x.to_bytes();
-                    xbytes[$base::size() - 1] |= sign;
+                    let mut xbytes = [0u8; $compressed_size];
+                    xbytes[..$base::size()].copy_from_slice(&x.to_bytes());
+                    xbytes[$compressed_size - 1] |= sign;
                     $name_compressed(xbytes)
                 }
+            }
+        }
+
+        impl crate::serde::SerdeObject for $name_affine {
+            fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+                assert_eq!(bytes.len(), 2 * $base::size());
+                let [x, y] =
+                    [0, $base::size()].map(|i| $base::from_raw_bytes_unchecked(&bytes[i..i + $base::size()]));
+                Self { x, y }
+            }
+            fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+                if bytes.len() != 2 * $base::size() {
+                    return None;
+                }
+                let [x, y] = [0, $base::size()].map(|i| $base::from_raw_bytes(&bytes[i..i + $base::size()]));
+                x.zip(y).and_then(|(x, y)| {
+                    let res = Self { x, y };
+                    // Check that the point is on the curve.
+                    bool::from(res.is_on_curve()).then(|| res)
+                })
+            }
+            fn to_raw_bytes(&self) -> Vec<u8> {
+                let mut res = Vec::with_capacity(2 * $base::size());
+                Self::write_raw(self, &mut res).unwrap();
+                res
+            }
+            fn read_raw_unchecked<R: std::io::Read>(reader: &mut R) -> Self {
+                let [x, y] = [(); 2].map(|_| $base::read_raw_unchecked(reader));
+                Self { x, y }
+            }
+            fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+                let x = $base::read_raw(reader)?;
+                let y = $base::read_raw(reader)?;
+                Ok(Self { x, y })
+            }
+            fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                self.x.write_raw(writer)?;
+                self.y.write_raw(writer)
             }
         }
 

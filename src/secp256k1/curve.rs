@@ -60,6 +60,7 @@ new_curve_impl!(
     Secp256k1,
     Secp256k1Affine,
     Secp256k1Compressed,
+    33,
     Fp,
     Fq,
     (SECP_GENERATOR_X,SECP_GENERATOR_Y),
@@ -78,6 +79,11 @@ impl CurveAffineExt for Secp256k1Affine {
 #[test]
 fn test_curve() {
     crate::tests::curve::curve_tests::<Secp256k1>();
+}
+
+#[test]
+fn test_serialization() {
+    crate::tests::curve::random_serialization_test::<Secp256k1>();
 }
 
 #[test]
