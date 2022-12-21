@@ -2,11 +2,11 @@ use crate::poly::Polynomial;
 use ff::PrimeField;
 #[cfg(feature = "serde-raw")]
 use halo2curves::serde::SerdeObject;
-use halo2curves::CurveAffine;
+use halo2curves::{pairing::Engine, CurveAffine};
 use std::io;
 
-#[cfg(not(feature = "serde-raw"))]
-pub(crate) trait SerdeCurveAffine: CurveAffine {
+// Keep this trait for compatibility with IPA serialization
+pub(crate) trait CurveRead: CurveAffine {
     /// Reads a compressed element from the buffer and attempts to parse it
     /// using `from_bytes`.
     fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
@@ -14,6 +14,16 @@ pub(crate) trait SerdeCurveAffine: CurveAffine {
         reader.read_exact(compressed.as_mut())?;
         Option::from(Self::from_bytes(&compressed))
             .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid point encoding in proof"))
+    }
+}
+impl<C: CurveAffine> CurveRead for C {}
+
+#[cfg(not(feature = "serde-raw"))]
+pub trait SerdeCurveAffine: CurveAffine {
+    /// Reads a compressed element from the buffer and attempts to parse it
+    /// using `from_bytes`.
+    fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        <Self as CurveRead>::read(reader)
     }
     /// Writes a curve element as a compressed affine point in bytes.
     fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
@@ -24,7 +34,7 @@ pub(crate) trait SerdeCurveAffine: CurveAffine {
 impl<C: CurveAffine> SerdeCurveAffine for C {}
 
 #[cfg(feature = "serde-raw")]
-pub(crate) trait SerdeCurveAffine: CurveAffine + SerdeObject {
+pub trait SerdeCurveAffine: CurveAffine + SerdeObject {
     /// Reads a curve element from raw bytes.
     /// The curve element is stored exactly as it is in memory (two field elements in Montgomery representation).
     fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
@@ -40,21 +50,14 @@ pub(crate) trait SerdeCurveAffine: CurveAffine + SerdeObject {
     /// Writes a curve element into raw bytes.
     /// The curve element is stored exactly as it is in memory (two field elements in Montgomery representation).
     fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        #[cfg(feature = "raw-unchecked")]
-        {
-            Ok(self.write_raw_unchecked(writer))
-        }
-        #[cfg(not(feature = "raw-unchecked"))]
-        {
-            self.write_raw(writer)
-        }
+        self.write_raw(writer)
     }
 }
 #[cfg(feature = "serde-raw")]
 impl<C: CurveAffine + SerdeObject> SerdeCurveAffine for C {}
 
 #[cfg(not(feature = "serde-raw"))]
-pub(crate) trait SerdePrimeField: PrimeField {
+pub trait SerdePrimeField: PrimeField {
     /// Reads a field element as bytes from the buffer using `from_repr`.
     /// Endianness is specified by `PrimeField` implementation.
     fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
@@ -75,7 +78,7 @@ pub(crate) trait SerdePrimeField: PrimeField {
 impl<F: PrimeField> SerdePrimeField for F {}
 
 #[cfg(feature = "serde-raw")]
-pub(crate) trait SerdePrimeField: PrimeField + SerdeObject {
+pub trait SerdePrimeField: PrimeField + SerdeObject {
     /// Reads a field element from raw bytes in its internal Montgomery representation.
     fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         #[cfg(feature = "raw-unchecked")]
@@ -90,14 +93,7 @@ pub(crate) trait SerdePrimeField: PrimeField + SerdeObject {
     /// Writes a field element into raw bytes in its internal Montgomery representation,
     /// WITHOUT performing the expensive Montgomery reduction.
     fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        #[cfg(feature = "raw-unchecked")]
-        {
-            Ok(self.write_raw_unchecked(writer))
-        }
-        #[cfg(not(feature = "raw-unchecked"))]
-        {
-            self.write_raw(writer)
-        }
+        self.write_raw(writer)
     }
 }
 #[cfg(feature = "serde-raw")]

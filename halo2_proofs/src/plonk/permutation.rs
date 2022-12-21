@@ -2,7 +2,8 @@ use super::circuit::{Any, Column};
 use crate::{
     arithmetic::CurveAffine,
     helpers::{
-        polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice, CurveRead,
+        polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice,
+        SerdeCurveAffine, SerdePrimeField,
     },
     poly::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial},
 };
@@ -87,15 +88,20 @@ impl<C: CurveAffine> VerifyingKey<C> {
         &self.commitments
     }
 
-    pub(crate) fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+    pub(crate) fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()>
+    where
+        C: SerdeCurveAffine,
+    {
         for commitment in &self.commitments {
-            writer.write_all(commitment.to_bytes().as_ref())?;
+            commitment.write(writer)?;
         }
-
         Ok(())
     }
 
-    pub(crate) fn read<R: io::Read>(reader: &mut R, argument: &Argument) -> io::Result<Self> {
+    pub(crate) fn read<R: io::Read>(reader: &mut R, argument: &Argument) -> io::Result<Self>
+    where
+        C: SerdeCurveAffine,
+    {
         let commitments = (0..argument.columns.len())
             .map(|_| C::read(reader))
             .collect::<Result<Vec<_>, _>>()?;
@@ -115,7 +121,10 @@ pub(crate) struct ProvingKey<C: CurveAffine> {
     pub(super) cosets: Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>,
 }
 
-impl<C: CurveAffine> ProvingKey<C> {
+impl<C: SerdeCurveAffine> ProvingKey<C>
+where
+    C::Scalar: SerdePrimeField,
+{
     /// Reads proving key for a single permutation argument from buffer using `Polynomial::read`.  
     pub(super) fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let permutations = read_polynomial_vec(reader)?;
@@ -135,7 +144,9 @@ impl<C: CurveAffine> ProvingKey<C> {
         write_polynomial_slice(&self.cosets, writer)?;
         Ok(())
     }
+}
 
+impl<C: CurveAffine> ProvingKey<C> {
     /// Gets the total number of bytes in the serialization of `self`
     pub(super) fn bytes_length(&self) -> usize {
         polynomial_slice_byte_length(&self.permutations)

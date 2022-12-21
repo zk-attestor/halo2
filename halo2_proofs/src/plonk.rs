@@ -66,7 +66,7 @@ where
         writer.write_all(&self.domain.k().to_be_bytes())?;
         writer.write_all(&(self.fixed_commitments.len() as u32).to_be_bytes())?;
         for commitment in &self.fixed_commitments {
-            writer.write_all(commitment.to_bytes().as_ref())?;
+            commitment.write(writer)?;
         }
         self.permutation.write(writer)?;
 
@@ -88,9 +88,9 @@ where
         reader.read_exact(&mut k)?;
         let k = u32::from_be_bytes(k);
         let (domain, cs, _) = keygen::create_domain::<C, ConcreteCircuit>(k);
-        let mut num_fixed_columns_be_bytes = [0u8; 4];
-        reader.read_exact(&mut num_fixed_columns_be_bytes)?;
-        let num_fixed_columns = u32::from_be_bytes(num_fixed_columns_be_bytes);
+        let mut num_fixed_columns = [0u8; 4];
+        reader.read_exact(&mut num_fixed_columns)?;
+        let num_fixed_columns = u32::from_be_bytes(num_fixed_columns);
 
         let fixed_commitments: Vec<_> = (0..num_fixed_columns)
             .map(|_| C::read(reader))
@@ -109,8 +109,7 @@ where
                 }
                 Ok(selector)
             })
-            .collect::<io::Result<Vec<Vec<bool>>>>()
-            .unwrap();
+            .collect::<io::Result<_>>()?;
         let (cs, _) = cs.compress_selectors(selectors.clone());
 
         Ok(Self::from_parts(
