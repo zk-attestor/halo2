@@ -287,7 +287,7 @@ pub fn create_proof<
                 // Do this here and not earlier in case we want to be able to mutate
                 // the instances during synthesize in FirstPhase in the future
                 if !P::QUERY_INSTANCE {
-                    for values in self.instance_single.instance_values.iter() {
+                    for values in self.instances.iter() {
                         for value in values.iter() {
                             self.transcript.common_scalar(*value)?;
                         }
