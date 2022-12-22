@@ -352,6 +352,19 @@ impl<'r, F: Field> Region<'r, F> {
     pub fn constrain_equal(&mut self, left: Cell, right: Cell) -> Result<(), Error> {
         self.region.constrain_equal(left, right)
     }
+
+    /// Queries the value of the given challenge.
+    ///
+    /// Returns `Value::unknown()` if the current synthesis phase is before the challenge can be queried.
+    pub fn get_challenge(&self, challenge: Challenge) -> Value<F> {
+        self.region.get_challenge(challenge)
+    }
+
+    /// Commit advice columns in current phase and squeeze challenges.
+    /// This can be called DURING synthesize.
+    pub fn next_phase(&mut self) -> Result<(), Error> {
+        self.region.next_phase()
+    }
 }
 
 /// A lookup table in the circuit.

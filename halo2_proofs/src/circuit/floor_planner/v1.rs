@@ -66,6 +66,7 @@ impl FloorPlanner for V1 {
         let mut plan = V1Plan::new(cs)?;
 
         // First pass: measure the regions within the circuit.
+        println!("First pass: measure the regions within the circuit");
         let mut measure = MeasurementPass::new();
         {
             let pass = &mut measure;
@@ -109,6 +110,7 @@ impl FloorPlanner for V1 {
 
         // Second pass:
         // - Assign the regions.
+        println!("Second pass: assign the regions");
         let mut assign = AssignmentPass::new(&mut plan);
         {
             let pass = &mut assign;
@@ -490,6 +492,14 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F> for V1Region<'r
         )?;
 
         Ok(())
+    }
+
+    fn get_challenge(&self, challenge: Challenge) -> Value<F> {
+        self.plan.cs.get_challenge(challenge)
+    }
+
+    fn next_phase(&mut self) -> Result<(), Error> {
+        self.plan.cs.next_phase()
     }
 }
 

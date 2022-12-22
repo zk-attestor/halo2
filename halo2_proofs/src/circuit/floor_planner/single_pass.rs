@@ -372,6 +372,14 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
 
         Ok(())
     }
+
+    fn get_challenge(&self, challenge: Challenge) -> Value<F> {
+        self.layouter.cs.get_challenge(challenge)
+    }
+
+    fn next_phase(&mut self) -> Result<(), Error> {
+        self.layouter.cs.next_phase()
+    }
 }
 
 /// The default value to fill a table column with.

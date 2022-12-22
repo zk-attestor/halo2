@@ -172,6 +172,45 @@ impl<F: PrimeField, B> Polynomial<F, B> {
     }
 }
 
+/// Invert each polynomial in place for memory efficiency
+pub(crate) fn batch_invert_assigned_ref<F: FieldExt>(
+    assigned: Vec<&Polynomial<Assigned<F>, LagrangeCoeff>>,
+) -> Vec<Polynomial<F, LagrangeCoeff>> {
+    if assigned.is_empty() {
+        return vec![];
+    }
+    let n = assigned[0].num_coeffs();
+    // 1d vector better for memory allocation
+    let mut assigned_denominators: Vec<_> = assigned
+        .iter()
+        .flat_map(|f| f.iter().map(|value| value.denominator()))
+        .collect();
+
+    assigned_denominators
+        .iter_mut()
+        // If the denominator is trivial, we can skip it, reducing the
+        // size of the batch inversion.
+        .filter_map(|d| d.as_mut())
+        .batch_invert();
+
+    assigned
+        .iter()
+        .zip(assigned_denominators.chunks(n))
+        .map(|(poly, inv_denoms)| {
+            debug_assert_eq!(inv_denoms.len(), poly.values.len());
+            Polynomial {
+                values: poly
+                    .values
+                    .iter()
+                    .zip(inv_denoms.iter())
+                    .map(|(a, inv_den)| a.numerator() * inv_den.unwrap_or(F::one()))
+                    .collect(),
+                _marker: poly._marker,
+            }
+        })
+        .collect()
+}
+
 pub(crate) fn batch_invert_assigned<F: FieldExt>(
     assigned: Vec<Polynomial<Assigned<F>, LagrangeCoeff>>,
 ) -> Vec<Polynomial<F, LagrangeCoeff>> {
