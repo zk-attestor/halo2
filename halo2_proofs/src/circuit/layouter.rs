@@ -7,7 +7,9 @@ use std::fmt;
 use ff::Field;
 
 use super::{AssignedCell, Cell, RegionIndex, Value};
-use crate::plonk::{Advice, Any, Assigned, Column, Error, Fixed, Instance, Selector, TableColumn};
+use crate::plonk::{
+    Advice, Any, Assigned, Challenge, Column, Error, Fixed, Instance, Selector, TableColumn,
+};
 
 /// Helper trait for implementing a custom [`Layouter`].
 ///
@@ -102,6 +104,15 @@ pub trait RegionLayouter<F: Field>: fmt::Debug {
     ///
     /// Returns an error if either of the cells is not within the given permutation.
     fn constrain_equal(&mut self, left: &Cell, right: &Cell);
+
+    /// Queries the value of the given challenge.
+    ///
+    /// Returns `Value::unknown()` if the current synthesis phase is before the challenge can be queried.
+    fn get_challenge(&self, challenge: Challenge) -> Value<F>;
+
+    /// Commit advice columns in current phase and squeeze challenges.
+    /// This can be called DURING synthesize.
+    fn next_phase(&mut self);
 }
 
 /// Helper trait for implementing a custom [`Layouter`].
@@ -285,6 +296,15 @@ impl<F: Field> RegionLayouter<F> for RegionShape {
 
     fn constrain_equal(&mut self, _left: Cell, _right: Cell) -> Result<(), Error> {
         // Equality constraints don't affect the region shape.
+        Ok(())
+    }
+
+    fn get_challenge(&self, _: Challenge) -> Value<F> {
+        Value::unknown()
+    }
+
+    fn next_phase(&mut self) -> Result<(), Error> {
+        // Region shapes don't care about phases.
         Ok(())
     }
 }

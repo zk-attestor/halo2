@@ -152,9 +152,7 @@ impl<F: FieldExt, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W,
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let theta = layouter.get_challenge(config.theta);
-        let gamma = layouter.get_challenge(config.gamma);
-
+        println!("Calling synthesize function");
         layouter.assign_region(
             || "Shuffle original into shuffled",
             |mut region| {
@@ -192,6 +190,10 @@ impl<F: FieldExt, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W,
                         )?;
                     }
                 }
+
+                region.next_phase()?;
+                let theta = region.get_challenge(config.theta);
+                let gamma = region.get_challenge(config.gamma);
 
                 // Second phase
                 let z = self.original.zip(self.shuffled).zip(theta).zip(gamma).map(
@@ -286,6 +288,7 @@ fn test_prover<C: CurveAffine, const W: usize, const H: usize>(
     let proof = {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
+        println!("Begin create proof");
         create_proof::<IPACommitmentScheme<C>, ProverIPA<C>, _, _, _, _>(
             &params,
             &pk,
@@ -295,6 +298,7 @@ fn test_prover<C: CurveAffine, const W: usize, const H: usize>(
             &mut transcript,
         )
         .expect("proof generation should not fail");
+        println!("End create proof");
 
         transcript.finalize()
     };

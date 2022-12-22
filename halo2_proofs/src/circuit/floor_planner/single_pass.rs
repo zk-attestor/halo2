@@ -370,6 +370,14 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
             right.row_offset, // *self.layouter.regions[*right.region_index] + right.row_offset,
         );
     }
+
+    fn get_challenge(&self, challenge: Challenge) -> Value<F> {
+        self.layouter.cs.get_challenge(challenge)
+    }
+
+    fn next_phase(&mut self) {
+        self.layouter.cs.next_phase();
+    }
 }
 
 /// The default value to fill a table column with.

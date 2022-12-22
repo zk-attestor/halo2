@@ -64,13 +64,22 @@ impl<C: ColumnType> PartialOrd for Column<C> {
 }
 
 pub(crate) mod sealed {
+    use std::ops::Add;
+
     /// Phase of advice column
     #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-    pub struct Phase(pub(crate) u8);
+    pub struct Phase(pub(super) u8);
 
     impl Phase {
         pub fn prev(&self) -> Option<Phase> {
             self.0.checked_sub(1).map(Phase)
+        }
+        pub fn next(&self) -> Phase {
+            assert!(self.0 < 2, "The API only supports three phases");
+            Phase(self.0 + 1)
+        }
+        pub fn to_u8(&self) -> u8 {
+            self.0
         }
     }
 
@@ -605,6 +614,10 @@ pub trait Assignment<F: Field> {
     ///
     /// [`Layouter::namespace`]: crate::circuit::Layouter#method.namespace
     fn pop_namespace(&mut self, gadget_name: Option<String>);
+
+    /// Commit advice columns in current phase and squeeze challenges. This can be
+    /// called DURING synthesize.
+    fn next_phase(&mut self) {}
 }
 
 /// A floor planning strategy for a circuit.
