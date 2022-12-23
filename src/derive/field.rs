@@ -508,35 +508,16 @@ macro_rules! field_arithmetic {
                 (r2, r3) = mac(r2, k, $modulus.0[3], r3);
 
                 // Result may be within MODULUS of the correct value
-                if !$field::is_less_than(&[r0, r1, r2, r3], &$modulus.0) {
-                    let mut borrow;
-                    (r0, borrow) = r0.overflowing_sub($modulus.0[0]);
-                    (r1, borrow) = sbb(r1, $modulus.0[1], borrow);
-                    (r2, borrow) = sbb(r2, $modulus.0[2], borrow);
-                    r3 = r3.wrapping_sub($modulus.0[3] + borrow as u64);
-                }
-                $field([r0, r1, r2, r3])
-                // (&$field([r0, r1, r2, r3])).sub(&$modulus)
+                $field([r0, r1, r2, r3]).sub(&$modulus)
             }
 
             #[inline(always)]
             fn is_less_than(x: &[u64; 4], y: &[u64; 4]) -> bool {
-                match x[3].cmp(&y[3]) {
-                    core::cmp::Ordering::Less => return true,
-                    core::cmp::Ordering::Greater => return false,
-                    _ => {}
-                }
-                match x[2].cmp(&y[2]) {
-                    core::cmp::Ordering::Less => return true,
-                    core::cmp::Ordering::Greater => return false,
-                    _ => {}
-                }
-                match x[1].cmp(&y[1]) {
-                    core::cmp::Ordering::Less => return true,
-                    core::cmp::Ordering::Greater => return false,
-                    _ => {}
-                }
-                x[0].lt(&y[0])
+                let (_, borrow) = x[0].overflowing_sub(y[0]);
+                let (_, borrow) = x[1].borrowing_sub(y[1], borrow);
+                let (_, borrow) = x[2].borrowing_sub(y[2], borrow);
+                let (_, borrow) = x[3].borrowing_sub(y[3], borrow);
+                borrow
             }
         }
     };
@@ -620,16 +601,7 @@ macro_rules! field_specific {
                 t3 = r0 + r1;
 
                 // Result may be within MODULUS of the correct value
-                if !$field::is_less_than(&[t0, t1, t2, t3], &$modulus.0) {
-                    let mut borrow;
-                    (t0, borrow) = t0.overflowing_sub($modulus.0[0]);
-                    (t1, borrow) = sbb(t1, $modulus.0[1], borrow);
-                    (t2, borrow) = sbb(t2, $modulus.0[2], borrow);
-                    t3 = t3.wrapping_sub($modulus.0[3] + borrow as u64);
-                }
-                $field([t0, t1, t2, t3])
-
-                //(&$field([t0, t1, t2, t3])).sub(&$modulus)
+                (&$field([t0, t1, t2, t3])).sub(&$modulus)
             }
 
             #[allow(clippy::too_many_arguments)]
