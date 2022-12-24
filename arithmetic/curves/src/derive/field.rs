@@ -432,24 +432,18 @@ macro_rules! field_arithmetic {
             /// Subtracts `rhs` from `self`, returning the result.
             #[inline]
             pub const fn sub(&self, rhs: &Self) -> Self {
-                let mut d0;
-                let mut d1;
-                let mut d2;
-                let mut d3;
-                let mut borrow;
+                let (d0, borrow) = self.0[0].overflowing_sub(rhs.0[0]);
+                let (d1, borrow) = sbb(self.0[1], rhs.0[1], borrow);
+                let (d2, borrow) = sbb(self.0[2], rhs.0[2], borrow);
+                let (d3, borrow) = sbb(self.0[3], rhs.0[3], borrow);
 
-                (d0, borrow) = self.0[0].overflowing_sub(rhs.0[0]);
-                (d1, borrow) = sbb(self.0[1], rhs.0[1], borrow);
-                (d2, borrow) = sbb(self.0[2], rhs.0[2], borrow);
-                (d3, borrow) = sbb(self.0[3], rhs.0[3], borrow);
-
-                // If underflow occurred on the final limb, add the modulus.
-                if borrow {
-                    (d0, borrow) = d0.overflowing_add($modulus.0[0]);
-                    (d1, borrow) = d1.carrying_add($modulus.0[1], borrow);
-                    (d2, borrow) = d2.carrying_add($modulus.0[2], borrow);
-                    (d3, _) = d3.carrying_add($modulus.0[3], borrow);
-                }
+                let borrow = 0u64.wrapping_sub(borrow as u64);
+                // If underflow occurred on the final limb, borrow = 0xfff...fff, otherwise
+                // borrow = 0x000...000. Thus, we use it as a mask to conditionally add the modulus.
+                let (d0, carry) = d0.overflowing_add($modulus.0[0] & borrow);
+                let (d1, carry) = adc(d1, $modulus.0[1] & borrow, carry);
+                let (d2, carry) = adc(d2, $modulus.0[2] & borrow, carry);
+                let (d3, _) = adc(d3, $modulus.0[3] & borrow, carry);
                 $field([d0, d1, d2, d3])
             }
 
@@ -668,18 +662,18 @@ macro_rules! field_specific {
 
                 // Attempt to subtract the modulus, to ensure the value
                 // is smaller than the modulus.
-                let (s0, borrow) = d0.overflowing_sub($modulus.0[0]);
-                let (s1, borrow) = sbb(d1, $modulus.0[1], borrow);
-                let (s2, borrow) = sbb(d2, $modulus.0[2], borrow);
-                let (s3, borrow) = sbb(d3, $modulus.0[3], borrow);
+                let (d0, borrow) = d0.overflowing_sub($modulus.0[0]);
+                let (d1, borrow) = sbb(d1, $modulus.0[1], borrow);
+                let (d2, borrow) = sbb(d2, $modulus.0[2], borrow);
+                let (d3, borrow) = sbb(d3, $modulus.0[3], borrow);
+                let borrow = (carry as u64).wrapping_sub(borrow as u64);
 
-                // if underflow, then return original sum
-                if !carry && borrow {
-                    $field([d0, d1, d2, d3])
-                } else {
-                    // otherwise return difference
-                    $field([s0, s1, s2, s3])
-                }
+                let (d0, carry) = d0.overflowing_add($modulus.0[0] & borrow);
+                let (d1, carry) = adc(d1, $modulus.0[1] & borrow, carry);
+                let (d2, carry) = adc(d2, $modulus.0[2] & borrow, carry);
+                let (d3, _) = adc(d3, $modulus.0[3] & borrow, carry);
+
+                $field([d0, d1, d2, d3])
             }
 
             #[inline(always)]
@@ -740,13 +734,12 @@ macro_rules! field_specific {
                 (r5, borrow) = sbb(r5, $modulus.0[1], borrow);
                 (r6, borrow) = sbb(r6, $modulus.0[2], borrow);
                 (r7, borrow) = sbb(r7, $modulus.0[3], borrow);
+                let borrow = (carry2 as u64).wrapping_sub(borrow as u64);
 
-                if !carry2 && borrow {
-                    (r4, borrow) = r4.overflowing_add($modulus.0[0]);
-                    (r5, borrow) = adc(r5, $modulus.0[1], borrow);
-                    (r6, borrow) = adc(r6, $modulus.0[2], borrow);
-                    (r7, _) = adc(r7, $modulus.0[3], borrow);
-                }
+                (r4, carry2) = r4.overflowing_add($modulus.0[0] & borrow);
+                (r5, carry2) = adc(r5, $modulus.0[1] & borrow, carry2);
+                (r6, carry2) = adc(r6, $modulus.0[2] & borrow, carry2);
+                (r7, _) = adc(r7, $modulus.0[3] & borrow, carry2);
                 $field([r4, r5, r6, r7])
             }
         }
