@@ -559,19 +559,18 @@ pub trait Assignment<F: Field> {
     fn query_instance(&self, column: Column<Instance>, row: usize) -> Result<Value<F>, Error>;
 
     /// Assign an advice column value (witness)
-    fn assign_advice<'r, 'v>(
-        //<V, VR, A, AR>(
-        &'r mut self,
-        // annotation: A,
+    fn assign_advice<V, VR, A, AR>(
+        &mut self,
+        annotation: A,
         column: Column<Advice>,
         row: usize,
-        to: Value<Assigned<F>>, // V,
-    ) -> Result<Value<&'v Assigned<F>>, Error>;
-    // where
-    // V: FnOnce() -> Value<VR>,
-    // VR: Into<Assigned<F>>,
-    // A: FnOnce() -> AR,
-    // AR: Into<String>;
+        to: V,
+    ) -> Result<(), Error>
+    where
+        V: FnOnce() -> Value<VR>,
+        VR: Into<Assigned<F>>,
+        A: FnOnce() -> AR,
+        AR: Into<String>;
 
     /// Assign a fixed value
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>);

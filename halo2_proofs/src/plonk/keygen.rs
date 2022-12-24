@@ -93,15 +93,21 @@ impl<F: Field> Assignment<F> for Assembly<F> {
         Ok(Value::unknown())
     }
 
-    fn assign_advice<'r, 'v>(
-        //<V, VR, A, AR>(
-        &'r mut self,
-        //_: A,
+    fn assign_advice<V, VR, A, AR>(
+        &mut self,
+        _: A,
         _: Column<Advice>,
         _: usize,
-        _: Value<Assigned<F>>,
-    ) -> Result<Value<&'v Assigned<F>>, Error> {
-        Ok(Value::unknown())
+        _: V,
+    ) -> Result<(), Error>
+    where
+        V: FnOnce() -> Value<VR>,
+        VR: Into<Assigned<F>>,
+        A: FnOnce() -> AR,
+        AR: Into<String>,
+    {
+        // We only care about fixed columns here
+        Ok(())
     }
 
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>) {

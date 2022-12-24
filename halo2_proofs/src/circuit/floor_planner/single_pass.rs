@@ -41,8 +41,7 @@ pub struct SingleChipLayouter<'a, F: Field, CS: Assignment<F> + 'a> {
     cs: &'a mut CS,
     constants: Vec<Column<Fixed>>,
     // Stores the starting row for each region.
-    // Edit: modify to just one region with RegionStart(0)
-    // regions: Vec<RegionStart>,
+    regions: Vec<RegionStart>,
     /// Stores the first empty row for each column.
     columns: FxHashMap<RegionColumn, usize>,
     /// Stores the table fixed columns.
@@ -65,7 +64,7 @@ impl<'a, F: Field, CS: Assignment<F>> SingleChipLayouter<'a, F, CS> {
         let ret = SingleChipLayouter {
             cs,
             constants,
-            // regions: vec![],
+            regions: vec![],
             columns: FxHashMap::default(),
             table_columns: vec![],
             _marker: PhantomData,
@@ -77,13 +76,12 @@ impl<'a, F: Field, CS: Assignment<F>> SingleChipLayouter<'a, F, CS> {
 impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a, F, CS> {
     type Root = Self;
 
-    fn assign_region<A, AR, N, NR>(&mut self, name: N, assignment: A) -> Result<AR, Error>
+    fn assign_region<A, AR, N, NR>(&mut self, name: N, mut assignment: A) -> Result<AR, Error>
     where
-        A: FnOnce(Region<'_, F>) -> Result<AR, Error>,
+        A: FnMut(Region<'_, F>) -> Result<AR, Error>,
         N: Fn() -> NR,
         NR: Into<String>,
     {
-        /*
         let region_index = self.regions.len();
 
         // Get shape of the region.
@@ -95,16 +93,16 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
 
         // Lay out this region. We implement the simplest approach here: position the
         // region starting at the earliest row for which none of the columns are in use.
-        let region_start = 0;
+        let mut region_start = 0;
         for column in &shape.columns {
             region_start = cmp::max(region_start, self.columns.get(column).cloned().unwrap_or(0));
         }
-        // self.regions.push(region_start.into());
+        self.regions.push(region_start.into());
 
         // Update column usage information.
         for column in shape.columns {
             self.columns.insert(column, region_start + shape.row_count);
-        }*/
+        }
 
         // Assign region cells.
         self.cs.enter_region(name);
@@ -139,7 +137,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
                     constants_column.into(),
                     *next_constant_row,
                     advice.column,
-                    advice.row_offset, // *self.regions[*advice.region_index] + advice.row_offset,
+                    *self.regions[*advice.region_index] + advice.row_offset,
                 );
                 *next_constant_row += 1;
             }
@@ -275,40 +273,36 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         )
     }
 
-    fn assign_advice<'b, 'v>(
-        &'b mut self,
-        // annotation: &'v (dyn Fn() -> String + 'v),
+    fn assign_advice<'v>(
+        &'v mut self,
+        annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,
-        to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error> {
-        let value = self.layouter.cs.assign_advice(
-            // annotation,
-            column, offset, //*self.layouter.regions[*self.region_index] + offset,
+        to: &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
+    ) -> Result<Cell, Error> {
+        self.layouter.cs.assign_advice(
+            annotation,
+            column,
+            *self.layouter.regions[*self.region_index] + offset,
             to,
         )?;
 
-        Ok(AssignedCell {
-            value,
-            cell: Cell {
-                // region_index: self.region_index,
-                row_offset: offset,
-                column: column.into(),
-            },
-            _marker: PhantomData,
+        Ok(Cell {
+            region_index: self.region_index,
+            row_offset: offset,
+            column: column.into(),
         })
     }
 
     fn assign_advice_from_constant<'v>(
         &'v mut self,
-        _annotation: &'v (dyn Fn() -> String + 'v),
+        annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,
         constant: Assigned<F>,
     ) -> Result<Cell, Error> {
-        let advice = self
-            .assign_advice(column, offset, Value::known(constant))?
-            .cell;
+        let advice =
+            self.assign_advice(annotation, column, offset, &mut || Value::known(constant))?;
         self.constrain_constant(advice, constant)?;
 
         Ok(advice)
@@ -316,7 +310,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
 
     fn assign_advice_from_instance<'v>(
         &mut self,
-        _annotation: &'v (dyn Fn() -> String + 'v),
+        annotation: &'v (dyn Fn() -> String + 'v),
         instance: Column<Instance>,
         row: usize,
         advice: Column<Advice>,
@@ -324,9 +318,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
     ) -> Result<(Cell, Value<F>), Error> {
         let value = self.layouter.cs.query_instance(instance, row)?;
 
-        let cell = self
-            .assign_advice(advice, offset, value.map(|v| Assigned::Trivial(v)))?
-            .cell;
+        let cell = self.assign_advice(annotation, advice, offset, &mut || value.to_field())?;
 
         self.layouter.cs.copy(
             cell.column,
@@ -338,7 +330,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         Ok((cell, value))
     }
 
-    fn assign_fixed(
+    fn assign_fixed<'v>(
         &mut self,
         // annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Fixed>,
@@ -346,12 +338,13 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         to: Assigned<F>,
     ) -> Cell {
         self.layouter.cs.assign_fixed(
-            column, offset, // *self.layouter.regions[*self.region_index] + offset,
+            column,
+            *self.layouter.regions[*self.region_index] + offset,
             to,
         );
 
         Cell {
-            // region_index: self.region_index,
+            region_index: self.region_index,
             row_offset: offset,
             column: column.into(),
         }
@@ -362,12 +355,12 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         Ok(())
     }
 
-    fn constrain_equal(&mut self, left: &Cell, right: &Cell) {
+    fn constrain_equal(&mut self, left: Cell, right: Cell) {
         self.layouter.cs.copy(
             left.column,
-            left.row_offset, // *self.layouter.regions[*left.region_index] + left.row_offset,
+            *self.layouter.regions[*left.region_index] + left.row_offset,
             right.column,
-            right.row_offset, // *self.layouter.regions[*right.region_index] + right.row_offset,
+            *self.layouter.regions[*right.region_index] + right.row_offset,
         );
     }
 

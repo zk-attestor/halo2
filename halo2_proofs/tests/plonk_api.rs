@@ -539,7 +539,7 @@ fn plonk_api() {
         use halo2curves::bn256::Bn256;
 
         type Scheme = KZGCommitmentScheme<Bn256>;
-        bad_keys!(Scheme);
+        // bad_keys!(Scheme);
 
         let params = ParamsKZG::<Bn256>::new(K);
         let rng = OsRng;
@@ -568,7 +568,7 @@ fn plonk_api() {
         use halo2curves::bn256::Bn256;
 
         type Scheme = KZGCommitmentScheme<Bn256>;
-        bad_keys!(Scheme);
+        // bad_keys!(Scheme);
 
         let params = ParamsKZG::<Bn256>::new(K);
         let rng = OsRng;
@@ -597,7 +597,7 @@ fn plonk_api() {
         use halo2curves::pasta::EqAffine;
 
         type Scheme = IPACommitmentScheme<EqAffine>;
-        bad_keys!(Scheme);
+        // bad_keys!(Scheme);
 
         let params = ParamsIPA::<EqAffine>::new(K);
         let rng = OsRng;
@@ -1021,7 +1021,7 @@ fn plonk_api() {
         }
     }
 
-    test_plonk_api_ipa();
+    // test_plonk_api_ipa();
     test_plonk_api_gwc();
     test_plonk_api_shplonk();
 }

@@ -191,18 +191,23 @@ pub fn create_proof<
                 .ok_or(Error::BoundsFailure)
         }
 
-        fn assign_advice<'r, 'v>(
-            //<V, VR, A, AR>(
-            &'r mut self,
-            //_: A,
+        fn assign_advice<V, VR, A, AR>(
+            &mut self,
+            _: A,
             column: Column<Advice>,
             row: usize,
-            to: Value<Assigned<F>>,
-        ) -> Result<Value<&'v Assigned<F>>, Error> {
+            to: V,
+        ) -> Result<(), Error>
+        where
+            V: FnOnce() -> Value<VR>,
+            VR: Into<Assigned<F>>,
+            A: FnOnce() -> AR,
+            AR: Into<String>,
+        {
             // TODO: better to assign all at once, deal with phases later
             // Ignore assignment of advice column in different phase than current one.
             if self.current_phase != column.column_type().phase {
-                return Ok(Value::unknown());
+                return Ok(());
             }
 
             if !self.usable_rows.contains(&row) {
@@ -223,11 +228,11 @@ pub fn create_proof<
                     .get_unchecked_mut(row)
             };
             */
-            *advice_get_mut = to
+            *advice_get_mut = to()
                 .assign()
-                .expect("No Value::unknown() in advice column allowed during create_proof");
-            let immutable_raw_ptr = advice_get_mut as *const Assigned<F>;
-            Ok(Value::known(unsafe { &*immutable_raw_ptr }))
+                .expect("No Value::unknown() in advice column allowed during create_proof")
+                .into();
+            Ok(())
         }
 
         fn assign_fixed(&mut self, _: Column<Fixed>, _: usize, _: Assigned<F>) {

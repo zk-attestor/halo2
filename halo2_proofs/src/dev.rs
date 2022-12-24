@@ -377,14 +377,19 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
             .ok_or(Error::BoundsFailure)
     }
 
-    fn assign_advice<'r, 'v>(
-        //<V, VR, A, AR>(
-        &'r mut self,
-        //_: A,
+    fn assign_advice<V, VR, A, AR>(
+        &mut self,
+        _: A,
         column: Column<Advice>,
         row: usize,
-        to: circuit::Value<Assigned<F>>,
-    ) -> Result<circuit::Value<&'v Assigned<F>>, Error> {
+        to: V,
+    ) -> Result<(), Error>
+    where
+        V: FnOnce() -> circuit::Value<VR>,
+        VR: Into<Assigned<F>>,
+        A: FnOnce() -> AR,
+        AR: Into<String>,
+    {
         if !self.usable_rows.contains(&row) {
             return Err(Error::not_enough_rows_available(self.k));
         }
@@ -404,11 +409,9 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
             .and_then(|v| v.get_mut(row))
             .ok_or(Error::BoundsFailure)?;
 
-        let rc_val = Rc::new(to.assign()?);
-        let val_ref = Rc::downgrade(&rc_val);
+        let rc_val = Rc::new(to().assign().unwrap().into());
         *advice_get_mut = AdviceCellValue::Assigned(rc_val);
-
-        Ok(circuit::Value::known(unsafe { &*val_ref.as_ptr() }))
+        Ok(())
     }
 
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>) {
@@ -1414,11 +1417,7 @@ mod tests {
                         config.q.enable(&mut region, 1)?;
 
                         // Assign a = 0.
-                        region.assign_advice(
-                            /*|| "a",*/ config.a,
-                            0,
-                            Value::known(Assigned::Trivial(Fp::zero())),
-                        )?;
+                        region.assign_advice(|| "a", config.a, 0, || Value::known(Fp::zero()))?;
 
                         // BUG: Forget to assign b = 0! This could go unnoticed during
                         // development, because cell values default to zero, which in this
@@ -1512,16 +1511,16 @@ mod tests {
 
                         // Assign a = 2 and a = 6.
                         region.assign_advice(
-                            // || "a = 2",
+                            || "a = 2",
                             config.a,
                             0,
-                            Value::known(Assigned::Trivial(Fp::from(2))),
+                            || Value::known(Fp::from(2)),
                         )?;
                         region.assign_advice(
-                            // || "a = 6",
+                            || "a = 6",
                             config.a,
                             1,
-                            Value::known(Assigned::Trivial(Fp::from(6))),
+                            || Value::known(Fp::from(6)),
                         )?;
 
                         Ok(())
@@ -1537,18 +1536,18 @@ mod tests {
 
                         // Assign a = 4.
                         region.assign_advice(
-                            // || "a = 4",
+                            || "a = 4",
                             config.a,
                             0,
-                            Value::known(Assigned::Trivial(Fp::from(4))),
+                            || Value::known(Fp::from(4)),
                         )?;
 
                         // BUG: Assign a = 5, which doesn't exist in the table!
                         region.assign_advice(
-                            // || "a = 5",
+                            || "a = 5",
                             config.a,
                             1,
-                            Value::known(Assigned::Trivial(Fp::from(5))),
+                            || Value::known(Fp::from(5)),
                         )?;
 
                         Ok(())

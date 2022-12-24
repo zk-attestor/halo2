@@ -436,7 +436,8 @@ impl<F: FieldExt> FieldInstructions<F> for FieldChip<F> {
     ) -> Result<(), Error> {
         let config = self.config();
 
-        layouter.constrain_instance(num.0.cell(), config.instance, row)
+        layouter.constrain_instance(num.0.cell(), config.instance, row);
+        Ok(())
     }
 }
 // ANCHOR_END: field-instructions-impl

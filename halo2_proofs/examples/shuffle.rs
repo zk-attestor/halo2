@@ -172,8 +172,10 @@ impl<F: FieldExt, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W,
                 {
                     for (offset, &value) in values.transpose_array().iter().enumerate() {
                         region.assign_advice(
-                            // || format!("original[{}][{}]", idx, offset),
-                            column, offset, value,
+                            || format!("original[{}][{}]", idx, offset),
+                            column,
+                            offset,
+                            || value,
                         )?;
                     }
                 }
@@ -185,13 +187,15 @@ impl<F: FieldExt, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W,
                 {
                     for (offset, &value) in values.transpose_array().iter().enumerate() {
                         region.assign_advice(
-                            // || format!("shuffled[{}][{}]", idx, offset),
-                            column, offset, value,
+                            || format!("shuffled[{}][{}]", idx, offset),
+                            column,
+                            offset,
+                            || value,
                         )?;
                     }
                 }
 
-                region.next_phase()?;
+                region.next_phase();
                 let theta = region.get_challenge(config.theta);
                 let gamma = region.get_challenge(config.gamma);
 
@@ -238,8 +242,10 @@ impl<F: FieldExt, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W,
                 );
                 for (offset, value) in z.transpose_vec(H + 1).into_iter().enumerate() {
                     region.assign_advice(
-                        // || format!("z[{}]", offset),
-                        config.z, offset, value,
+                        || format!("z[{}]", offset),
+                        config.z,
+                        offset,
+                        || value,
                     )?;
                 }
 
