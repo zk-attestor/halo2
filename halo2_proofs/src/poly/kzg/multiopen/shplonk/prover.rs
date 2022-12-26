@@ -17,6 +17,8 @@ use ff::Field;
 use group::Curve;
 use halo2curves::pairing::Engine;
 use rand_core::RngCore;
+use rayon::iter::ParallelIterator;
+use rayon::prelude::{IntoParallelIterator, IntoParallelRefIterator};
 use std::fmt::Debug;
 use std::io::{self, Write};
 use std::marker::PhantomData;
@@ -174,11 +176,11 @@ where
         );
 
         let rotation_sets: Vec<RotationSetExtension<E::G1Affine>> = rotation_sets
-            .iter()
+            .par_iter()
             .map(|rotation_set| {
                 let commitments: Vec<CommitmentExtension<E::G1Affine>> = rotation_set
                     .commitments
-                    .iter()
+                    .par_iter()
                     .map(|commitment_data| commitment_data.extend(rotation_set.points.clone()))
                     .collect();
                 rotation_set.extend(commitments)
@@ -187,9 +189,13 @@ where
 
         let v: ChallengeV<_> = transcript.squeeze_challenge_scalar();
 
-        let quotient_polynomials = rotation_sets.iter().map(quotient_contribution);
+        let quotient_polynomials = rotation_sets
+            .par_iter()
+            .map(quotient_contribution)
+            .collect::<Vec<_>>();
 
         let h_x: Polynomial<E::Scalar, Coeff> = quotient_polynomials
+            .into_iter()
             .zip(powers(*v))
             .map(|(poly, power_of_v)| poly * power_of_v)
             .reduce(|acc, poly| acc + &poly)
@@ -238,7 +244,7 @@ where
             Vec<Polynomial<E::Scalar, Coeff>>,
             Vec<E::Scalar>,
         ) = rotation_sets
-            .into_iter()
+            .into_par_iter()
             .map(linearisation_contribution)
             .unzip();
 
@@ -252,6 +258,7 @@ where
         let l_x = l_x - &(h_x * zt_eval);
 
         // sanity check
+        #[cfg(debug_assertions)]
         {
             let must_be_zero = eval_polynomial(&l_x.values[..], *u);
             assert_eq!(must_be_zero, E::Scalar::zero());

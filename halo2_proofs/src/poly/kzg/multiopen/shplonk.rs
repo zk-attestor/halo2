@@ -80,7 +80,7 @@ where
         assert_eq!(*point, query.get_point());
     }
     // All points appear in queries
-    let super_point_set: Vec<F> = rotation_point_map.values().cloned().collect();
+    let super_point_set: Vec<F> = rotation_point_map.values().copied().collect();
 
     // Collect rotation sets for each commitment
     // Example elements in the vector:
@@ -90,7 +90,7 @@ where
     // (C_3, {r_2, r_3, r_4}),
     // ...
     let mut commitment_rotation_set_map: Vec<(Q::Commitment, Vec<F>)> = vec![];
-    for query in queries.clone() {
+    for query in queries.iter() {
         let rotation = query.get_point();
         if let Some(pos) = commitment_rotation_set_map
             .iter()
@@ -114,8 +114,7 @@ where
     let mut rotation_set_commitment_map = Vec::<(Vec<_>, Vec<Q::Commitment>)>::new();
     for (commitment, rotation_set) in commitment_rotation_set_map.iter() {
         if let Some(pos) = rotation_set_commitment_map.iter().position(|(set, _)| {
-            BTreeSet::<F>::from_iter(set.iter().cloned())
-                == BTreeSet::<F>::from_iter(rotation_set.iter().cloned())
+            BTreeSet::<&F>::from_iter(set.iter()) == BTreeSet::<&F>::from_iter(rotation_set.iter())
         }) {
             let (_, commitments) = &mut rotation_set_commitment_map[pos];
             if !commitments.contains(commitment) {
@@ -126,6 +125,7 @@ where
         }
     }
 
+    // TODO: parallelize
     let rotation_sets = rotation_set_commitment_map
         .into_iter()
         .map(|(rotations, commitments)| {
