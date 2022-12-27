@@ -76,6 +76,7 @@ sanity-checks = []
 batch = ["rand_core/getrandom"]
 serde-raw = []
 raw-unchecked = ["serde-raw"]
+profile = []
 
 [lib]
 bench = false

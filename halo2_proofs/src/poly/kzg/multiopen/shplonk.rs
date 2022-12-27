@@ -2,6 +2,7 @@ mod prover;
 mod verifier;
 
 pub use prover::ProverSHPLONK;
+use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 pub use verifier::VerifierSHPLONK;
 
@@ -50,9 +51,9 @@ struct RotationSet<F: FieldExt, T: PartialEq + Clone> {
 }
 
 #[derive(Debug, PartialEq)]
-struct IntermediateSets<F: FieldExt, Q: Query<F>> {
+struct IntermediateSets<F: FieldExt + Hash, Q: Query<F>> {
     rotation_sets: Vec<RotationSet<F, Q::Commitment>>,
-    super_point_set: Vec<F>,
+    super_point_set: FxHashSet<F>,
 }
 
 fn construct_intermediate_sets<F: FieldExt + Hash, I, Q: Query<F, Eval = F>>(
@@ -119,16 +120,16 @@ where
         };
     }
 
-    // TODO: parallelize
     let rotation_sets = rotation_set_commitment_map
-        .into_iter()
+        .into_par_iter()
         .map(|(rotations, commitments)| {
+            let rotations_vec = rotations.iter().collect::<Vec<_>>();
             let commitments: Vec<Commitment<F, Q::Commitment>> = commitments
-                .into_iter()
+                .into_par_iter()
                 .map(|commitment| {
-                    let evals: Vec<F> = rotations
-                        .iter()
-                        .map(|rotation| get_eval(commitment, *rotation))
+                    let evals: Vec<F> = rotations_vec
+                        .par_iter()
+                        .map(|&&rotation| get_eval(commitment, rotation))
                         .collect();
                     Commitment((commitment, evals))
                 })
@@ -143,7 +144,7 @@ where
 
     IntermediateSets {
         rotation_sets,
-        super_point_set: super_point_set.into_iter().collect(),
+        super_point_set,
     }
 }
 
