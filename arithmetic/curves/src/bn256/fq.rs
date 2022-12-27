@@ -69,7 +69,7 @@ pub const NEGATIVE_ONE: Fq = Fq([
 
 const MODULUS_STR: &str = "0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47";
 
-const TWO_INV: Fq = Fq::const_from_raw([
+const TWO_INV: Fq = Fq::from_raw([
     0x9e10460b6c3e7ea4,
     0xcbc0b548b438e546,
     0xdc2822db40c0ac2e,
@@ -83,7 +83,7 @@ const ROOT_OF_UNITY_INV: Fq = Fq::zero();
 const DELTA: Fq = Fq::zero();
 
 /// `ZETA^3 = 1 mod r` where `ZETA^2 != 1 mod r`
-const ZETA: Fq = Fq::const_from_raw([
+const ZETA: Fq = Fq::from_raw([
     0x5763473177fffffeu64,
     0xd4f263f1acdb5c4fu64,
     0x59e26bcea0d48bacu64,

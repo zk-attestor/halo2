@@ -64,8 +64,8 @@ impl CurveAffineExt for G2Affine {
 }
 
 const G1_GENERATOR_X: Fq = Fq::one();
-const G1_GENERATOR_Y: Fq = Fq::const_from_raw([2, 0, 0, 0]);
-const G1_B: Fq = Fq::const_from_raw([3, 0, 0, 0]);
+const G1_GENERATOR_Y: Fq = Fq::from_raw([2, 0, 0, 0]);
+const G1_B: Fq = Fq::from_raw([3, 0, 0, 0]);
 const ENDO_G1: [u64; 4] = [
     0x7a7bd9d4391eb18du64,
     0x4ccef014a773d2cfu64,
@@ -75,7 +75,7 @@ const ENDO_G1: [u64; 4] = [
 const ENDO_G2: [u64; 4] = [0xd91d232ec7e0b3d7u64, 0x0000000000000002u64, 0u64, 0u64];
 const ENDO_MINUS_B1: [u64; 4] = [0x8211bbeb7d4f1128u64, 0x6f4d8248eeb859fcu64, 0u64, 0u64];
 const ENDO_B2: [u64; 4] = [0x89d3256894d213e3u64, 0u64, 0u64, 0u64];
-const ENDO_BETA: Fr = Fr::const_from_raw([
+const ENDO_BETA: Fr = Fr::from_raw([
     0x8b17ea66b99c90ddu64,
     0x5bfc41088d8daaa7u64,
     0xb3c4d79d41a91758u64,
@@ -83,13 +83,13 @@ const ENDO_BETA: Fr = Fr::const_from_raw([
 ]);
 
 const G2_B: Fq2 = Fq2 {
-    c0: Fq::const_from_raw([
+    c0: Fq::from_raw([
         0x3267e6dc24a138e5,
         0xb5b4c5e559dbefa3,
         0x81be18991be06ac3,
         0x2b149d40ceb8aaae,
     ]),
-    c1: Fq::const_from_raw([
+    c1: Fq::from_raw([
         0xe4a2bd0685c315d2,
         0xa74fa084e52d1852,
         0xcd2cafadeed8fdf4,
@@ -98,13 +98,13 @@ const G2_B: Fq2 = Fq2 {
 };
 
 const G2_GENERATOR_X: Fq2 = Fq2 {
-    c0: Fq::const_from_raw([
+    c0: Fq::from_raw([
         0x46debd5cd992f6ed,
         0x674322d4f75edadd,
         0x426a00665e5c4479,
         0x1800deef121f1e76,
     ]),
-    c1: Fq::const_from_raw([
+    c1: Fq::from_raw([
         0x97e485b7aef312c2,
         0xf1aa493335a9e712,
         0x7260bfb731fb5d25,
@@ -113,14 +113,14 @@ const G2_GENERATOR_X: Fq2 = Fq2 {
 };
 
 const G2_GENERATOR_Y: Fq2 = Fq2 {
-    c0: Fq::const_from_raw([
+    c0: Fq::from_raw([
         0x4ce6cc0166fa7daa,
         0xe3d1e7690c43d37b,
         0x4aab71808dcb408f,
         0x12c85ea5db8c6deb,
     ]),
 
-    c1: Fq::const_from_raw([
+    c1: Fq::from_raw([
         0x55acdadcd122975b,
         0xbc4b313370b38ef3,
         0xec9e99ad690c3395,
