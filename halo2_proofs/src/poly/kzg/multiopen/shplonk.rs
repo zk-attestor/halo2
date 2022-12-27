@@ -11,8 +11,9 @@ use crate::{
 };
 
 use std::{
-    collections::{btree_map::Entry, BTreeMap, BTreeSet},
+    collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
     marker::PhantomData,
+    sync::Arc,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -69,18 +70,8 @@ where
             .get_eval()
     };
 
-    // Order points according to their rotation
-    let mut rotation_point_map = BTreeMap::new();
-    for query in queries.clone() {
-        let point = rotation_point_map
-            .entry(query.get_point())
-            .or_insert_with(|| query.get_point());
-
-        // Assert rotation point matching consistency
-        assert_eq!(*point, query.get_point());
-    }
-    // All points appear in queries
-    let super_point_set: Vec<F> = rotation_point_map.values().copied().collect();
+    // All points that appear in queries
+    let mut super_point_set = BTreeSet::new();
 
     // Collect rotation sets for each commitment
     // Example elements in the vector:
@@ -89,19 +80,21 @@ where
     // (C_2, {r_2, r_3, r_4}),
     // (C_3, {r_2, r_3, r_4}),
     // ...
-    let mut commitment_rotation_set_map: Vec<(Q::Commitment, Vec<F>)> = vec![];
+    let mut commitment_rotation_set_map: Vec<(Q::Commitment, BTreeSet<F>)> = vec![];
     for query in queries.iter() {
         let rotation = query.get_point();
-        if let Some(pos) = commitment_rotation_set_map
-            .iter()
-            .position(|(commitment, _)| *commitment == query.get_commitment())
+        super_point_set.insert(rotation);
+        if let Some(commitment_rotation_set) = commitment_rotation_set_map
+            .iter_mut()
+            .find(|(commitment, _)| *commitment == query.get_commitment())
         {
-            let (_, rotation_set) = &mut commitment_rotation_set_map[pos];
-            if !rotation_set.contains(&rotation) {
-                rotation_set.push(rotation);
-            }
+            let (_, rotation_set) = commitment_rotation_set;
+            rotation_set.insert(rotation);
         } else {
-            commitment_rotation_set_map.push((query.get_commitment(), vec![rotation]));
+            commitment_rotation_set_map.push((
+                query.get_commitment(),
+                BTreeSet::from_iter(std::iter::once(rotation)),
+            ));
         };
     }
 
@@ -111,18 +104,12 @@ where
     // {r_1, r_2, r_3} : [C_1]
     // {r_2, r_3, r_4} : [C_2, C_3],
     // ...
-    let mut rotation_set_commitment_map = Vec::<(Vec<_>, Vec<Q::Commitment>)>::new();
-    for (commitment, rotation_set) in commitment_rotation_set_map.iter() {
-        if let Some(pos) = rotation_set_commitment_map.iter().position(|(set, _)| {
-            BTreeSet::<&F>::from_iter(set.iter()) == BTreeSet::<&F>::from_iter(rotation_set.iter())
-        }) {
-            let (_, commitments) = &mut rotation_set_commitment_map[pos];
-            if !commitments.contains(commitment) {
-                commitments.push(*commitment);
-            }
-        } else {
-            rotation_set_commitment_map.push((rotation_set.clone(), vec![*commitment]))
-        }
+    let mut rotation_set_commitment_map = BTreeMap::<BTreeSet<F>, Vec<Q::Commitment>>::new();
+    for (commitment, rotation_set) in commitment_rotation_set_map.into_iter() {
+        rotation_set_commitment_map
+            .entry(rotation_set)
+            .and_modify(|commitments| commitments.push(commitment))
+            .or_insert_with(|| vec![commitment]);
     }
 
     // TODO: parallelize
@@ -130,29 +117,26 @@ where
         .into_iter()
         .map(|(rotations, commitments)| {
             let commitments: Vec<Commitment<F, Q::Commitment>> = commitments
-                .iter()
+                .into_iter()
                 .map(|commitment| {
                     let evals: Vec<F> = rotations
                         .iter()
-                        .map(|rotation| get_eval(*commitment, *rotation))
+                        .map(|rotation| get_eval(commitment, *rotation))
                         .collect();
-                    Commitment((*commitment, evals))
+                    Commitment((commitment, evals))
                 })
                 .collect();
 
             RotationSet {
                 commitments,
-                points: rotations
-                    .iter()
-                    .map(|rotation| *rotation_point_map.get(rotation).unwrap())
-                    .collect(),
+                points: rotations.into_iter().collect(),
             }
         })
         .collect::<Vec<RotationSet<_, _>>>();
 
     IntermediateSets {
         rotation_sets,
-        super_point_set,
+        super_point_set: super_point_set.into_iter().collect(),
     }
 }
 
