@@ -74,13 +74,13 @@ const R3: Fq = Fq([
 
 /// `GENERATOR = 7 mod r` is a generator of the `q - 1` order multiplicative
 /// subgroup, or in other words a primitive root of the field.
-const GENERATOR: Fq = Fq::const_from_raw([0x07, 0x00, 0x00, 0x00]);
+const GENERATOR: Fq = Fq::from_raw([0x07, 0x00, 0x00, 0x00]);
 
 /// GENERATOR^t where t * 2^s + 1 = r
 /// with t odd. In other words, this
 /// is a 2^s root of unity.
 /// `0xc1dc060e7a91986df9879a3fbc483a898bdeab680756045992f4b5402b052f2`
-const ROOT_OF_UNITY: Fq = Fq::const_from_raw([
+const ROOT_OF_UNITY: Fq = Fq::from_raw([
     0x992f4b5402b052f2,
     0x98bdeab680756045,
     0xdf9879a3fbc483a8,
@@ -88,7 +88,7 @@ const ROOT_OF_UNITY: Fq = Fq::const_from_raw([
 ]);
 
 /// 1 / ROOT_OF_UNITY mod q
-const ROOT_OF_UNITY_INV: Fq = Fq::const_from_raw([
+const ROOT_OF_UNITY_INV: Fq = Fq::from_raw([
     0xb6fb30a0884f0d1c,
     0x77a275910aa413c3,
     0xefc7b0c75b8cbb72,
@@ -96,7 +96,7 @@ const ROOT_OF_UNITY_INV: Fq = Fq::const_from_raw([
 ]);
 
 /// 1 / 2 mod q
-const TWO_INV: Fq = Fq::const_from_raw([
+const TWO_INV: Fq = Fq::from_raw([
     0xdfe92f46681b20a1,
     0x5d576e7357a4501d,
     0xffffffffffffffff,

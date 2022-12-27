@@ -20,6 +20,8 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 // integers in little-endian order. `Fr` values are always in
 // Montgomery form; i.e., Fr(a) = aR mod r, with R = 2^256.
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
+// PartialEq is derived for Hash, but if privacy perservation is needed, then constant time functions should be used:
+// see NCC-E001151-003 in https://research.nccgroup.com/2021/11/02/public-report-zcash-nu5-cryptography-review/
 pub struct Fr(pub(crate) [u64; 4]);
 
 /// Constant representing the modulus
@@ -65,7 +67,7 @@ const R3: Fr = Fr([
 
 /// `GENERATOR = 7 mod r` is a generator of the `r - 1` order multiplicative
 /// subgroup, or in other words a primitive root of the field.
-const GENERATOR: Fr = Fr::const_from_raw([0x07, 0x00, 0x00, 0x00]);
+const GENERATOR: Fr = Fr::from_raw([0x07, 0x00, 0x00, 0x00]);
 
 const S: u32 = 28;
 
@@ -73,7 +75,7 @@ const S: u32 = 28;
 /// with t odd. In other words, this
 /// is a 2^s root of unity.
 /// `0x3ddb9f5166d18b798865ea93dd31f743215cf6dd39329c8d34f1ed960c37c9c`
-const ROOT_OF_UNITY: Fr = Fr::const_from_raw([
+const ROOT_OF_UNITY: Fr = Fr::from_raw([
     0xd34f1ed960c37c9c,
     0x3215cf6dd39329c8,
     0x98865ea93dd31f74,
@@ -81,7 +83,7 @@ const ROOT_OF_UNITY: Fr = Fr::const_from_raw([
 ]);
 
 /// 1 / 2 mod r
-const TWO_INV: Fr = Fr::const_from_raw([
+const TWO_INV: Fr = Fr::from_raw([
     0xa1f0fac9f8000001,
     0x9419f4243cdcb848,
     0xdc2822db40c0ac2e,
@@ -89,7 +91,7 @@ const TWO_INV: Fr = Fr::const_from_raw([
 ]);
 
 /// 1 / ROOT_OF_UNITY mod r
-const ROOT_OF_UNITY_INV: Fr = Fr::const_from_raw([
+const ROOT_OF_UNITY_INV: Fr = Fr::from_raw([
     0x0ed3e50a414e6dba,
     0xb22625f59115aba7,
     0x1bbe587180f34361,
@@ -100,7 +102,7 @@ const ROOT_OF_UNITY_INV: Fr = Fr::const_from_raw([
 /// with t odd. In other words, this
 /// is a t root of unity.
 // 0x09226b6e22c6f0ca64ec26aad4c86e715b5f898e5e963f25870e56bbe533e9a2
-const DELTA: Fr = Fr::const_from_raw([
+const DELTA: Fr = Fr::from_raw([
     0x870e56bbe533e9a2,
     0x5b5f898e5e963f25,
     0x64ec26aad4c86e71,
@@ -108,7 +110,7 @@ const DELTA: Fr = Fr::const_from_raw([
 ]);
 
 /// `ZETA^3 = 1 mod r` where `ZETA^2 != 1 mod r`
-const ZETA: Fr = Fr::const_from_raw([
+const ZETA: Fr = Fr::from_raw([
     0xb8ca0b2d36636f23,
     0xcc37a73fec2bc5e9,
     0x048b6e193fd84104,

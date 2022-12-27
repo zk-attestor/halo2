@@ -48,14 +48,8 @@ macro_rules! field_common {
 
             /// Converts from an integer represented in little endian
             /// into its (congruent) `$field` representation.
-            pub fn from_raw(val: [u64; 4]) -> Self {
+            pub const fn from_raw(val: [u64; 4]) -> Self {
                 (&$field(val)).mul(&$r2)
-            }
-
-            /// Converts from an integer represented in little endian
-            /// into its (congruent) `$field` representation.
-            pub const fn const_from_raw(val: [u64; 4]) -> Self {
-                (&$field(val)).const_mul(&$r2)
             }
 
             /// Attempts to convert a little-endian byte representation of
@@ -358,34 +352,6 @@ macro_rules! field_arithmetic {
                 self.add(self)
             }
 
-            /// Multiplies `rhs` by `self`, returning the result.
-            #[inline]
-            pub const fn const_mul(&self, rhs: &Self) -> $field {
-                // Schoolbook multiplication
-
-                let (r0, carry) = mac(0, self.0[0], rhs.0[0], 0);
-                let (r1, carry) = mac(0, self.0[0], rhs.0[1], carry);
-                let (r2, carry) = mac(0, self.0[0], rhs.0[2], carry);
-                let (r3, r4) = mac(0, self.0[0], rhs.0[3], carry);
-
-                let (r1, carry) = mac(r1, self.0[1], rhs.0[0], 0);
-                let (r2, carry) = mac(r2, self.0[1], rhs.0[1], carry);
-                let (r3, carry) = mac(r3, self.0[1], rhs.0[2], carry);
-                let (r4, r5) = mac(r4, self.0[1], rhs.0[3], carry);
-
-                let (r2, carry) = mac(r2, self.0[2], rhs.0[0], 0);
-                let (r3, carry) = mac(r3, self.0[2], rhs.0[1], carry);
-                let (r4, carry) = mac(r4, self.0[2], rhs.0[2], carry);
-                let (r5, r6) = mac(r5, self.0[2], rhs.0[3], carry);
-
-                let (r3, carry) = mac(r3, self.0[3], rhs.0[0], 0);
-                let (r4, carry) = mac(r4, self.0[3], rhs.0[1], carry);
-                let (r5, carry) = mac(r5, self.0[3], rhs.0[2], carry);
-                let (r6, r7) = mac(r6, self.0[3], rhs.0[3], carry);
-
-                $field::montgomery_reduce(r0, r1, r2, r3, r4, r5, r6, r7)
-            }
-
             /// Squares this element.
             #[inline]
             pub const fn square(&self) -> $field {
@@ -466,7 +432,7 @@ macro_rules! field_arithmetic {
 
             /// Montgomery reduce where last 4 registers are 0
             #[inline(always)]
-            pub(crate) fn montgomery_reduce_short(
+            pub(crate) const fn montgomery_reduce_short(
                 mut r0: u64,
                 mut r1: u64,
                 mut r2: u64,
@@ -502,7 +468,7 @@ macro_rules! field_arithmetic {
                 (r2, r3) = mac(r2, k, $modulus.0[3], r3);
 
                 // Result may be within MODULUS of the correct value
-                $field([r0, r1, r2, r3]).sub(&$modulus)
+                (&$field([r0, r1, r2, r3])).sub(&$modulus)
             }
 
             #[inline(always)]
@@ -537,10 +503,10 @@ macro_rules! field_specific {
 
             /// Multiplies `rhs` by `self`, returning the result.
             #[inline]
-            pub fn mul(&self, rhs: &Self) -> $field {
+            pub const fn mul(&self, rhs: &Self) -> $field {
                 // When the highest bit in the top register of the modulus is 0 and the rest of the bits are not all 1, we can use an optimization from the gnark team: https://hackmd.io/@gnark/modular_multiplication
 
-                // I think this is exactly the same as the previous `mul` implementation (see `const_mul`) with `montgomery_reduce` at the end (where `montgomery_reduce` is slightly cheaper in "sparse" setting)
+                // I think this is exactly the same as the previous `mul` implementation with `montgomery_reduce` at the end (where `montgomery_reduce` is slightly cheaper in "sparse" setting)
                 // Maybe the use of mutable variables is slightly more efficient?
                 let mut r0;
                 let mut r1;
@@ -676,9 +642,32 @@ macro_rules! field_specific {
                 $field([d0, d1, d2, d3])
             }
 
-            #[inline(always)]
+            /// Multiplies `rhs` by `self`, returning the result.
+            #[inline]
             pub const fn mul(&self, rhs: &Self) -> $field {
-                $field::const_mul(self, rhs)
+                // Schoolbook multiplication
+
+                let (r0, carry) = mac(0, self.0[0], rhs.0[0], 0);
+                let (r1, carry) = mac(0, self.0[0], rhs.0[1], carry);
+                let (r2, carry) = mac(0, self.0[0], rhs.0[2], carry);
+                let (r3, r4) = mac(0, self.0[0], rhs.0[3], carry);
+
+                let (r1, carry) = mac(r1, self.0[1], rhs.0[0], 0);
+                let (r2, carry) = mac(r2, self.0[1], rhs.0[1], carry);
+                let (r3, carry) = mac(r3, self.0[1], rhs.0[2], carry);
+                let (r4, r5) = mac(r4, self.0[1], rhs.0[3], carry);
+
+                let (r2, carry) = mac(r2, self.0[2], rhs.0[0], 0);
+                let (r3, carry) = mac(r3, self.0[2], rhs.0[1], carry);
+                let (r4, carry) = mac(r4, self.0[2], rhs.0[2], carry);
+                let (r5, r6) = mac(r5, self.0[2], rhs.0[3], carry);
+
+                let (r3, carry) = mac(r3, self.0[3], rhs.0[0], 0);
+                let (r4, carry) = mac(r4, self.0[3], rhs.0[1], carry);
+                let (r5, carry) = mac(r5, self.0[3], rhs.0[2], carry);
+                let (r6, r7) = mac(r6, self.0[3], rhs.0[3], carry);
+
+                $field::montgomery_reduce(r0, r1, r2, r3, r4, r5, r6, r7)
             }
 
             #[allow(clippy::too_many_arguments)]

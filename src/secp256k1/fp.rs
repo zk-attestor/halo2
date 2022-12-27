@@ -63,7 +63,7 @@ const R2: Fp = Fp([0x000007a2000e90a1, 0x1, 0, 0]);
 const R3: Fp = Fp([0x002bb1e33795f671, 0x100000b73, 0, 0]);
 
 /// 1 / 2 mod p
-const TWO_INV: Fp = Fp::const_from_raw([
+const TWO_INV: Fp = Fp::from_raw([
     0xffffffff7ffffe18,
     0xffffffffffffffff,
     0xffffffffffffffff,

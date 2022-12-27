@@ -434,7 +434,7 @@ impl FieldExt for Fq2 {
         c1: Fq::zero(),
     };
     const TWO_INV: Self = Fq2 {
-        c0: Fq::const_from_raw([
+        c0: Fq::from_raw([
             0x9e10460b6c3e7ea4,
             0xcbc0b548b438e546,
             0xdc2822db40c0ac2e,
