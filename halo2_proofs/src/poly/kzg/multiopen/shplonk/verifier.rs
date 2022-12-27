@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::io::Read;
 
 use super::ChallengeY;
@@ -39,6 +40,7 @@ where
     E: MultiMillerLoop + Debug,
     E::G1Affine: SerdeCurveAffine,
     E::G2Affine: SerdeCurveAffine,
+    E::Scalar: Hash,
 {
     type Guard = GuardKZG<'params, E>;
     type MSMAccumulator = DualMSM<'params, E>;

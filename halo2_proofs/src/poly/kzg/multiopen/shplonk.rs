@@ -2,6 +2,7 @@ mod prover;
 mod verifier;
 
 pub use prover::ProverSHPLONK;
+use rustc_hash::FxHashSet;
 pub use verifier::VerifierSHPLONK;
 
 use crate::{
@@ -12,6 +13,7 @@ use crate::{
 
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
+    hash::Hash,
     marker::PhantomData,
     sync::Arc,
 };
@@ -53,7 +55,7 @@ struct IntermediateSets<F: FieldExt, Q: Query<F>> {
     super_point_set: Vec<F>,
 }
 
-fn construct_intermediate_sets<F: FieldExt, I, Q: Query<F, Eval = F>>(
+fn construct_intermediate_sets<F: FieldExt + Hash, I, Q: Query<F, Eval = F>>(
     queries: I,
 ) -> IntermediateSets<F, Q>
 where
@@ -71,7 +73,7 @@ where
     };
 
     // All points that appear in queries
-    let mut super_point_set = BTreeSet::new();
+    let mut super_point_set = FxHashSet::default();
 
     // Collect rotation sets for each commitment
     // Example elements in the vector:
@@ -80,7 +82,7 @@ where
     // (C_2, {r_2, r_3, r_4}),
     // (C_3, {r_2, r_3, r_4}),
     // ...
-    let mut commitment_rotation_set_map: Vec<(Q::Commitment, BTreeSet<F>)> = vec![];
+    let mut commitment_rotation_set_map: Vec<(Q::Commitment, FxHashSet<F>)> = vec![];
     for query in queries.iter() {
         let rotation = query.get_point();
         super_point_set.insert(rotation);
@@ -93,7 +95,7 @@ where
         } else {
             commitment_rotation_set_map.push((
                 query.get_commitment(),
-                BTreeSet::from_iter(std::iter::once(rotation)),
+                FxHashSet::from_iter(core::iter::once(rotation)),
             ));
         };
     }
@@ -104,12 +106,17 @@ where
     // {r_1, r_2, r_3} : [C_1]
     // {r_2, r_3, r_4} : [C_2, C_3],
     // ...
-    let mut rotation_set_commitment_map = BTreeMap::<BTreeSet<F>, Vec<Q::Commitment>>::new();
+    let mut rotation_set_commitment_map: Vec<(FxHashSet<F>, Vec<Q::Commitment>)> = vec![];
     for (commitment, rotation_set) in commitment_rotation_set_map.into_iter() {
-        rotation_set_commitment_map
-            .entry(rotation_set)
-            .and_modify(|commitments| commitments.push(commitment))
-            .or_insert_with(|| vec![commitment]);
+        if let Some(rotation_set_commitment) = rotation_set_commitment_map
+            .iter_mut()
+            .find(|(set, _)| set == &rotation_set)
+        {
+            let (_, commitments) = rotation_set_commitment;
+            commitments.push(commitment);
+        } else {
+            rotation_set_commitment_map.push((rotation_set, vec![commitment]));
+        };
     }
 
     // TODO: parallelize
@@ -151,7 +158,7 @@ mod proptests {
 
     use super::{construct_intermediate_sets, Commitment, IntermediateSets};
     use crate::poly::Rotation;
-    use halo2curves::{pasta::Fp, FieldExt};
+    use halo2curves::{bn256::Fr, FieldExt};
 
     use std::collections::BTreeMap;
     use std::convert::TryFrom;
@@ -163,11 +170,11 @@ mod proptests {
         commitment: usize,
     }
 
-    impl super::Query<Fp> for MyQuery<Fp> {
+    impl super::Query<Fr> for MyQuery<Fr> {
         type Commitment = usize;
-        type Eval = Fp;
+        type Eval = Fr;
 
-        fn get_point(&self) -> Fp {
+        fn get_point(&self) -> Fr {
             self.point
         }
 
@@ -183,15 +190,15 @@ mod proptests {
     prop_compose! {
         fn arb_point()(
             bytes in vec(any::<u8>(), 64)
-        ) -> Fp {
-            Fp::from_bytes_wide(&<[u8; 64]>::try_from(bytes).unwrap())
+        ) -> Fr {
+            Fr::from_bytes_wide(&<[u8; 64]>::try_from(bytes).unwrap())
         }
     }
 
     prop_compose! {
-        fn arb_query(commitment: usize, point: Fp)(
+        fn arb_query(commitment: usize, point: Fr)(
             eval in arb_point()
-        ) -> MyQuery<Fp> {
+        ) -> MyQuery<Fr> {
             MyQuery {
                 point,
                 eval,
@@ -223,8 +230,8 @@ mod proptests {
             queries_1 in mapping.iter().map(|(commitment, point_idx)| arb_query(*commitment, points_1[*point_idx])).collect::<Vec<_>>(),
             queries_2 in mapping.iter().map(|(commitment, point_idx)| arb_query(*commitment, points_2[*point_idx])).collect::<Vec<_>>(),
         ) -> (
-            Vec<MyQuery<Fp>>,
-            Vec<MyQuery<Fp>>
+            Vec<MyQuery<Fr>>,
+            Vec<MyQuery<Fr>>
         ) {
             (
                 queries_1,

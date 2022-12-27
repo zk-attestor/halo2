@@ -20,6 +20,7 @@ use rand_core::RngCore;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::{IntoParallelIterator, IntoParallelRefIterator};
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::io::{self, Write};
 use std::marker::PhantomData;
 use std::ops::MulAssign;
@@ -108,6 +109,7 @@ impl<'params, E: Engine + Debug> Prover<'params, KZGCommitmentScheme<E>>
 where
     E::G1Affine: SerdeCurveAffine,
     E::G2Affine: SerdeCurveAffine,
+    E::Scalar: Hash,
 {
     const QUERY_INSTANCE: bool = false;
 
