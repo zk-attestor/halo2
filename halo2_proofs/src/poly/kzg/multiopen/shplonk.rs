@@ -104,12 +104,18 @@ where
     // {r_1, r_2, r_3} : [C_1]
     // {r_2, r_3, r_4} : [C_2, C_3],
     // ...
-    let mut rotation_set_commitment_map = BTreeMap::<BTreeSet<F>, Vec<Q::Commitment>>::new();
+    // NOTE: we want to make the order of the collection of rotation sets independent of the opening points, to ease the verifier computation
+    let mut rotation_set_commitment_map: Vec<(BTreeSet<F>, Vec<Q::Commitment>)> = vec![];
     for (commitment, rotation_set) in commitment_rotation_set_map.into_iter() {
-        rotation_set_commitment_map
-            .entry(rotation_set)
-            .and_modify(|commitments| commitments.push(commitment))
-            .or_insert_with(|| vec![commitment]);
+        if let Some(rotation_set_commitment) = rotation_set_commitment_map
+            .iter_mut()
+            .find(|(set, _)| set == &rotation_set)
+        {
+            let (_, commitments) = rotation_set_commitment;
+            commitments.push(commitment);
+        } else {
+            rotation_set_commitment_map.push((rotation_set, vec![commitment]));
+        };
     }
 
     let rotation_sets = rotation_set_commitment_map
