@@ -457,7 +457,7 @@ fn render_lookup<F: FieldExt>(
             advice
                 .iter()
                 .map(|rc| match rc {
-                    AdviceCellValue::Assigned(a) => CellValue::Assigned(match a.as_ref() {
+                    AdviceCellValue::Assigned(a) => CellValue::Assigned(match a {
                         Assigned::Trivial(a) => *a,
                         _ => unreachable!(),
                     }),

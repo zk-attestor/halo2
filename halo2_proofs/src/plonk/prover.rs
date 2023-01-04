@@ -191,14 +191,14 @@ pub fn create_proof<
                 .ok_or(Error::BoundsFailure)
         }
 
-        fn assign_advice<'r, 'v>(
+        fn assign_advice(
             //<V, VR, A, AR>(
-            &'r mut self,
+            &mut self,
             //_: A,
             column: Column<Advice>,
             row: usize,
             to: Value<Assigned<F>>,
-        ) -> Result<Value<&'v Assigned<F>>, Error> {
+        ) -> Result<Value<Assigned<F>>, Error> {
             // TODO: better to assign all at once, deal with phases later
             // Ignore assignment of advice column in different phase than current one.
             if self.current_phase != column.column_type().phase {
@@ -226,8 +226,7 @@ pub fn create_proof<
             *advice_get_mut = to
                 .assign()
                 .expect("No Value::unknown() in advice column allowed during create_proof");
-            let immutable_raw_ptr = advice_get_mut as *const Assigned<F>;
-            Ok(Value::known(unsafe { &*immutable_raw_ptr }))
+            Ok(Value::known(*advice_get_mut))
         }
 
         fn assign_fixed(&mut self, _: Column<Fixed>, _: usize, _: Assigned<F>) {

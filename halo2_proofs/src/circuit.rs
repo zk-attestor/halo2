@@ -170,7 +170,7 @@ impl<'v, F: Field> AssignedCell<&'v Assigned<F>, F> {
         region: &mut Region<'_, F>,
         column: Column<Advice>,
         offset: usize,
-    ) -> AssignedCell<&'_ Assigned<F>, F> {
+    ) -> AssignedCell<Assigned<F>, F> {
         let assigned_cell = region
             .assign_advice(column, offset, self.value.map(|v| *v))
             .unwrap_or_else(|err| panic!("{err:?}"));
@@ -221,14 +221,14 @@ impl<'r, F: Field> Region<'r, F> {
     ///
     /// Even though `to` has `FnMut` bounds, it is guaranteed to be called at most once.
     // The returned &'v Assigned<F> lives longer than the mutable borrow of &mut self
-    pub fn assign_advice<'v>(
+    pub fn assign_advice(
         //, V, VR, A, AR>(
         &mut self,
         //annotation: A,
         column: Column<Advice>,
         offset: usize,
         to: Value<impl Into<Assigned<F>>>, // For now only accept Value<F>, later might change to Value<Assigned<F>> for batch inversion
-    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error> {
+    ) -> Result<AssignedCell<Assigned<F>, F>, Error> {
         //let mut value = Value::unknown();
         self.region.assign_advice(
             //&|| annotation().into(),

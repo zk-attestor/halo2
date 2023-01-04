@@ -559,14 +559,14 @@ pub trait Assignment<F: Field> {
     fn query_instance(&self, column: Column<Instance>, row: usize) -> Result<Value<F>, Error>;
 
     /// Assign an advice column value (witness)
-    fn assign_advice<'r, 'v>(
+    fn assign_advice(
         //<V, VR, A, AR>(
-        &'r mut self,
+        &mut self,
         // annotation: A,
         column: Column<Advice>,
         row: usize,
         to: Value<Assigned<F>>, // V,
-    ) -> Result<Value<&'v Assigned<F>>, Error>;
+    ) -> Result<Value<Assigned<F>>, Error>;
     // where
     // V: FnOnce() -> Value<VR>,
     // VR: Into<Assigned<F>>,
@@ -1284,7 +1284,7 @@ pub struct Gate<F: Field> {
     polys: Vec<Expression<F>>,
     /// We track queried selectors separately from other cells, so that we can use them to
     /// trigger debug checks on gates.
-    queried_selectors: Vec<Selector>,
+    // queried_selectors: Vec<Selector>,
     queried_cells: Vec<VirtualCell>,
 }
 
@@ -1302,9 +1302,9 @@ impl<F: Field> Gate<F> {
         &self.polys
     }
 
-    pub(crate) fn queried_selectors(&self) -> &[Selector] {
-        &self.queried_selectors
-    }
+    /*pub(crate) fn queried_selectors(&self) -> &[Selector] {
+        &self._queried_selectors
+    }*/
 
     pub(crate) fn queried_cells(&self) -> &[VirtualCell] {
         &self.queried_cells
@@ -1650,7 +1650,7 @@ impl<F: Field> ConstraintSystem<F> {
     ) {
         let mut cells = VirtualCells::new(self);
         let constraints = constraints(&mut cells);
-        let queried_selectors = cells.queried_selectors;
+        // let queried_selectors = cells.queried_selectors;
         let queried_cells = cells.queried_cells;
 
         let (constraint_names, polys): (_, Vec<_>) = constraints
@@ -1668,7 +1668,7 @@ impl<F: Field> ConstraintSystem<F> {
             name,
             constraint_names,
             polys,
-            queried_selectors,
+            // queried_selectors,
             queried_cells,
         });
     }
@@ -1862,10 +1862,10 @@ impl<F: Field> ConstraintSystem<F> {
     /// Requests a challenge that is usable after the given phase.
     pub fn challenge_usable_after<P: Phase>(&mut self, phase: P) -> Challenge {
         let phase = phase.to_sealed();
-        self.assert_phase_exists(
+        /*self.assert_phase_exists(
             phase,
             format!("Challenge usable after phase {:?}", phase).as_str(),
-        );
+        );*/
 
         let tmp = Challenge {
             index: self.num_challenges,

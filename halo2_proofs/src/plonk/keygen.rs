@@ -93,14 +93,14 @@ impl<F: Field> Assignment<F> for Assembly<F> {
         Ok(Value::unknown())
     }
 
-    fn assign_advice<'r, 'v>(
+    fn assign_advice(
         //<V, VR, A, AR>(
-        &'r mut self,
+        &mut self,
         //_: A,
         _: Column<Advice>,
         _: usize,
         _: Value<Assigned<F>>,
-    ) -> Result<Value<&'v Assigned<F>>, Error> {
+    ) -> Result<Value<Assigned<F>>, Error> {
         Ok(Value::unknown())
     }
 

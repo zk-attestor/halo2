@@ -275,13 +275,13 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         )
     }
 
-    fn assign_advice<'b, 'v>(
-        &'b mut self,
+    fn assign_advice(
+        &mut self,
         // annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,
         to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error> {
+    ) -> Result<AssignedCell<Assigned<F>, F>, Error> {
         let value = self.layouter.cs.assign_advice(
             // annotation,
             column, offset, //*self.layouter.regions[*self.region_index] + offset,
@@ -420,7 +420,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> TableLayouter<F>
 {
     fn assign_cell<'v>(
         &'v mut self,
-        annotation: &'v (dyn Fn() -> String + 'v),
+        _annotation: &'v (dyn Fn() -> String + 'v),
         column: TableColumn,
         offset: usize,
         to: &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
@@ -431,7 +431,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> TableLayouter<F>
 
         let entry = self.default_and_assigned.entry(column).or_default();
 
-        let mut value = Value::unknown();
+        let value;
         self.cs.assign_fixed(
             // annotation,
             column.inner(),

@@ -96,9 +96,10 @@ enum CellValue<F: Group + Field> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum AdviceCellValue<F: Group + Field> {
     // An unassigned cell.
+    #[allow(dead_code)]
     Unassigned,
     // A cell that has been assigned a value.
-    Assigned(Rc<Assigned<F>>),
+    Assigned(Assigned<F>),
     // A unique poisoned cell.
     Poison(usize),
 }
@@ -377,14 +378,14 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
             .ok_or(Error::BoundsFailure)
     }
 
-    fn assign_advice<'r, 'v>(
+    fn assign_advice(
         //<V, VR, A, AR>(
-        &'r mut self,
+        &mut self,
         //_: A,
         column: Column<Advice>,
         row: usize,
         to: circuit::Value<Assigned<F>>,
-    ) -> Result<circuit::Value<&'v Assigned<F>>, Error> {
+    ) -> Result<circuit::Value<Assigned<F>>, Error> {
         if !self.usable_rows.contains(&row) {
             return Err(Error::not_enough_rows_available(self.k));
         }
@@ -404,11 +405,10 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
             .and_then(|v| v.get_mut(row))
             .ok_or(Error::BoundsFailure)?;
 
-        let rc_val = Rc::new(to.assign()?);
-        let val_ref = Rc::downgrade(&rc_val);
-        *advice_get_mut = AdviceCellValue::Assigned(rc_val);
+        let val = to.assign()?;
+        *advice_get_mut = AdviceCellValue::Assigned(val);
 
-        Ok(circuit::Value::known(unsafe { &*val_ref.as_ptr() }))
+        Ok(circuit::Value::known(val))
     }
 
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>) {
@@ -527,8 +527,7 @@ impl<F: FieldExt> MockProver<F> {
             {
                 // let mut column = vec![AdviceCellValue::Unassigned; n];
                 // Assign advice to 0 by default so we can have gates that query unassigned rotations to minimize number of distinct rotation sets, for SHPLONK optimization
-                let mut column =
-                    vec![AdviceCellValue::Assigned(Rc::new(Assigned::Trivial(F::zero()))); n];
+                let mut column = vec![AdviceCellValue::Assigned(Assigned::Trivial(F::zero())); n];
                 // Poison unusable rows.
                 for (i, cell) in column.iter_mut().enumerate().skip(usable_rows) {
                     *cell = AdviceCellValue::Poison(i);
@@ -665,7 +664,7 @@ impl<F: FieldExt> MockProver<F> {
                 advice
                     .iter()
                     .map(|rc| match *rc {
-                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a.as_ref() {
+                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a {
                             Assigned::Trivial(a) => *a,
                             Assigned::Rational(a, b) => *a * b.invert().unwrap(),
                             _ => F::zero(),
