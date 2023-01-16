@@ -6,6 +6,7 @@ use crate::{
         SerdeCurveAffine, SerdePrimeField,
     },
     poly::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial},
+    SerdeFormat,
 };
 use ff::PrimeField;
 
@@ -88,22 +89,26 @@ impl<C: CurveAffine> VerifyingKey<C> {
         &self.commitments
     }
 
-    pub(crate) fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()>
+    pub(crate) fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()>
     where
         C: SerdeCurveAffine,
     {
         for commitment in &self.commitments {
-            commitment.write(writer)?;
+            commitment.write(writer, format)?;
         }
         Ok(())
     }
 
-    pub(crate) fn read<R: io::Read>(reader: &mut R, argument: &Argument) -> io::Result<Self>
+    pub(crate) fn read<R: io::Read>(
+        reader: &mut R,
+        argument: &Argument,
+        format: SerdeFormat,
+    ) -> io::Result<Self>
     where
         C: SerdeCurveAffine,
     {
         let commitments = (0..argument.columns.len())
-            .map(|_| C::read(reader))
+            .map(|_| C::read(reader, format))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(VerifyingKey { commitments })
     }
@@ -126,10 +131,10 @@ where
     C::Scalar: SerdePrimeField,
 {
     /// Reads proving key for a single permutation argument from buffer using `Polynomial::read`.  
-    pub(super) fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let permutations = read_polynomial_vec(reader)?;
-        let polys = read_polynomial_vec(reader)?;
-        let cosets = read_polynomial_vec(reader)?;
+    pub(super) fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> io::Result<Self> {
+        let permutations = read_polynomial_vec(reader, format)?;
+        let polys = read_polynomial_vec(reader, format)?;
+        let cosets = read_polynomial_vec(reader, format)?;
         Ok(ProvingKey {
             permutations,
             polys,
@@ -138,10 +143,14 @@ where
     }
 
     /// Writes proving key for a single permutation argument to buffer using `Polynomial::write`.  
-    pub(super) fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        write_polynomial_slice(&self.permutations, writer)?;
-        write_polynomial_slice(&self.polys, writer)?;
-        write_polynomial_slice(&self.cosets, writer)?;
+    pub(super) fn write<W: io::Write>(
+        &self,
+        writer: &mut W,
+        format: SerdeFormat,
+    ) -> io::Result<()> {
+        write_polynomial_slice(&self.permutations, writer, format)?;
+        write_polynomial_slice(&self.polys, writer, format)?;
+        write_polynomial_slice(&self.cosets, writer, format)?;
         Ok(())
     }
 }
