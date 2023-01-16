@@ -21,6 +21,7 @@ use halo2_proofs::{
     transcript::{
         Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
+    SerdeFormat,
 };
 use halo2curves::bn256::{Bn256, Fr, G1Affine};
 use rand_core::OsRng;
@@ -102,10 +103,10 @@ impl Circuit<Fr> for StandardPlonk {
         layouter.assign_region(
             || "",
             |mut region| {
-                region.assign_advice(|| "", config.a, 0, || Value::known(self.0))?;
-                region.assign_fixed(|| "", config.q_a, 0, || Value::known(-Fr::one()))?;
+                region.assign_advice(config.a, 0, Value::known(self.0))?;
+                region.assign_fixed(config.q_a, 0, -Fr::one());
 
-                region.assign_advice(|| "", config.a, 1, || Value::known(-Fr::from(5u64)))?;
+                region.assign_advice(config.a, 1, Value::known(-Fr::from(5u64)))?;
                 for (idx, column) in (1..).zip([
                     config.q_a,
                     config.q_b,
@@ -113,12 +114,12 @@ impl Circuit<Fr> for StandardPlonk {
                     config.q_ab,
                     config.constant,
                 ]) {
-                    region.assign_fixed(|| "", column, 1, || Value::known(Fr::from(idx as u64)))?;
+                    region.assign_fixed(column, 1, Fr::from(idx as u64));
                 }
 
-                let a = region.assign_advice(|| "", config.a, 2, || Value::known(Fr::one()))?;
-                a.copy_advice(|| "", &mut region, config.b, 3)?;
-                a.copy_advice(|| "", &mut region, config.c, 4)?;
+                let a = region.assign_advice(config.a, 2, Value::known(Fr::one()))?;
+                a.copy_advice(&mut region, config.b, 3);
+                a.copy_advice(&mut region, config.c, 4);
                 Ok(())
             },
         )
@@ -134,12 +135,13 @@ fn main() {
 
     let f = File::create("serialization-test.pk").unwrap();
     let mut writer = BufWriter::new(f);
-    pk.write(&mut writer).unwrap();
+    pk.write(&mut writer, SerdeFormat::RawBytes).unwrap();
     writer.flush().unwrap();
 
     let f = File::open("serialization-test.pk").unwrap();
     let mut reader = BufReader::new(f);
-    let pk = ProvingKey::<G1Affine>::read::<_, StandardPlonk>(&mut reader).unwrap();
+    let pk = ProvingKey::<G1Affine>::read::<_, StandardPlonk>(&mut reader, SerdeFormat::RawBytes)
+        .unwrap();
 
     std::fs::remove_file("serialization-test.pk").unwrap();
 

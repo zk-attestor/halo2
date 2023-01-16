@@ -5,6 +5,7 @@
 use crate::arithmetic::parallelize;
 use crate::helpers::SerdePrimeField;
 use crate::plonk::Assigned;
+use crate::SerdeFormat;
 
 use ff::PrimeField;
 use group::ff::{BatchInvert, Field};
@@ -148,27 +149,24 @@ impl<F, B> Polynomial<F, B> {
 
 impl<F: SerdePrimeField, B> Polynomial<F, B> {
     /// Reads polynomial from buffer using `SerdePrimeField::read`.  
-    pub(crate) fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    pub(crate) fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> Self {
         let mut poly_len = [0u8; 4];
-        reader.read_exact(&mut poly_len)?;
+        reader.read_exact(&mut poly_len).unwrap();
         let poly_len = u32::from_be_bytes(poly_len);
-
-        (0..poly_len)
-            .map(|_| F::read(reader))
-            .collect::<io::Result<Vec<_>>>()
-            .map(|values| Self {
-                values,
-                _marker: PhantomData,
-            })
+        Self {
+            values: (0..poly_len).map(|_| F::read(reader, format)).collect(),
+            _marker: PhantomData,
+        }
     }
 
     /// Writes polynomial to buffer using `SerdePrimeField::write`.  
-    pub(crate) fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_all(&(self.values.len() as u32).to_be_bytes())?;
+    pub(crate) fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) {
+        writer
+            .write_all(&(self.values.len() as u32).to_be_bytes())
+            .unwrap();
         for value in self.values.iter() {
-            value.write(writer)?;
+            value.write(writer, format);
         }
-        Ok(())
     }
 }
 

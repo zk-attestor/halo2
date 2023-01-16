@@ -11,7 +11,7 @@ use crate::{
     poly::{query::Query, Coeff, Polynomial},
     transcript::ChallengeScalar,
 };
-
+use rayon::prelude::*;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
     hash::Hash,

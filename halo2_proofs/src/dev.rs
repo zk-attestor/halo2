@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use std::fmt;
 use std::iter;
 use std::ops::{Add, Mul, Neg, Range};
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use blake2b_simd::blake2b;
@@ -93,12 +92,12 @@ enum CellValue<F: Group + Field> {
 }
 
 /// The value of a particular cell within the circuit.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AdviceCellValue<F: Group + Field> {
     // An unassigned cell.
     Unassigned,
     // A cell that has been assigned a value.
-    Assigned(Rc<Assigned<F>>),
+    Assigned(Assigned<F>),
     // A unique poisoned cell.
     Poison(usize),
 }
@@ -404,11 +403,11 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
             .and_then(|v| v.get_mut(row))
             .ok_or(Error::BoundsFailure)?;
 
-        let rc_val = Rc::new(to.assign()?);
-        let val_ref = Rc::downgrade(&rc_val);
-        *advice_get_mut = AdviceCellValue::Assigned(rc_val);
+        let val = to.assign()?;
+        let val_ref = &val as *const Assigned<F>;
+        *advice_get_mut = AdviceCellValue::Assigned(val);
 
-        Ok(circuit::Value::known(unsafe { &*val_ref.as_ptr() }))
+        Ok(circuit::Value::known(unsafe { &*val_ref }))
     }
 
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>) {
@@ -527,8 +526,7 @@ impl<F: FieldExt> MockProver<F> {
             {
                 // let mut column = vec![AdviceCellValue::Unassigned; n];
                 // Assign advice to 0 by default so we can have gates that query unassigned rotations to minimize number of distinct rotation sets, for SHPLONK optimization
-                let mut column =
-                    vec![AdviceCellValue::Assigned(Rc::new(Assigned::Trivial(F::zero()))); n];
+                let mut column = vec![AdviceCellValue::Assigned(Assigned::Trivial(F::zero())); n];
                 // Poison unusable rows.
                 for (i, cell) in column.iter_mut().enumerate().skip(usable_rows) {
                     *cell = AdviceCellValue::Poison(i);
@@ -665,7 +663,7 @@ impl<F: FieldExt> MockProver<F> {
                 advice
                     .iter()
                     .map(|rc| match *rc {
-                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a.as_ref() {
+                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a {
                             Assigned::Trivial(a) => *a,
                             Assigned::Rational(a, b) => *a * b.invert().unwrap(),
                             _ => F::zero(),
@@ -959,7 +957,6 @@ impl<F: FieldExt> MockProver<F> {
         }
     }
 
-    /*
     /// Returns `Ok(())` if this `MockProver` is satisfied, or a list of errors indicating
     /// the reasons that the circuit is not satisfied.
     /// Constraints and lookup are checked at `usable_rows`, parallelly.
@@ -1046,14 +1043,23 @@ impl<F: FieldExt> MockProver<F> {
 
         let advice = self
             .advice
-            .into_iter()
+            .iter()
             .map(|advice| {
                 advice
-                    .into_iter()
-                    .map(|rc| Rc::try_unwrap(rc).unwrap_or(CellValue::Unassigned))
+                    .iter()
+                    .map(|rc| match *rc {
+                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a {
+                            Assigned::Trivial(a) => *a,
+                            Assigned::Rational(a, b) => *a * b.invert().unwrap(),
+                            _ => F::zero(),
+                        }),
+                        AdviceCellValue::Poison(i) => CellValue::Poison(i),
+                        AdviceCellValue::Unassigned => CellValue::Unassigned,
+                    })
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
+        let advice = &advice;
         // Check that all gates are satisfied for all rows.
         let gate_errors = self
             .cs
@@ -1329,7 +1335,7 @@ impl<F: FieldExt> MockProver<F> {
             });
             Err(errors)
         }
-    } */
+    }
 
     /// Panics if the circuit being checked by this `MockProver` is not satisfied.
     ///
@@ -1342,6 +1348,27 @@ impl<F: FieldExt> MockProver<F> {
     /// ```
     pub fn assert_satisfied(&self) {
         if let Err(errs) = self.verify() {
+            for err in errs {
+                err.emit(self);
+                eprintln!();
+            }
+            panic!("circuit was not satisfied");
+        }
+    }
+
+    /// Panics if the circuit being checked by this `MockProver` is not satisfied.
+    ///
+    /// Any verification failures will be pretty-printed to stderr before the function
+    /// panics.
+    ///
+    /// Internally, this function uses a parallel aproach in order to verify the `MockProver` contents.
+    ///
+    /// Apart from the stderr output, this method is equivalent to:
+    /// ```ignore
+    /// assert_eq!(prover.verify_par(), Ok(()));
+    /// ```
+    pub fn assert_satisfied_par(&self) {
+        if let Err(errs) = self.verify_par() {
             for err in errs {
                 err.emit(self);
                 eprintln!();
