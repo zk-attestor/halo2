@@ -420,7 +420,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> TableLayouter<F>
 {
     fn assign_cell<'v>(
         &'v mut self,
-        annotation: &'v (dyn Fn() -> String + 'v),
+        _: &'v (dyn Fn() -> String + 'v),
         column: TableColumn,
         offset: usize,
         to: &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
@@ -431,7 +431,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> TableLayouter<F>
 
         let entry = self.default_and_assigned.entry(column).or_default();
 
-        let mut value = Value::unknown();
+        let value;
         self.cs.assign_fixed(
             // annotation,
             column.inner(),

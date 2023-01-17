@@ -460,12 +460,11 @@ fn render_lookup<F: FieldExt>(
             advice
                 .iter()
                 .map(|rc| match rc {
-                    AdviceCellValue::Assigned(a) => CellValue::Assigned(match a {
+                    AdviceCellValue::Assigned(a) => CellValue::Assigned(match a.as_ref() {
                         Assigned::Trivial(a) => *a,
                         _ => unreachable!(),
                     }),
                     AdviceCellValue::Poison(i) => CellValue::Poison(*i),
-                    AdviceCellValue::Unassigned => CellValue::Unassigned,
                 })
                 .collect::<Vec<_>>()
         })

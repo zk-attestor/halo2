@@ -307,7 +307,7 @@ where
     /// WITHOUT performing the expensive Montgomery reduction.
     /// Does so by first writing the verifying key and then serializing the rest of the data (in the form of field polynomials)
     pub fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
-        self.vk.write(writer, format);
+        self.vk.write(writer, format).unwrap();
         self.l0.write(writer, format);
         self.l_last.write(writer, format);
         self.l_active_row.write(writer, format);

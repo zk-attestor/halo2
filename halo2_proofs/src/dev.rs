@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::iter;
 use std::ops::{Add, Mul, Neg, Range};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use blake2b_simd::blake2b;
@@ -92,12 +93,10 @@ enum CellValue<F: Group + Field> {
 }
 
 /// The value of a particular cell within the circuit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum AdviceCellValue<F: Group + Field> {
-    // An unassigned cell.
-    Unassigned,
     // A cell that has been assigned a value.
-    Assigned(Assigned<F>),
+    Assigned(Arc<Assigned<F>>),
     // A unique poisoned cell.
     Poison(usize),
 }
@@ -403,11 +402,11 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
             .and_then(|v| v.get_mut(row))
             .ok_or(Error::BoundsFailure)?;
 
-        let val = to.assign()?;
-        let val_ref = &val as *const Assigned<F>;
+        let val = Arc::new(to.assign()?);
+        let val_ref = Arc::downgrade(&val);
         *advice_get_mut = AdviceCellValue::Assigned(val);
 
-        Ok(circuit::Value::known(unsafe { &*val_ref }))
+        Ok(circuit::Value::known(unsafe { &*val_ref.as_ptr() }))
     }
 
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>) {
@@ -526,7 +525,8 @@ impl<F: FieldExt> MockProver<F> {
             {
                 // let mut column = vec![AdviceCellValue::Unassigned; n];
                 // Assign advice to 0 by default so we can have gates that query unassigned rotations to minimize number of distinct rotation sets, for SHPLONK optimization
-                let mut column = vec![AdviceCellValue::Assigned(Assigned::Trivial(F::zero())); n];
+                let mut column =
+                    vec![AdviceCellValue::Assigned(Arc::new(Assigned::Trivial(F::zero()))); n];
                 // Poison unusable rows.
                 for (i, cell) in column.iter_mut().enumerate().skip(usable_rows) {
                     *cell = AdviceCellValue::Poison(i);
@@ -663,13 +663,12 @@ impl<F: FieldExt> MockProver<F> {
                 advice
                     .iter()
                     .map(|rc| match *rc {
-                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a {
+                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a.as_ref() {
                             Assigned::Trivial(a) => *a,
                             Assigned::Rational(a, b) => *a * b.invert().unwrap(),
                             _ => F::zero(),
                         }),
                         AdviceCellValue::Poison(i) => CellValue::Poison(i),
-                        AdviceCellValue::Unassigned => CellValue::Unassigned,
                     })
                     .collect::<Vec<_>>()
             })
@@ -1048,13 +1047,12 @@ impl<F: FieldExt> MockProver<F> {
                 advice
                     .iter()
                     .map(|rc| match *rc {
-                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a {
+                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a.as_ref() {
                             Assigned::Trivial(a) => *a,
                             Assigned::Rational(a, b) => *a * b.invert().unwrap(),
                             _ => F::zero(),
                         }),
                         AdviceCellValue::Poison(i) => CellValue::Poison(i),
-                        AdviceCellValue::Unassigned => CellValue::Unassigned,
                     })
                     .collect::<Vec<_>>()
             })
