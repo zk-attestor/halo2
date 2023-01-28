@@ -22,8 +22,11 @@ use super::{
     lookup, permutation, vanishing, ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX,
     ChallengeY, Error, Expression, ProvingKey,
 };
+use crate::arithmetic::MULTIEXP_TOTAL_TIME;
+use crate::plonk::{start_measure, stop_measure};
 use crate::poly::batch_invert_assigned_ref;
 use crate::poly::commitment::ParamsProver;
+use crate::poly::FFT_TOTAL_TIME;
 use crate::transcript::Transcript;
 use crate::{
     arithmetic::{eval_polynomial, CurveAffine, FieldExt},
@@ -62,6 +65,12 @@ pub fn create_proof<
     mut rng: R,
     mut transcript: &'a mut T,
 ) -> Result<(), Error> {
+    #[allow(unsafe_code)]
+    unsafe {
+        FFT_TOTAL_TIME = 0;
+        MULTIEXP_TOTAL_TIME = 0;
+    }
+
     for instance in instances.iter() {
         if instance.len() != pk.vk.cs.num_instance_columns {
             return Err(Error::InvalidInstances);
@@ -84,6 +93,7 @@ pub fn create_proof<
         pub instance_polys: Vec<Polynomial<C::Scalar, Coeff>>,
     }
 
+    let start = start_measure("instances", false);
     let instance: Vec<InstanceSingle<Scheme::Curve>> = instances
         .iter()
         .map(|instance| -> Result<InstanceSingle<Scheme::Curve>, Error> {
@@ -116,6 +126,7 @@ pub fn create_proof<
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    stop_measure(start);
 
     #[derive(Clone)]
     struct AdviceSingle<C: CurveAffine, B: Basis> {
@@ -454,6 +465,7 @@ pub fn create_proof<
     // Sample theta challenge for keeping lookup columns linearly independent
     let theta: ChallengeTheta<_> = transcript.squeeze_challenge_scalar();
 
+    let start = start_measure("lookups", false);
     let lookups: Vec<Vec<lookup::prover::Permuted<Scheme::Curve>>> = instance
         .iter()
         .zip(advice.iter())
@@ -493,6 +505,7 @@ pub fn create_proof<
     let gamma: ChallengeGamma<_> = transcript.squeeze_challenge_scalar();
 
     // Commit to permutations.
+    let start = start_measure("permutation.commit", false);
     let permutations: Vec<permutation::prover::Committed<Scheme::Curve>> = instance
         .iter()
         .zip(advice.iter())
@@ -551,6 +564,7 @@ pub fn create_proof<
     let fft_time = start_timer!(|| "Calculate advice polys (fft)");
 
     // Calculate the advice polys
+    let start = start_measure("advice_polys", false);
     let advice: Vec<AdviceSingle<Scheme::Curve, Coeff>> = advice
         .into_iter()
         .map(
@@ -574,6 +588,7 @@ pub fn create_proof<
     #[cfg(feature = "profile")]
     let phase4_time = start_timer!(|| "Phase 4: Evaluate h(X)");
     // Evaluate the h(X) polynomial
+    let start = start_measure("evaluate_h", false);
     let h_poly = pk.ev.evaluate_h(
         pk,
         &advice
@@ -607,6 +622,7 @@ pub fn create_proof<
     let x: ChallengeX<_> = transcript.squeeze_challenge_scalar();
     let xn = x.pow(&[params.n(), 0, 0, 0]);
 
+    let start = start_measure("instance eval_polynomial", false);
     if P::QUERY_INSTANCE {
         // Compute and hash instance evals for each circuit instance
         for instance in instance.iter() {
@@ -628,8 +644,10 @@ pub fn create_proof<
             }
         }
     }
+    stop_measure(start);
 
     // Compute and hash advice evals for each circuit instance
+    let start = start_measure("advice eval_polynomial", false);
     for advice in advice.iter() {
         // Evaluate polynomials at omega^i x
         let advice_evals: Vec<_> = meta
@@ -648,8 +666,10 @@ pub fn create_proof<
             transcript.write_scalar(*eval)?;
         }
     }
+    stop_measure(start);
 
     // Compute and hash fixed evals (shared across all circuit instances)
+    let start = start_measure("fixed eval_polynomial", false);
     let fixed_evals: Vec<_> = meta
         .fixed_queries
         .iter()
@@ -657,6 +677,7 @@ pub fn create_proof<
             eval_polynomial(&pk.fixed_polys[column.index()], domain.rotate_omega(*x, at))
         })
         .collect();
+    stop_measure(start);
 
     // Hash each fixed column evaluation
     for eval in fixed_evals.iter() {
@@ -675,6 +696,7 @@ pub fn create_proof<
         .collect::<Result<Vec<_>, _>>()?;
 
     // Evaluate the lookups, if any, at omega^i x.
+    let start = start_measure("lookup evaluate", false);
     let lookups: Vec<Vec<lookup::prover::Evaluated<Scheme::Curve>>> = lookups
         .into_iter()
         .map(|lookups| -> Result<Vec<_>, _> {
