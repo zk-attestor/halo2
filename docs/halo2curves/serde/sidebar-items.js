@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"trait":[["SerdeObject","Trait for converting raw bytes to/from the internal representation of a type. For example, field elements are represented in Montgomery form and serialized/deserialized without Montgomery reduction."]]};

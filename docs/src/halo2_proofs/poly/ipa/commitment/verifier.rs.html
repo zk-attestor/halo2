@@ -1,0 +1,214 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `halo2_proofs/src/poly/ipa/commitment/verifier.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>verifier.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../../../../normalize.css"><link rel="stylesheet" href="../../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../../../../ayu.css" disabled><link rel="stylesheet" href="../../../../../dark.css" disabled><link rel="stylesheet" href="../../../../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../../../../storage.js"></script><script defer src="../../../../../source-script.js"></script><script defer src="../../../../../source-files.js"></script><script defer src="../../../../../main.js"></script><noscript><link rel="stylesheet" href="../../../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../../../../halo2_proofs/index.html"><img class="rust-logo" src="../../../../../rust-logo.svg" alt="logo"></a><form class="search-form"><div class="search-container"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../../../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../../../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../../../../wheel.svg"></a></div></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+</pre><pre class="rust"><code><span class="kw">use </span>std::io::Read;
+
+<span class="kw">use </span>group::{
+    ff::{BatchInvert, Field},
+    Curve,
+};
+
+<span class="kw">use </span><span class="kw">super</span>::ParamsIPA;
+<span class="kw">use </span><span class="kw">crate</span>::poly::ipa::commitment::{IPACommitmentScheme, ParamsVerifierIPA};
+<span class="kw">use crate</span>::{
+    arithmetic::{best_multiexp, CurveAffine},
+    poly::ipa::strategy::GuardIPA,
+};
+<span class="kw">use crate</span>::{
+    poly::{commitment::MSM, ipa::msm::MSMIPA, strategy::Guard, Error},
+    transcript::{EncodedChallenge, TranscriptRead},
+};
+
+<span class="doccomment">/// Checks to see if the proof represented within `transcript` is valid, and a
+/// point `x` that the polynomial commitment `P` opens purportedly to the value
+/// `v`. The provided `msm` should evaluate to the commitment `P` being opened.
+</span><span class="kw">pub fn </span>verify_proof&lt;<span class="lifetime">&#39;params</span>, C: CurveAffine, E: EncodedChallenge&lt;C&gt;, T: TranscriptRead&lt;C, E&gt;&gt;(
+    params: <span class="kw-2">&amp;</span><span class="lifetime">&#39;params </span>ParamsIPA&lt;C&gt;,
+    <span class="kw-2">mut </span>msm: MSMIPA&lt;<span class="lifetime">&#39;params</span>, C&gt;,
+    transcript: <span class="kw-2">&amp;mut </span>T,
+    x: C::Scalar,
+    v: C::Scalar,
+) -&gt; <span class="prelude-ty">Result</span>&lt;GuardIPA&lt;<span class="lifetime">&#39;params</span>, C&gt;, Error&gt; {
+    <span class="kw">let </span>k = params.k <span class="kw">as </span>usize;
+
+    <span class="comment">// P&#39; = P - [v] G_0 + [ξ] S
+    </span>msm.add_constant_term(-v); <span class="comment">// add [-v] G_0
+    </span><span class="kw">let </span>s_poly_commitment = transcript.read_point().map_err(|<span class="kw">_</span>| Error::OpeningError)<span class="question-mark">?</span>;
+    <span class="kw">let </span>xi = <span class="kw-2">*</span>transcript.squeeze_challenge_scalar::&lt;()&gt;();
+    msm.append_term(xi, s_poly_commitment.into());
+
+    <span class="kw">let </span>z = <span class="kw-2">*</span>transcript.squeeze_challenge_scalar::&lt;()&gt;();
+
+    <span class="kw">let </span><span class="kw-2">mut </span>rounds = <span class="macro">vec!</span>[];
+    <span class="kw">for _ in </span><span class="number">0</span>..k {
+        <span class="comment">// Read L and R from the proof and write them to the transcript
+        </span><span class="kw">let </span>l = transcript.read_point().map_err(|<span class="kw">_</span>| Error::OpeningError)<span class="question-mark">?</span>;
+        <span class="kw">let </span>r = transcript.read_point().map_err(|<span class="kw">_</span>| Error::OpeningError)<span class="question-mark">?</span>;
+
+        <span class="kw">let </span>u_j_packed = transcript.squeeze_challenge();
+        <span class="kw">let </span>u_j = <span class="kw-2">*</span>u_j_packed.as_challenge_scalar::&lt;()&gt;();
+
+        rounds.push((l, r, u_j, <span class="comment">/* to be inverted */ </span>u_j, u_j_packed));
+    }
+
+    rounds
+        .iter_mut()
+        .map(|<span class="kw-2">&amp;mut </span>(<span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>, <span class="kw-2">ref mut </span>u_j, <span class="kw">_</span>)| u_j)
+        .batch_invert();
+
+    <span class="comment">// This is the left-hand side of the verifier equation.
+    // P&#39; + \sum([u_j^{-1}] L_j) + \sum([u_j] R_j)
+    </span><span class="kw">let </span><span class="kw-2">mut </span>u = Vec::with_capacity(k);
+    <span class="kw">let </span><span class="kw-2">mut </span>u_packed: Vec&lt;C::Scalar&gt; = Vec::with_capacity(k);
+    <span class="kw">for </span>(l, r, u_j, u_j_inv, u_j_packed) <span class="kw">in </span>rounds {
+        msm.append_term(u_j_inv, l.into());
+        msm.append_term(u_j, r.into());
+
+        u.push(u_j);
+        u_packed.push(u_j_packed.get_scalar());
+    }
+
+    <span class="comment">// Our goal is to check that the left hand side of the verifier
+    // equation
+    //     P&#39; + \sum([u_j^{-1}] L_j) + \sum([u_j] R_j)
+    // equals (given b = \mathbf{b}_0, and the prover&#39;s values c, f),
+    // the right-hand side
+    //   = [c] (G&#39;_0 + [b * z] U) + [f] W
+    // Subtracting the right-hand side from both sides we get
+    //   P&#39; + \sum([u_j^{-1}] L_j) + \sum([u_j] R_j)
+    //   + [-c] G&#39;_0 + [-cbz] U + [-f] W
+    //   = 0
+
+    </span><span class="kw">let </span>c = transcript.read_scalar().map_err(|<span class="kw">_</span>| Error::SamplingError)<span class="question-mark">?</span>;
+    <span class="kw">let </span>neg_c = -c;
+    <span class="kw">let </span>f = transcript.read_scalar().map_err(|<span class="kw">_</span>| Error::SamplingError)<span class="question-mark">?</span>;
+    <span class="kw">let </span>b = compute_b(x, <span class="kw-2">&amp;</span>u);
+
+    msm.add_to_u_scalar(neg_c * <span class="kw-2">&amp;</span>b * <span class="kw-2">&amp;</span>z);
+    msm.add_to_w_scalar(-f);
+
+    <span class="kw">let </span>guard = GuardIPA {
+        msm,
+        neg_c,
+        u,
+        u_packed,
+    };
+
+    <span class="prelude-val">Ok</span>(guard)
+}
+
+<span class="doccomment">/// Computes $\prod\limits_{i=0}^{k-1} (1 + u_{k - 1 - i} x^{2^i})$.
+</span><span class="kw">fn </span>compute_b&lt;F: Field&gt;(x: F, u: <span class="kw-2">&amp;</span>[F]) -&gt; F {
+    <span class="kw">let </span><span class="kw-2">mut </span>tmp = F::one();
+    <span class="kw">let </span><span class="kw-2">mut </span>cur = x;
+    <span class="kw">for </span>u_j <span class="kw">in </span>u.iter().rev() {
+        tmp <span class="kw-2">*</span>= F::one() + <span class="kw-2">&amp;</span>(<span class="kw-2">*</span>u_j * <span class="kw-2">&amp;</span>cur);
+        cur <span class="kw-2">*</span>= cur;
+    }
+    tmp
+}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../../../" data-current-crate="halo2_proofs" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0-nightly (0da281b60 2022-10-27)" ></div></body></html>

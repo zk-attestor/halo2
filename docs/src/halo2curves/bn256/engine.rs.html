@@ -1,0 +1,1678 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `arithmetic/curves/src/bn256/engine.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>engine.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../../normalize.css"><link rel="stylesheet" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../../ayu.css" disabled><link rel="stylesheet" href="../../../dark.css" disabled><link rel="stylesheet" href="../../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../../storage.js"></script><script defer src="../../../source-script.js"></script><script defer src="../../../source-files.js"></script><script defer src="../../../main.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../../halo2curves/index.html"><img class="rust-logo" src="../../../rust-logo.svg" alt="logo"></a><form class="search-form"><div class="search-container"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../../wheel.svg"></a></div></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
+<span id="397">397</span>
+<span id="398">398</span>
+<span id="399">399</span>
+<span id="400">400</span>
+<span id="401">401</span>
+<span id="402">402</span>
+<span id="403">403</span>
+<span id="404">404</span>
+<span id="405">405</span>
+<span id="406">406</span>
+<span id="407">407</span>
+<span id="408">408</span>
+<span id="409">409</span>
+<span id="410">410</span>
+<span id="411">411</span>
+<span id="412">412</span>
+<span id="413">413</span>
+<span id="414">414</span>
+<span id="415">415</span>
+<span id="416">416</span>
+<span id="417">417</span>
+<span id="418">418</span>
+<span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
+<span id="441">441</span>
+<span id="442">442</span>
+<span id="443">443</span>
+<span id="444">444</span>
+<span id="445">445</span>
+<span id="446">446</span>
+<span id="447">447</span>
+<span id="448">448</span>
+<span id="449">449</span>
+<span id="450">450</span>
+<span id="451">451</span>
+<span id="452">452</span>
+<span id="453">453</span>
+<span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
+<span id="473">473</span>
+<span id="474">474</span>
+<span id="475">475</span>
+<span id="476">476</span>
+<span id="477">477</span>
+<span id="478">478</span>
+<span id="479">479</span>
+<span id="480">480</span>
+<span id="481">481</span>
+<span id="482">482</span>
+<span id="483">483</span>
+<span id="484">484</span>
+<span id="485">485</span>
+<span id="486">486</span>
+<span id="487">487</span>
+<span id="488">488</span>
+<span id="489">489</span>
+<span id="490">490</span>
+<span id="491">491</span>
+<span id="492">492</span>
+<span id="493">493</span>
+<span id="494">494</span>
+<span id="495">495</span>
+<span id="496">496</span>
+<span id="497">497</span>
+<span id="498">498</span>
+<span id="499">499</span>
+<span id="500">500</span>
+<span id="501">501</span>
+<span id="502">502</span>
+<span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+<span id="509">509</span>
+<span id="510">510</span>
+<span id="511">511</span>
+<span id="512">512</span>
+<span id="513">513</span>
+<span id="514">514</span>
+<span id="515">515</span>
+<span id="516">516</span>
+<span id="517">517</span>
+<span id="518">518</span>
+<span id="519">519</span>
+<span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
+<span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
+<span id="529">529</span>
+<span id="530">530</span>
+<span id="531">531</span>
+<span id="532">532</span>
+<span id="533">533</span>
+<span id="534">534</span>
+<span id="535">535</span>
+<span id="536">536</span>
+<span id="537">537</span>
+<span id="538">538</span>
+<span id="539">539</span>
+<span id="540">540</span>
+<span id="541">541</span>
+<span id="542">542</span>
+<span id="543">543</span>
+<span id="544">544</span>
+<span id="545">545</span>
+<span id="546">546</span>
+<span id="547">547</span>
+<span id="548">548</span>
+<span id="549">549</span>
+<span id="550">550</span>
+<span id="551">551</span>
+<span id="552">552</span>
+<span id="553">553</span>
+<span id="554">554</span>
+<span id="555">555</span>
+<span id="556">556</span>
+<span id="557">557</span>
+<span id="558">558</span>
+<span id="559">559</span>
+<span id="560">560</span>
+<span id="561">561</span>
+<span id="562">562</span>
+<span id="563">563</span>
+<span id="564">564</span>
+<span id="565">565</span>
+<span id="566">566</span>
+<span id="567">567</span>
+<span id="568">568</span>
+<span id="569">569</span>
+<span id="570">570</span>
+<span id="571">571</span>
+<span id="572">572</span>
+<span id="573">573</span>
+<span id="574">574</span>
+<span id="575">575</span>
+<span id="576">576</span>
+<span id="577">577</span>
+<span id="578">578</span>
+<span id="579">579</span>
+<span id="580">580</span>
+<span id="581">581</span>
+<span id="582">582</span>
+<span id="583">583</span>
+<span id="584">584</span>
+<span id="585">585</span>
+<span id="586">586</span>
+<span id="587">587</span>
+<span id="588">588</span>
+<span id="589">589</span>
+<span id="590">590</span>
+<span id="591">591</span>
+<span id="592">592</span>
+<span id="593">593</span>
+<span id="594">594</span>
+<span id="595">595</span>
+<span id="596">596</span>
+<span id="597">597</span>
+<span id="598">598</span>
+<span id="599">599</span>
+<span id="600">600</span>
+<span id="601">601</span>
+<span id="602">602</span>
+<span id="603">603</span>
+<span id="604">604</span>
+<span id="605">605</span>
+<span id="606">606</span>
+<span id="607">607</span>
+<span id="608">608</span>
+<span id="609">609</span>
+<span id="610">610</span>
+<span id="611">611</span>
+<span id="612">612</span>
+<span id="613">613</span>
+<span id="614">614</span>
+<span id="615">615</span>
+<span id="616">616</span>
+<span id="617">617</span>
+<span id="618">618</span>
+<span id="619">619</span>
+<span id="620">620</span>
+<span id="621">621</span>
+<span id="622">622</span>
+<span id="623">623</span>
+<span id="624">624</span>
+<span id="625">625</span>
+<span id="626">626</span>
+<span id="627">627</span>
+<span id="628">628</span>
+<span id="629">629</span>
+<span id="630">630</span>
+<span id="631">631</span>
+<span id="632">632</span>
+<span id="633">633</span>
+<span id="634">634</span>
+<span id="635">635</span>
+<span id="636">636</span>
+<span id="637">637</span>
+<span id="638">638</span>
+<span id="639">639</span>
+<span id="640">640</span>
+<span id="641">641</span>
+<span id="642">642</span>
+<span id="643">643</span>
+<span id="644">644</span>
+<span id="645">645</span>
+<span id="646">646</span>
+<span id="647">647</span>
+<span id="648">648</span>
+<span id="649">649</span>
+<span id="650">650</span>
+<span id="651">651</span>
+<span id="652">652</span>
+<span id="653">653</span>
+<span id="654">654</span>
+<span id="655">655</span>
+<span id="656">656</span>
+<span id="657">657</span>
+<span id="658">658</span>
+<span id="659">659</span>
+<span id="660">660</span>
+<span id="661">661</span>
+<span id="662">662</span>
+<span id="663">663</span>
+<span id="664">664</span>
+<span id="665">665</span>
+<span id="666">666</span>
+<span id="667">667</span>
+<span id="668">668</span>
+<span id="669">669</span>
+<span id="670">670</span>
+<span id="671">671</span>
+<span id="672">672</span>
+<span id="673">673</span>
+<span id="674">674</span>
+<span id="675">675</span>
+<span id="676">676</span>
+<span id="677">677</span>
+<span id="678">678</span>
+<span id="679">679</span>
+<span id="680">680</span>
+<span id="681">681</span>
+<span id="682">682</span>
+<span id="683">683</span>
+<span id="684">684</span>
+<span id="685">685</span>
+<span id="686">686</span>
+<span id="687">687</span>
+<span id="688">688</span>
+<span id="689">689</span>
+<span id="690">690</span>
+<span id="691">691</span>
+<span id="692">692</span>
+<span id="693">693</span>
+<span id="694">694</span>
+<span id="695">695</span>
+<span id="696">696</span>
+<span id="697">697</span>
+<span id="698">698</span>
+<span id="699">699</span>
+<span id="700">700</span>
+<span id="701">701</span>
+<span id="702">702</span>
+<span id="703">703</span>
+<span id="704">704</span>
+<span id="705">705</span>
+<span id="706">706</span>
+<span id="707">707</span>
+<span id="708">708</span>
+<span id="709">709</span>
+<span id="710">710</span>
+<span id="711">711</span>
+<span id="712">712</span>
+<span id="713">713</span>
+<span id="714">714</span>
+<span id="715">715</span>
+<span id="716">716</span>
+<span id="717">717</span>
+<span id="718">718</span>
+<span id="719">719</span>
+<span id="720">720</span>
+<span id="721">721</span>
+<span id="722">722</span>
+<span id="723">723</span>
+<span id="724">724</span>
+<span id="725">725</span>
+<span id="726">726</span>
+<span id="727">727</span>
+<span id="728">728</span>
+<span id="729">729</span>
+<span id="730">730</span>
+<span id="731">731</span>
+<span id="732">732</span>
+<span id="733">733</span>
+<span id="734">734</span>
+<span id="735">735</span>
+<span id="736">736</span>
+<span id="737">737</span>
+<span id="738">738</span>
+<span id="739">739</span>
+<span id="740">740</span>
+<span id="741">741</span>
+<span id="742">742</span>
+<span id="743">743</span>
+<span id="744">744</span>
+<span id="745">745</span>
+<span id="746">746</span>
+<span id="747">747</span>
+<span id="748">748</span>
+<span id="749">749</span>
+<span id="750">750</span>
+<span id="751">751</span>
+<span id="752">752</span>
+<span id="753">753</span>
+<span id="754">754</span>
+<span id="755">755</span>
+<span id="756">756</span>
+<span id="757">757</span>
+<span id="758">758</span>
+<span id="759">759</span>
+<span id="760">760</span>
+<span id="761">761</span>
+<span id="762">762</span>
+<span id="763">763</span>
+<span id="764">764</span>
+<span id="765">765</span>
+<span id="766">766</span>
+<span id="767">767</span>
+<span id="768">768</span>
+<span id="769">769</span>
+<span id="770">770</span>
+<span id="771">771</span>
+<span id="772">772</span>
+<span id="773">773</span>
+<span id="774">774</span>
+<span id="775">775</span>
+<span id="776">776</span>
+<span id="777">777</span>
+<span id="778">778</span>
+<span id="779">779</span>
+<span id="780">780</span>
+<span id="781">781</span>
+<span id="782">782</span>
+<span id="783">783</span>
+<span id="784">784</span>
+<span id="785">785</span>
+<span id="786">786</span>
+<span id="787">787</span>
+<span id="788">788</span>
+<span id="789">789</span>
+<span id="790">790</span>
+<span id="791">791</span>
+<span id="792">792</span>
+<span id="793">793</span>
+<span id="794">794</span>
+<span id="795">795</span>
+<span id="796">796</span>
+<span id="797">797</span>
+<span id="798">798</span>
+<span id="799">799</span>
+<span id="800">800</span>
+<span id="801">801</span>
+<span id="802">802</span>
+<span id="803">803</span>
+<span id="804">804</span>
+<span id="805">805</span>
+<span id="806">806</span>
+<span id="807">807</span>
+<span id="808">808</span>
+<span id="809">809</span>
+<span id="810">810</span>
+<span id="811">811</span>
+<span id="812">812</span>
+<span id="813">813</span>
+<span id="814">814</span>
+<span id="815">815</span>
+<span id="816">816</span>
+<span id="817">817</span>
+<span id="818">818</span>
+<span id="819">819</span>
+<span id="820">820</span>
+<span id="821">821</span>
+<span id="822">822</span>
+<span id="823">823</span>
+<span id="824">824</span>
+<span id="825">825</span>
+<span id="826">826</span>
+<span id="827">827</span>
+<span id="828">828</span>
+<span id="829">829</span>
+<span id="830">830</span>
+<span id="831">831</span>
+<span id="832">832</span>
+<span id="833">833</span>
+<span id="834">834</span>
+<span id="835">835</span>
+<span id="836">836</span>
+<span id="837">837</span>
+<span id="838">838</span>
+</pre><pre class="rust"><code><span class="attribute">#![allow(clippy::suspicious_arithmetic_impl)]
+</span><span class="kw">use </span><span class="kw">crate</span>::bn256::curve::<span class="kw-2">*</span>;
+<span class="kw">use </span><span class="kw">crate</span>::bn256::fq::<span class="kw-2">*</span>;
+<span class="kw">use </span><span class="kw">crate</span>::bn256::fq12::<span class="kw-2">*</span>;
+<span class="kw">use </span><span class="kw">crate</span>::bn256::fq2::<span class="kw-2">*</span>;
+<span class="kw">use </span><span class="kw">crate</span>::bn256::fq6::FROBENIUS_COEFF_FQ6_C1;
+<span class="kw">use </span><span class="kw">crate</span>::bn256::fr::<span class="kw-2">*</span>;
+<span class="kw">use </span><span class="kw">crate</span>::pairing::{Engine, MillerLoopResult, MultiMillerLoop, PairingCurveAffine};
+<span class="kw">use </span>core::borrow::Borrow;
+<span class="kw">use </span>core::iter::Sum;
+<span class="kw">use </span>core::ops::{Add, Mul, MulAssign, Neg, Sub};
+<span class="kw">use </span>ff::{Field, PrimeField};
+<span class="kw">use </span>group::cofactor::CofactorCurveAffine;
+<span class="kw">use </span>group::Group;
+<span class="kw">use </span>rand_core::RngCore;
+<span class="kw">use </span>subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
+
+<span class="kw">pub const </span>BN_X: u64 = <span class="number">4965661367192848881</span>;
+
+<span class="comment">// 6U+2 for in NAF form
+</span><span class="kw">pub const </span>SIX_U_PLUS_2_NAF: [i8; <span class="number">65</span>] = [
+    <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">1</span>, <span class="number">0</span>, -<span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">1</span>, -<span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">0</span>, -<span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">1</span>, <span class="number">0</span>, -<span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>,
+    <span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, -<span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, -<span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, -<span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">0</span>, -<span class="number">1</span>, <span class="number">0</span>,
+    <span class="number">0</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">1</span>, <span class="number">1</span>,
+];
+
+<span class="kw">pub const </span>XI_TO_Q_MINUS_1_OVER_2: Fq2 = Fq2 {
+    c0: Fq([
+        <span class="number">0xe4bbdd0c2936b629</span>,
+        <span class="number">0xbb30f162e133bacb</span>,
+        <span class="number">0x31a9d1b6f9645366</span>,
+        <span class="number">0x253570bea500f8dd</span>,
+    ]),
+    c1: Fq([
+        <span class="number">0xa1d77ce45ffe77c7</span>,
+        <span class="number">0x07affd117826d1db</span>,
+        <span class="number">0x6d16bd27bb7edc6b</span>,
+        <span class="number">0x2c87200285defecc</span>,
+    ]),
+};
+
+<span class="kw">impl </span>PairingCurveAffine <span class="kw">for </span>G1Affine {
+    <span class="kw">type </span>Pair = G2Affine;
+    <span class="kw">type </span>PairingResult = Gt;
+
+    <span class="kw">fn </span>pairing_with(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>::Pair) -&gt; <span class="self">Self</span>::PairingResult {
+        pairing(<span class="self">self</span>, other)
+    }
+}
+
+<span class="kw">impl </span>PairingCurveAffine <span class="kw">for </span>G2Affine {
+    <span class="kw">type </span>Pair = G1Affine;
+    <span class="kw">type </span>PairingResult = Gt;
+
+    <span class="kw">fn </span>pairing_with(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>::Pair) -&gt; <span class="self">Self</span>::PairingResult {
+        pairing(other, <span class="self">self</span>)
+    }
+}
+
+<span class="attribute">#[derive(Copy, Clone, Debug, Default)]
+</span><span class="kw">pub struct </span>Gt(<span class="kw">pub</span>(<span class="kw">crate</span>) Fq12);
+
+<span class="kw">impl </span>std::fmt::Display <span class="kw">for </span>Gt {
+    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>std::fmt::Formatter&lt;<span class="lifetime">&#39;_</span>&gt;) -&gt; std::fmt::Result {
+        <span class="macro">write!</span>(f, <span class="string">&quot;{self:?}&quot;</span>)
+    }
+}
+
+<span class="kw">impl </span>ConstantTimeEq <span class="kw">for </span>Gt {
+    <span class="kw">fn </span>ct_eq(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; Choice {
+        <span class="self">self</span>.<span class="number">0</span>.ct_eq(<span class="kw-2">&amp;</span>other.<span class="number">0</span>)
+    }
+}
+
+<span class="kw">impl </span>ConditionallySelectable <span class="kw">for </span>Gt {
+    <span class="kw">fn </span>conditional_select(a: <span class="kw-2">&amp;</span><span class="self">Self</span>, b: <span class="kw-2">&amp;</span><span class="self">Self</span>, choice: Choice) -&gt; <span class="self">Self </span>{
+        Gt(Fq12::conditional_select(<span class="kw-2">&amp;</span>a.<span class="number">0</span>, <span class="kw-2">&amp;</span>b.<span class="number">0</span>, choice))
+    }
+}
+
+<span class="kw">impl </span>Eq <span class="kw">for </span>Gt {}
+<span class="kw">impl </span>PartialEq <span class="kw">for </span>Gt {
+    <span class="attribute">#[inline]
+    </span><span class="kw">fn </span>eq(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; bool {
+        bool::from(<span class="self">self</span>.ct_eq(other))
+    }
+}
+
+<span class="kw">impl </span>Gt {
+    <span class="doccomment">/// Returns the group identity, which is $1$.
+    </span><span class="kw">pub fn </span>identity() -&gt; Gt {
+        Gt(Fq12::one())
+    }
+
+    <span class="doccomment">/// Doubles this group element.
+    </span><span class="kw">pub fn </span>double(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Gt {
+        Gt(<span class="self">self</span>.<span class="number">0</span>.square())
+    }
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;a</span>&gt; Neg <span class="kw">for </span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>Gt {
+    <span class="kw">type </span>Output = Gt;
+
+    <span class="attribute">#[inline]
+    </span><span class="kw">fn </span>neg(<span class="self">self</span>) -&gt; Gt {
+        <span class="comment">// The element is unitary, so we just conjugate.
+        </span><span class="kw">let </span><span class="kw-2">mut </span>u = <span class="self">self</span>.<span class="number">0</span>;
+        u.conjugate();
+        Gt(u)
+    }
+}
+
+<span class="kw">impl </span>Neg <span class="kw">for </span>Gt {
+    <span class="kw">type </span>Output = Gt;
+
+    <span class="attribute">#[inline]
+    </span><span class="kw">fn </span>neg(<span class="self">self</span>) -&gt; Gt {
+        -<span class="kw-2">&amp;</span><span class="self">self
+    </span>}
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;b</span>&gt; Add&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;b </span>Gt&gt; <span class="kw">for </span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>Gt {
+    <span class="kw">type </span>Output = Gt;
+
+    <span class="attribute">#[inline]
+    </span><span class="kw">fn </span>add(<span class="self">self</span>, rhs: <span class="kw-2">&amp;</span><span class="lifetime">&#39;b </span>Gt) -&gt; Gt {
+        Gt(<span class="self">self</span>.<span class="number">0 </span>* rhs.<span class="number">0</span>)
+    }
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;b</span>&gt; Sub&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;b </span>Gt&gt; <span class="kw">for </span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>Gt {
+    <span class="kw">type </span>Output = Gt;
+
+    <span class="attribute">#[inline]
+    </span><span class="kw">fn </span>sub(<span class="self">self</span>, rhs: <span class="kw-2">&amp;</span><span class="lifetime">&#39;b </span>Gt) -&gt; Gt {
+        <span class="self">self </span>+ (-rhs)
+    }
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;b</span>&gt; Mul&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;b </span>Fr&gt; <span class="kw">for </span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>Gt {
+    <span class="kw">type </span>Output = Gt;
+
+    <span class="kw">fn </span>mul(<span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="lifetime">&#39;b </span>Fr) -&gt; <span class="self">Self</span>::Output {
+        <span class="kw">let </span><span class="kw-2">mut </span>acc = Gt::identity();
+
+        <span class="kw">for </span>bit <span class="kw">in </span>other
+            .to_repr()
+            .iter()
+            .rev()
+            .flat_map(|byte| (<span class="number">0</span>..<span class="number">8</span>).rev().map(<span class="kw">move </span>|i| Choice::from((byte &gt;&gt; i) &amp; <span class="number">1u8</span>)))
+            .skip(<span class="number">1</span>)
+        {
+            acc = acc.double();
+            acc = Gt::conditional_select(<span class="kw-2">&amp;</span>acc, <span class="kw-2">&amp;</span>(acc + <span class="self">self</span>), bit);
+        }
+
+        acc
+    }
+}
+
+<span class="kw">use crate</span>::{
+    impl_add_binop_specify_output, impl_binops_additive, impl_binops_additive_specify_output,
+    impl_binops_multiplicative, impl_binops_multiplicative_mixed, impl_sub_binop_specify_output,
+};
+<span class="macro">impl_binops_additive!</span>(Gt, Gt);
+<span class="macro">impl_binops_multiplicative!</span>(Gt, Fr);
+
+<span class="kw">impl</span>&lt;T&gt; Sum&lt;T&gt; <span class="kw">for </span>Gt
+<span class="kw">where
+    </span>T: Borrow&lt;Gt&gt;,
+{
+    <span class="kw">fn </span>sum&lt;I&gt;(iter: I) -&gt; <span class="self">Self
+    </span><span class="kw">where
+        </span>I: Iterator&lt;Item = T&gt;,
+    {
+        iter.fold(<span class="self">Self</span>::identity(), |acc, item| acc + item.borrow())
+    }
+}
+
+<span class="kw">impl </span>Group <span class="kw">for </span>Gt {
+    <span class="kw">type </span>Scalar = Fr;
+
+    <span class="kw">fn </span>random(<span class="kw">_</span>: <span class="kw">impl </span>RngCore) -&gt; <span class="self">Self </span>{
+        <span class="macro">unimplemented!</span>();
+    }
+
+    <span class="kw">fn </span>identity() -&gt; <span class="self">Self </span>{
+        <span class="self">Self</span>::identity()
+    }
+
+    <span class="kw">fn </span>generator() -&gt; <span class="self">Self </span>{
+        <span class="macro">unimplemented!</span>();
+    }
+
+    <span class="kw">fn </span>is_identity(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Choice {
+        <span class="self">self</span>.ct_eq(<span class="kw-2">&amp;</span><span class="self">Self</span>::identity())
+    }
+
+    <span class="attribute">#[must_use]
+    </span><span class="kw">fn </span>double(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="self">Self </span>{
+        <span class="self">self</span>.double()
+    }
+}
+
+<span class="attribute">#[derive(Clone, Debug)]
+</span><span class="kw">pub struct </span>G2Prepared {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) coeffs: Vec&lt;(Fq2, Fq2, Fq2)&gt;,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) infinity: bool,
+}
+
+<span class="kw">impl </span>G2Prepared {
+    <span class="kw">pub fn </span>is_zero(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+        <span class="self">self</span>.infinity
+    }
+
+    <span class="kw">pub fn </span>from_affine(q: G2Affine) -&gt; <span class="self">Self </span>{
+        <span class="kw">if </span>bool::from(q.is_identity()) {
+            <span class="kw">return </span>G2Prepared {
+                coeffs: <span class="macro">vec!</span>[],
+                infinity: <span class="bool-val">true</span>,
+            };
+        }
+
+        <span class="kw">fn </span>doubling_step(r: <span class="kw-2">&amp;mut </span>G2) -&gt; (Fq2, Fq2, Fq2) {
+            <span class="comment">// Adaptation of Algorithm 26, https://eprint.iacr.org/2010/354.pdf
+            </span><span class="kw">let </span><span class="kw-2">mut </span>tmp0 = r.x;
+            tmp0.square_assign();
+
+            <span class="kw">let </span><span class="kw-2">mut </span>tmp1 = r.y;
+            tmp1.square_assign();
+
+            <span class="kw">let </span><span class="kw-2">mut </span>tmp2 = tmp1;
+            tmp2.square_assign();
+
+            <span class="kw">let </span><span class="kw-2">mut </span>tmp3 = tmp1;
+            tmp3 += <span class="kw-2">&amp;</span>r.x;
+            tmp3.square_assign();
+            tmp3 -= <span class="kw-2">&amp;</span>tmp0;
+            tmp3 -= <span class="kw-2">&amp;</span>tmp2;
+            tmp3.double_assign();
+
+            <span class="kw">let </span><span class="kw-2">mut </span>tmp4 = tmp0;
+            tmp4.double_assign();
+            tmp4 += <span class="kw-2">&amp;</span>tmp0;
+
+            <span class="kw">let </span><span class="kw-2">mut </span>tmp6 = r.x;
+            tmp6 += <span class="kw-2">&amp;</span>tmp4;
+
+            <span class="kw">let </span><span class="kw-2">mut </span>tmp5 = tmp4;
+            tmp5.square_assign();
+
+            <span class="kw">let </span><span class="kw-2">mut </span>zsquared = r.z;
+            zsquared.square_assign();
+
+            r.x = tmp5;
+            r.x -= <span class="kw-2">&amp;</span>tmp3;
+            r.x -= <span class="kw-2">&amp;</span>tmp3;
+
+            r.z += <span class="kw-2">&amp;</span>r.y;
+            r.z.square_assign();
+            r.z -= <span class="kw-2">&amp;</span>tmp1;
+            r.z -= <span class="kw-2">&amp;</span>zsquared;
+
+            r.y = tmp3;
+            r.y -= <span class="kw-2">&amp;</span>r.x;
+            r.y.mul_assign(<span class="kw-2">&amp;</span>tmp4);
+
+            tmp2.double_assign();
+            tmp2.double_assign();
+            tmp2.double_assign();
+
+            r.y -= <span class="kw-2">&amp;</span>tmp2;
+
+            <span class="comment">// up to here everything was by algorith, line 11
+            // use R instead of new T
+
+            // tmp3 is the first part of line 12
+            </span>tmp3 = tmp4;
+            tmp3.mul_assign(<span class="kw-2">&amp;</span>zsquared);
+            tmp3.double_assign();
+            tmp3 = tmp3.neg();
+
+            <span class="comment">// tmp6 is from line 14
+            </span>tmp6.square_assign();
+            tmp6 -= <span class="kw-2">&amp;</span>tmp0;
+            tmp6 -= <span class="kw-2">&amp;</span>tmp5;
+
+            tmp1.double_assign();
+            tmp1.double_assign();
+
+            tmp6 -= <span class="kw-2">&amp;</span>tmp1;
+
+            <span class="comment">// tmp0 is the first part of line 16
+            </span>tmp0 = r.z;
+            tmp0.mul_assign(<span class="kw-2">&amp;</span>zsquared);
+            tmp0.double_assign();
+
+            (tmp0, tmp3, tmp6)
+        }
+
+        <span class="kw">fn </span>addition_step(r: <span class="kw-2">&amp;mut </span>G2, q: <span class="kw-2">&amp;</span>G2Affine) -&gt; (Fq2, Fq2, Fq2) {
+            <span class="comment">// Adaptation of Algorithm 27, https://eprint.iacr.org/2010/354.pdf
+            </span><span class="kw">let </span><span class="kw-2">mut </span>zsquared = r.z;
+            zsquared.square_assign();
+
+            <span class="kw">let </span><span class="kw-2">mut </span>ysquared = q.y;
+            ysquared.square_assign();
+
+            <span class="comment">// t0 corresponds to line 1
+            </span><span class="kw">let </span><span class="kw-2">mut </span>t0 = zsquared;
+            t0.mul_assign(<span class="kw-2">&amp;</span>q.x);
+
+            <span class="comment">// t1 corresponds to lines 2 and 3
+            </span><span class="kw">let </span><span class="kw-2">mut </span>t1 = q.y;
+            t1 += <span class="kw-2">&amp;</span>r.z;
+            t1.square_assign();
+            t1 -= <span class="kw-2">&amp;</span>ysquared;
+            t1 -= <span class="kw-2">&amp;</span>zsquared;
+            t1.mul_assign(<span class="kw-2">&amp;</span>zsquared);
+
+            <span class="comment">// t2 corresponds to line 4
+            </span><span class="kw">let </span><span class="kw-2">mut </span>t2 = t0;
+            t2 -= <span class="kw-2">&amp;</span>r.x;
+
+            <span class="comment">// t3 corresponds to line 5
+            </span><span class="kw">let </span><span class="kw-2">mut </span>t3 = t2;
+            t3.square_assign();
+
+            <span class="comment">// t4 corresponds to line 6
+            </span><span class="kw">let </span><span class="kw-2">mut </span>t4 = t3;
+            t4.double_assign();
+            t4.double_assign();
+
+            <span class="comment">// t5 corresponds to line 7
+            </span><span class="kw">let </span><span class="kw-2">mut </span>t5 = t4;
+            t5.mul_assign(<span class="kw-2">&amp;</span>t2);
+
+            <span class="comment">// t6 corresponds to line 8
+            </span><span class="kw">let </span><span class="kw-2">mut </span>t6 = t1;
+            t6 -= <span class="kw-2">&amp;</span>r.y;
+            t6 -= <span class="kw-2">&amp;</span>r.y;
+
+            <span class="comment">// t9 corresponds to line 9
+            </span><span class="kw">let </span><span class="kw-2">mut </span>t9 = t6;
+            t9.mul_assign(<span class="kw-2">&amp;</span>q.x);
+
+            <span class="comment">// corresponds to line 10
+            </span><span class="kw">let </span><span class="kw-2">mut </span>t7 = t4;
+            t7.mul_assign(<span class="kw-2">&amp;</span>r.x);
+
+            <span class="comment">// corresponds to line 11, but assigns to r.x instead of T.x
+            </span>r.x = t6;
+            r.x.square_assign();
+            r.x -= <span class="kw-2">&amp;</span>t5;
+            r.x -= <span class="kw-2">&amp;</span>t7;
+            r.x -= <span class="kw-2">&amp;</span>t7;
+
+            <span class="comment">// corresponds to line 12, but assigns to r.z instead of T.z
+            </span>r.z += <span class="kw-2">&amp;</span>t2;
+            r.z.square_assign();
+            r.z -= <span class="kw-2">&amp;</span>zsquared;
+            r.z -= <span class="kw-2">&amp;</span>t3;
+
+            <span class="comment">// corresponds to line 13
+            </span><span class="kw">let </span><span class="kw-2">mut </span>t10 = q.y;
+            t10 += <span class="kw-2">&amp;</span>r.z;
+
+            <span class="comment">// corresponds to line 14
+            </span><span class="kw">let </span><span class="kw-2">mut </span>t8 = t7;
+            t8 -= <span class="kw-2">&amp;</span>r.x;
+            t8.mul_assign(<span class="kw-2">&amp;</span>t6);
+
+            <span class="comment">// corresponds to line 15
+            </span>t0 = r.y;
+            t0.mul_assign(<span class="kw-2">&amp;</span>t5);
+            t0.double_assign();
+
+            <span class="comment">// corresponds to line 12, but assigns to r.y instead of T.y
+            </span>r.y = t8;
+            r.y -= <span class="kw-2">&amp;</span>t0;
+
+            <span class="comment">// corresponds to line 17
+            </span>t10.square_assign();
+            t10 -= <span class="kw-2">&amp;</span>ysquared;
+
+            <span class="kw">let </span><span class="kw-2">mut </span>ztsquared = r.z;
+            ztsquared.square_assign();
+
+            t10 -= <span class="kw-2">&amp;</span>ztsquared;
+
+            <span class="comment">// corresponds to line 18
+            </span>t9.double_assign();
+            t9 -= <span class="kw-2">&amp;</span>t10;
+
+            <span class="comment">// t10 = 2*Zt from Algo 27, line 19
+            </span>t10 = r.z;
+            t10.double_assign();
+
+            <span class="comment">// t1 = first multiplicator of line 21
+            </span>t6 = t6.neg();
+
+            t1 = t6;
+            t1.double_assign();
+
+            <span class="comment">// t9 corresponds to t9 from Algo 27
+            </span>(t10, t1, t9)
+        }
+
+        <span class="kw">let </span><span class="kw-2">mut </span>coeffs = <span class="macro">vec!</span>[];
+        <span class="kw">let </span><span class="kw-2">mut </span>r: G2 = q.into();
+
+        <span class="kw">let </span><span class="kw-2">mut </span>negq = q;
+        negq = -negq;
+
+        <span class="kw">for </span>i <span class="kw">in </span>(<span class="number">1</span>..SIX_U_PLUS_2_NAF.len()).rev() {
+            coeffs.push(doubling_step(<span class="kw-2">&amp;mut </span>r));
+            <span class="kw">let </span>x = SIX_U_PLUS_2_NAF[i - <span class="number">1</span>];
+            <span class="kw">match </span>x {
+                <span class="number">1 </span>=&gt; {
+                    coeffs.push(addition_step(<span class="kw-2">&amp;mut </span>r, <span class="kw-2">&amp;</span>q));
+                }
+                -<span class="number">1 </span>=&gt; {
+                    coeffs.push(addition_step(<span class="kw-2">&amp;mut </span>r, <span class="kw-2">&amp;</span>negq));
+                }
+                <span class="kw">_ </span>=&gt; <span class="kw">continue</span>,
+            }
+        }
+
+        <span class="kw">let </span><span class="kw-2">mut </span>q1 = q;
+
+        q1.x.c1 = q1.x.c1.neg();
+        q1.x.mul_assign(<span class="kw-2">&amp;</span>FROBENIUS_COEFF_FQ6_C1[<span class="number">1</span>]);
+
+        q1.y.c1 = q1.y.c1.neg();
+        q1.y.mul_assign(<span class="kw-2">&amp;</span>XI_TO_Q_MINUS_1_OVER_2);
+
+        coeffs.push(addition_step(<span class="kw-2">&amp;mut </span>r, <span class="kw-2">&amp;</span>q1));
+
+        <span class="kw">let </span><span class="kw-2">mut </span>minusq2 = q;
+        minusq2.x.mul_assign(<span class="kw-2">&amp;</span>FROBENIUS_COEFF_FQ6_C1[<span class="number">2</span>]);
+
+        coeffs.push(addition_step(<span class="kw-2">&amp;mut </span>r, <span class="kw-2">&amp;</span>minusq2));
+
+        G2Prepared {
+            coeffs,
+            infinity: <span class="bool-val">false</span>,
+        }
+    }
+}
+
+<span class="kw">impl </span>From&lt;G2Affine&gt; <span class="kw">for </span>G2Prepared {
+    <span class="kw">fn </span>from(q: G2Affine) -&gt; G2Prepared {
+        G2Prepared::from_affine(q)
+    }
+}
+
+<span class="kw">impl </span>MillerLoopResult <span class="kw">for </span>Gt {
+    <span class="kw">type </span>Gt = <span class="self">Self</span>;
+    <span class="comment">// pub fn final_exponentiation(r: &amp;Fq12) -&gt; CtOption&lt;Fq12&gt; {
+    </span><span class="kw">fn </span>final_exponentiation(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Gt {
+        <span class="kw">fn </span>exp_by_x(f: <span class="kw-2">&amp;mut </span>Fq12) {
+            <span class="kw">let </span>x = BN_X;
+            <span class="kw">let </span><span class="kw-2">mut </span>res = Fq12::one();
+            <span class="kw">for </span>i <span class="kw">in </span>(<span class="number">0</span>..<span class="number">64</span>).rev() {
+                res.cyclotomic_square();
+                <span class="kw">if </span>((x &gt;&gt; i) &amp; <span class="number">1</span>) == <span class="number">1 </span>{
+                    res.mul_assign(f);
+                }
+            }
+            <span class="kw-2">*</span>f = res;
+        }
+
+        <span class="kw">let </span>r = <span class="self">self</span>.<span class="number">0</span>;
+        <span class="kw">let </span><span class="kw-2">mut </span>f1 = <span class="self">self</span>.<span class="number">0</span>;
+        f1.conjugate();
+
+        Gt(r.invert()
+            .map(|<span class="kw-2">mut </span>f2| {
+                <span class="kw">let </span><span class="kw-2">mut </span>r = f1;
+                r.mul_assign(<span class="kw-2">&amp;</span>f2);
+                f2 = r;
+                r.frobenius_map(<span class="number">2</span>);
+                r.mul_assign(<span class="kw-2">&amp;</span>f2);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>fp = r;
+                fp.frobenius_map(<span class="number">1</span>);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>fp2 = r;
+                fp2.frobenius_map(<span class="number">2</span>);
+                <span class="kw">let </span><span class="kw-2">mut </span>fp3 = fp2;
+                fp3.frobenius_map(<span class="number">1</span>);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>fu = r;
+                exp_by_x(<span class="kw-2">&amp;mut </span>fu);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>fu2 = fu;
+                exp_by_x(<span class="kw-2">&amp;mut </span>fu2);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>fu3 = fu2;
+                exp_by_x(<span class="kw-2">&amp;mut </span>fu3);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>y3 = fu;
+                y3.frobenius_map(<span class="number">1</span>);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>fu2p = fu2;
+                fu2p.frobenius_map(<span class="number">1</span>);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>fu3p = fu3;
+                fu3p.frobenius_map(<span class="number">1</span>);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>y2 = fu2;
+                y2.frobenius_map(<span class="number">2</span>);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>y0 = fp;
+                y0.mul_assign(<span class="kw-2">&amp;</span>fp2);
+                y0.mul_assign(<span class="kw-2">&amp;</span>fp3);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>y1 = r;
+                y1.conjugate();
+
+                <span class="kw">let </span><span class="kw-2">mut </span>y5 = fu2;
+                y5.conjugate();
+
+                y3.conjugate();
+
+                <span class="kw">let </span><span class="kw-2">mut </span>y4 = fu;
+                y4.mul_assign(<span class="kw-2">&amp;</span>fu2p);
+                y4.conjugate();
+
+                <span class="kw">let </span><span class="kw-2">mut </span>y6 = fu3;
+                y6.mul_assign(<span class="kw-2">&amp;</span>fu3p);
+                y6.conjugate();
+
+                y6.cyclotomic_square();
+                y6.mul_assign(<span class="kw-2">&amp;</span>y4);
+                y6.mul_assign(<span class="kw-2">&amp;</span>y5);
+
+                <span class="kw">let </span><span class="kw-2">mut </span>t1 = y3;
+                t1.mul_assign(<span class="kw-2">&amp;</span>y5);
+                t1.mul_assign(<span class="kw-2">&amp;</span>y6);
+
+                y6.mul_assign(<span class="kw-2">&amp;</span>y2);
+
+                t1.cyclotomic_square();
+                t1.mul_assign(<span class="kw-2">&amp;</span>y6);
+                t1.cyclotomic_square();
+
+                <span class="kw">let </span><span class="kw-2">mut </span>t0 = t1;
+                t0.mul_assign(<span class="kw-2">&amp;</span>y1);
+
+                t1.mul_assign(<span class="kw-2">&amp;</span>y0);
+
+                t0.cyclotomic_square();
+                t0.mul_assign(<span class="kw-2">&amp;</span>t1);
+
+                t0
+            })
+            .unwrap())
+    }
+}
+
+<span class="kw">pub fn </span>multi_miller_loop(terms: <span class="kw-2">&amp;</span>[(<span class="kw-2">&amp;</span>G1Affine, <span class="kw-2">&amp;</span>G2Prepared)]) -&gt; Gt {
+    <span class="kw">let </span><span class="kw-2">mut </span>pairs = <span class="macro">vec!</span>[];
+    <span class="kw">for </span><span class="kw-2">&amp;</span>(p, q) <span class="kw">in </span>terms {
+        <span class="kw">if </span>!bool::from(p.is_identity()) &amp;&amp; !q.is_zero() {
+            pairs.push((p, q.coeffs.iter()));
+        }
+    }
+
+    <span class="comment">// Final steps of the line function on prepared coefficients
+    </span><span class="kw">fn </span>ell(f: <span class="kw-2">&amp;mut </span>Fq12, coeffs: <span class="kw-2">&amp;</span>(Fq2, Fq2, Fq2), p: <span class="kw-2">&amp;</span>G1Affine) {
+        <span class="kw">let </span><span class="kw-2">mut </span>c0 = coeffs.<span class="number">0</span>;
+        <span class="kw">let </span><span class="kw-2">mut </span>c1 = coeffs.<span class="number">1</span>;
+
+        c0.c0.mul_assign(<span class="kw-2">&amp;</span>p.y);
+        c0.c1.mul_assign(<span class="kw-2">&amp;</span>p.y);
+
+        c1.c0.mul_assign(<span class="kw-2">&amp;</span>p.x);
+        c1.c1.mul_assign(<span class="kw-2">&amp;</span>p.x);
+
+        <span class="comment">// Sparse multiplication in Fq12
+        </span>f.mul_by_034(<span class="kw-2">&amp;</span>c0, <span class="kw-2">&amp;</span>c1, <span class="kw-2">&amp;</span>coeffs.<span class="number">2</span>);
+    }
+
+    <span class="kw">let </span><span class="kw-2">mut </span>f = Fq12::one();
+
+    <span class="kw">for </span>i <span class="kw">in </span>(<span class="number">1</span>..SIX_U_PLUS_2_NAF.len()).rev() {
+        <span class="kw">if </span>i != SIX_U_PLUS_2_NAF.len() - <span class="number">1 </span>{
+            f.square_assign();
+        }
+        <span class="kw">for </span><span class="kw-2">&amp;mut </span>(p, <span class="kw-2">ref mut </span>coeffs) <span class="kw">in </span><span class="kw-2">&amp;mut </span>pairs {
+            ell(<span class="kw-2">&amp;mut </span>f, coeffs.next().unwrap(), p);
+        }
+        <span class="kw">let </span>x = SIX_U_PLUS_2_NAF[i - <span class="number">1</span>];
+        <span class="kw">match </span>x {
+            <span class="number">1 </span>=&gt; {
+                <span class="kw">for </span><span class="kw-2">&amp;mut </span>(p, <span class="kw-2">ref mut </span>coeffs) <span class="kw">in </span><span class="kw-2">&amp;mut </span>pairs {
+                    ell(<span class="kw-2">&amp;mut </span>f, coeffs.next().unwrap(), p);
+                }
+            }
+            -<span class="number">1 </span>=&gt; {
+                <span class="kw">for </span><span class="kw-2">&amp;mut </span>(p, <span class="kw-2">ref mut </span>coeffs) <span class="kw">in </span><span class="kw-2">&amp;mut </span>pairs {
+                    ell(<span class="kw-2">&amp;mut </span>f, coeffs.next().unwrap(), p);
+                }
+            }
+            <span class="kw">_ </span>=&gt; <span class="kw">continue</span>,
+        }
+    }
+
+    <span class="kw">for </span><span class="kw-2">&amp;mut </span>(p, <span class="kw-2">ref mut </span>coeffs) <span class="kw">in </span><span class="kw-2">&amp;mut </span>pairs {
+        ell(<span class="kw-2">&amp;mut </span>f, coeffs.next().unwrap(), p);
+    }
+
+    <span class="kw">for </span><span class="kw-2">&amp;mut </span>(p, <span class="kw-2">ref mut </span>coeffs) <span class="kw">in </span><span class="kw-2">&amp;mut </span>pairs {
+        ell(<span class="kw-2">&amp;mut </span>f, coeffs.next().unwrap(), p);
+    }
+
+    <span class="kw">for </span><span class="kw-2">&amp;mut </span>(_p, <span class="kw-2">ref mut </span>coeffs) <span class="kw">in </span><span class="kw-2">&amp;mut </span>pairs {
+        <span class="macro">assert_eq!</span>(coeffs.next(), <span class="prelude-val">None</span>);
+    }
+
+    Gt(f)
+}
+
+<span class="kw">pub fn </span>pairing(g1: <span class="kw-2">&amp;</span>G1Affine, g2: <span class="kw-2">&amp;</span>G2Affine) -&gt; Gt {
+    <span class="kw">let </span>g2 = G2Prepared::from_affine(<span class="kw-2">*</span>g2);
+    <span class="kw">let </span>terms: <span class="kw-2">&amp;</span>[(<span class="kw-2">&amp;</span>G1Affine, <span class="kw-2">&amp;</span>G2Prepared)] = <span class="kw-2">&amp;</span>[(g1, <span class="kw-2">&amp;</span>g2)];
+    <span class="kw">let </span>u = multi_miller_loop(terms);
+    u.final_exponentiation()
+}
+
+<span class="attribute">#[derive(Clone, Debug)]
+</span><span class="kw">pub struct </span>Bn256;
+
+<span class="kw">impl </span>Engine <span class="kw">for </span>Bn256 {
+    <span class="kw">type </span>Scalar = Fr;
+    <span class="kw">type </span>G1 = G1;
+    <span class="kw">type </span>G1Affine = G1Affine;
+    <span class="kw">type </span>G2 = G2;
+    <span class="kw">type </span>G2Affine = G2Affine;
+    <span class="kw">type </span>Gt = Gt;
+
+    <span class="kw">fn </span>pairing(p: <span class="kw-2">&amp;</span><span class="self">Self</span>::G1Affine, q: <span class="kw-2">&amp;</span><span class="self">Self</span>::G2Affine) -&gt; <span class="self">Self</span>::Gt {
+        pairing(p, q)
+    }
+}
+
+<span class="kw">impl </span>MultiMillerLoop <span class="kw">for </span>Bn256 {
+    <span class="kw">type </span>G2Prepared = G2Prepared;
+    <span class="kw">type </span><span class="prelude-ty">Result </span>= Gt;
+
+    <span class="kw">fn </span>multi_miller_loop(terms: <span class="kw-2">&amp;</span>[(<span class="kw-2">&amp;</span><span class="self">Self</span>::G1Affine, <span class="kw-2">&amp;</span><span class="self">Self</span>::G2Prepared)]) -&gt; <span class="self">Self</span>::Result {
+        multi_miller_loop(terms)
+    }
+}
+
+<span class="attribute">#[cfg(test)]
+</span><span class="kw">use </span>rand::SeedableRng;
+<span class="attribute">#[cfg(test)]
+</span><span class="kw">use </span>rand_xorshift::XorShiftRng;
+
+<span class="attribute">#[test]
+</span><span class="kw">fn </span>test_pairing() {
+    <span class="kw">let </span>g1 = G1::generator();
+    <span class="kw">let </span><span class="kw-2">mut </span>g2 = G2::generator();
+    g2 = g2.double();
+    <span class="kw">let </span>pair12 = Bn256::pairing(<span class="kw-2">&amp;</span>G1Affine::from(g1), <span class="kw-2">&amp;</span>G2Affine::from(g2));
+
+    <span class="kw">let </span><span class="kw-2">mut </span>g1 = G1::generator();
+    <span class="kw">let </span>g2 = G2::generator();
+    g1 = g1.double();
+    <span class="kw">let </span>pair21 = Bn256::pairing(<span class="kw-2">&amp;</span>G1Affine::from(g1), <span class="kw-2">&amp;</span>G2Affine::from(g2));
+
+    <span class="macro">assert_eq!</span>(pair12, pair21);
+
+    <span class="kw">let </span>g1 = G1::generator();
+    <span class="kw">let </span><span class="kw-2">mut </span>g2 = G2::generator();
+    g2 = g2.double().double();
+    <span class="kw">let </span>pair12 = Bn256::pairing(<span class="kw-2">&amp;</span>G1Affine::from(g1), <span class="kw-2">&amp;</span>G2Affine::from(g2));
+
+    <span class="kw">let </span><span class="kw-2">mut </span>g1 = G1::generator();
+    <span class="kw">let </span><span class="kw-2">mut </span>g2 = G2::generator();
+    g1 = g1.double();
+    g2 = g2.double();
+    <span class="kw">let </span>pair21 = Bn256::pairing(<span class="kw-2">&amp;</span>G1Affine::from(g1), <span class="kw-2">&amp;</span>G2Affine::from(g2));
+
+    <span class="macro">assert_eq!</span>(pair12, pair21);
+
+    <span class="kw">let </span><span class="kw-2">mut </span>rng = XorShiftRng::from_seed([
+        <span class="number">0x59</span>, <span class="number">0x62</span>, <span class="number">0xbe</span>, <span class="number">0x5d</span>, <span class="number">0x76</span>, <span class="number">0x3d</span>, <span class="number">0x31</span>, <span class="number">0x8d</span>, <span class="number">0x17</span>, <span class="number">0xdb</span>, <span class="number">0x37</span>, <span class="number">0x32</span>, <span class="number">0x54</span>, <span class="number">0x06</span>, <span class="number">0xbc</span>,
+        <span class="number">0xe5</span>,
+    ]);
+    <span class="kw">for _ in </span><span class="number">0</span>..<span class="number">1000 </span>{
+        <span class="kw">let </span>a = Fr::random(<span class="kw-2">&amp;mut </span>rng);
+        <span class="kw">let </span>b = Fr::random(<span class="kw-2">&amp;mut </span>rng);
+
+        <span class="kw">let </span><span class="kw-2">mut </span>g1 = G1::generator();
+        g1.mul_assign(a);
+
+        <span class="kw">let </span><span class="kw-2">mut </span>g2 = G2::generator();
+        g1.mul_assign(b);
+
+        <span class="kw">let </span>pair_ab = Bn256::pairing(<span class="kw-2">&amp;</span>G1Affine::from(g1), <span class="kw-2">&amp;</span>G2Affine::from(g2));
+
+        g1 = G1::generator();
+        g1.mul_assign(b);
+
+        g2 = G2::generator();
+        g1.mul_assign(a);
+
+        <span class="kw">let </span>pair_ba = Bn256::pairing(<span class="kw-2">&amp;</span>G1Affine::from(g1), <span class="kw-2">&amp;</span>G2Affine::from(g2));
+
+        <span class="macro">assert_eq!</span>(pair_ab, pair_ba);
+    }
+}
+
+<span class="attribute">#[test]
+</span><span class="kw">fn </span>random_bilinearity_tests() {
+    <span class="kw">let </span><span class="kw-2">mut </span>rng = XorShiftRng::from_seed([
+        <span class="number">0x59</span>, <span class="number">0x62</span>, <span class="number">0xbe</span>, <span class="number">0x5d</span>, <span class="number">0x76</span>, <span class="number">0x3d</span>, <span class="number">0x31</span>, <span class="number">0x8d</span>, <span class="number">0x17</span>, <span class="number">0xdb</span>, <span class="number">0x37</span>, <span class="number">0x32</span>, <span class="number">0x54</span>, <span class="number">0x06</span>, <span class="number">0xbc</span>,
+        <span class="number">0xe5</span>,
+    ]);
+
+    <span class="kw">for _ in </span><span class="number">0</span>..<span class="number">1000 </span>{
+        <span class="kw">let </span><span class="kw-2">mut </span>a = G1::generator();
+        <span class="kw">let </span>ka = Fr::random(<span class="kw-2">&amp;mut </span>rng);
+        a.mul_assign(ka);
+
+        <span class="kw">let </span><span class="kw-2">mut </span>b = G2::generator();
+        <span class="kw">let </span>kb = Fr::random(<span class="kw-2">&amp;mut </span>rng);
+        b.mul_assign(kb);
+
+        <span class="kw">let </span>c = Fr::random(<span class="kw-2">&amp;mut </span>rng);
+        <span class="kw">let </span>d = Fr::random(<span class="kw-2">&amp;mut </span>rng);
+
+        <span class="kw">let </span><span class="kw-2">mut </span>ac = a;
+        ac.mul_assign(c);
+
+        <span class="kw">let </span><span class="kw-2">mut </span>ad = a;
+        ad.mul_assign(d);
+
+        <span class="kw">let </span><span class="kw-2">mut </span>bc = b;
+        bc.mul_assign(c);
+
+        <span class="kw">let </span><span class="kw-2">mut </span>bd = b;
+        bd.mul_assign(d);
+
+        <span class="kw">let </span>acbd = Bn256::pairing(<span class="kw-2">&amp;</span>G1Affine::from(ac), <span class="kw-2">&amp;</span>G2Affine::from(bd));
+        <span class="kw">let </span>adbc = Bn256::pairing(<span class="kw-2">&amp;</span>G1Affine::from(ad), <span class="kw-2">&amp;</span>G2Affine::from(bc));
+
+        <span class="kw">let </span><span class="kw-2">mut </span>cd = c;
+        cd.mul_assign(<span class="kw-2">&amp;</span>d);
+
+        cd <span class="kw-2">*</span>= Fr([<span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>]);
+
+        <span class="kw">let </span>abcd = Gt(Bn256::pairing(<span class="kw-2">&amp;</span>G1Affine::from(a), <span class="kw-2">&amp;</span>G2Affine::from(b))
+            .<span class="number">0
+            </span>.pow_vartime(cd.<span class="number">0</span>));
+
+        <span class="macro">assert_eq!</span>(acbd, adbc);
+        <span class="macro">assert_eq!</span>(acbd, abcd);
+    }
+}
+
+<span class="attribute">#[test]
+</span><span class="kw">pub fn </span>engine_tests() {
+    <span class="kw">let </span><span class="kw-2">mut </span>rng = XorShiftRng::from_seed([
+        <span class="number">0x59</span>, <span class="number">0x62</span>, <span class="number">0xbe</span>, <span class="number">0x5d</span>, <span class="number">0x76</span>, <span class="number">0x3d</span>, <span class="number">0x31</span>, <span class="number">0x8d</span>, <span class="number">0x17</span>, <span class="number">0xdb</span>, <span class="number">0x37</span>, <span class="number">0x32</span>, <span class="number">0x54</span>, <span class="number">0x06</span>, <span class="number">0xbc</span>,
+        <span class="number">0xe5</span>,
+    ]);
+
+    <span class="kw">for _ in </span><span class="number">0</span>..<span class="number">10 </span>{
+        <span class="kw">let </span>a = G1Affine::from(G1::random(<span class="kw-2">&amp;mut </span>rng));
+        <span class="kw">let </span>b = G2Affine::from(G2::random(<span class="kw-2">&amp;mut </span>rng));
+
+        <span class="macro">assert!</span>(a.pairing_with(<span class="kw-2">&amp;</span>b) == b.pairing_with(<span class="kw-2">&amp;</span>a));
+        <span class="macro">assert!</span>(a.pairing_with(<span class="kw-2">&amp;</span>b) == pairing(<span class="kw-2">&amp;</span>a, <span class="kw-2">&amp;</span>b));
+    }
+
+    <span class="kw">for _ in </span><span class="number">0</span>..<span class="number">1000 </span>{
+        <span class="kw">let </span>z1 = G1Affine::identity();
+        <span class="kw">let </span>z2 = G2Prepared::from(G2Affine::identity());
+
+        <span class="kw">let </span>a = G1Affine::from(G1::random(<span class="kw-2">&amp;mut </span>rng));
+        <span class="kw">let </span>b = G2Prepared::from(G2Affine::from(G2::random(<span class="kw-2">&amp;mut </span>rng)));
+        <span class="kw">let </span>c = G1Affine::from(G1::random(<span class="kw-2">&amp;mut </span>rng));
+        <span class="kw">let </span>d = G2Prepared::from(G2Affine::from(G2::random(<span class="kw-2">&amp;mut </span>rng)));
+
+        <span class="macro">assert_eq!</span>(
+            Fq12::one(),
+            multi_miller_loop(<span class="kw-2">&amp;</span>[(<span class="kw-2">&amp;</span>z1, <span class="kw-2">&amp;</span>b)]).final_exponentiation().<span class="number">0</span>,
+        );
+
+        <span class="macro">assert_eq!</span>(
+            Fq12::one(),
+            multi_miller_loop(<span class="kw-2">&amp;</span>[(<span class="kw-2">&amp;</span>a, <span class="kw-2">&amp;</span>z2)]).final_exponentiation().<span class="number">0</span>,
+        );
+
+        <span class="macro">assert_eq!</span>(
+            multi_miller_loop(<span class="kw-2">&amp;</span>[(<span class="kw-2">&amp;</span>z1, <span class="kw-2">&amp;</span>b), (<span class="kw-2">&amp;</span>c, <span class="kw-2">&amp;</span>d)]).final_exponentiation(),
+            multi_miller_loop(<span class="kw-2">&amp;</span>[(<span class="kw-2">&amp;</span>a, <span class="kw-2">&amp;</span>z2), (<span class="kw-2">&amp;</span>c, <span class="kw-2">&amp;</span>d)]).final_exponentiation(),
+        );
+
+        <span class="macro">assert_eq!</span>(
+            multi_miller_loop(<span class="kw-2">&amp;</span>[(<span class="kw-2">&amp;</span>a, <span class="kw-2">&amp;</span>b), (<span class="kw-2">&amp;</span>z1, <span class="kw-2">&amp;</span>d)]).final_exponentiation(),
+            multi_miller_loop(<span class="kw-2">&amp;</span>[(<span class="kw-2">&amp;</span>a, <span class="kw-2">&amp;</span>b), (<span class="kw-2">&amp;</span>c, <span class="kw-2">&amp;</span>z2)]).final_exponentiation(),
+        );
+    }
+}
+
+<span class="attribute">#[test]
+</span><span class="kw">fn </span>random_miller_loop_tests() {
+    <span class="kw">let </span><span class="kw-2">mut </span>rng = XorShiftRng::from_seed([
+        <span class="number">0x59</span>, <span class="number">0x62</span>, <span class="number">0xbe</span>, <span class="number">0x5d</span>, <span class="number">0x76</span>, <span class="number">0x3d</span>, <span class="number">0x31</span>, <span class="number">0x8d</span>, <span class="number">0x17</span>, <span class="number">0xdb</span>, <span class="number">0x37</span>, <span class="number">0x32</span>, <span class="number">0x54</span>, <span class="number">0x06</span>, <span class="number">0xbc</span>,
+        <span class="number">0xe5</span>,
+    ]);
+
+    <span class="comment">// Exercise a double miller loop
+    </span><span class="kw">for _ in </span><span class="number">0</span>..<span class="number">1000 </span>{
+        <span class="kw">let </span>a = G1Affine::from(G1::random(<span class="kw-2">&amp;mut </span>rng));
+        <span class="kw">let </span>b = G2Affine::from(G2::random(<span class="kw-2">&amp;mut </span>rng));
+        <span class="kw">let </span>c = G1Affine::from(G1::random(<span class="kw-2">&amp;mut </span>rng));
+        <span class="kw">let </span>d = G2Affine::from(G2::random(<span class="kw-2">&amp;mut </span>rng));
+
+        <span class="kw">let </span>ab = pairing(<span class="kw-2">&amp;</span>a, <span class="kw-2">&amp;</span>b);
+        <span class="kw">let </span>cd = pairing(<span class="kw-2">&amp;</span>c, <span class="kw-2">&amp;</span>d);
+
+        <span class="kw">let </span><span class="kw-2">mut </span>abcd = ab;
+        abcd = Gt(abcd.<span class="number">0 </span>* cd.<span class="number">0</span>);
+
+        <span class="kw">let </span>b = G2Prepared::from(b);
+        <span class="kw">let </span>d = G2Prepared::from(d);
+
+        <span class="kw">let </span>abcd_with_double_loop = multi_miller_loop(<span class="kw-2">&amp;</span>[(<span class="kw-2">&amp;</span>a, <span class="kw-2">&amp;</span>b), (<span class="kw-2">&amp;</span>c, <span class="kw-2">&amp;</span>d)]).final_exponentiation();
+
+        <span class="macro">assert_eq!</span>(abcd, abcd_with_double_loop);
+    }
+}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="halo2curves" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0-nightly (0da281b60 2022-10-27)" ></div></body></html>

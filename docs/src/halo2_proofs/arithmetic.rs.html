@@ -1,0 +1,1018 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `halo2_proofs/src/arithmetic.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>arithmetic.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../normalize.css"><link rel="stylesheet" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../ayu.css" disabled><link rel="stylesheet" href="../../dark.css" disabled><link rel="stylesheet" href="../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../storage.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script><script defer src="../../main.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../halo2_proofs/index.html"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></a><form class="search-form"><div class="search-container"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../wheel.svg"></a></div></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
+<span id="397">397</span>
+<span id="398">398</span>
+<span id="399">399</span>
+<span id="400">400</span>
+<span id="401">401</span>
+<span id="402">402</span>
+<span id="403">403</span>
+<span id="404">404</span>
+<span id="405">405</span>
+<span id="406">406</span>
+<span id="407">407</span>
+<span id="408">408</span>
+<span id="409">409</span>
+<span id="410">410</span>
+<span id="411">411</span>
+<span id="412">412</span>
+<span id="413">413</span>
+<span id="414">414</span>
+<span id="415">415</span>
+<span id="416">416</span>
+<span id="417">417</span>
+<span id="418">418</span>
+<span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
+<span id="441">441</span>
+<span id="442">442</span>
+<span id="443">443</span>
+<span id="444">444</span>
+<span id="445">445</span>
+<span id="446">446</span>
+<span id="447">447</span>
+<span id="448">448</span>
+<span id="449">449</span>
+<span id="450">450</span>
+<span id="451">451</span>
+<span id="452">452</span>
+<span id="453">453</span>
+<span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
+<span id="473">473</span>
+<span id="474">474</span>
+<span id="475">475</span>
+<span id="476">476</span>
+<span id="477">477</span>
+<span id="478">478</span>
+<span id="479">479</span>
+<span id="480">480</span>
+<span id="481">481</span>
+<span id="482">482</span>
+<span id="483">483</span>
+<span id="484">484</span>
+<span id="485">485</span>
+<span id="486">486</span>
+<span id="487">487</span>
+<span id="488">488</span>
+<span id="489">489</span>
+<span id="490">490</span>
+<span id="491">491</span>
+<span id="492">492</span>
+<span id="493">493</span>
+<span id="494">494</span>
+<span id="495">495</span>
+<span id="496">496</span>
+<span id="497">497</span>
+<span id="498">498</span>
+<span id="499">499</span>
+<span id="500">500</span>
+<span id="501">501</span>
+<span id="502">502</span>
+<span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+</pre><pre class="rust"><code><span class="doccomment">//! This module provides common utilities, traits and structures for group,
+//! field and polynomial arithmetic.
+
+</span><span class="kw">use </span><span class="kw">super</span>::multicore;
+<span class="kw">pub use </span>ff::Field;
+<span class="kw">use </span>group::{
+    ff::{BatchInvert, PrimeField},
+    Curve, Group <span class="kw">as _</span>,
+};
+
+<span class="kw">pub use </span>halo2curves::{CurveAffine, CurveExt, FieldExt, Group};
+
+<span class="kw">fn </span>multiexp_serial&lt;C: CurveAffine&gt;(coeffs: <span class="kw-2">&amp;</span>[C::Scalar], bases: <span class="kw-2">&amp;</span>[C], acc: <span class="kw-2">&amp;mut </span>C::Curve) {
+    <span class="kw">let </span>coeffs: Vec&lt;<span class="kw">_</span>&gt; = coeffs.iter().map(|a| a.to_repr()).collect();
+
+    <span class="kw">let </span>c = <span class="kw">if </span>bases.len() &lt; <span class="number">4 </span>{
+        <span class="number">1
+    </span>} <span class="kw">else if </span>bases.len() &lt; <span class="number">32 </span>{
+        <span class="number">3
+    </span>} <span class="kw">else </span>{
+        (f64::from(bases.len() <span class="kw">as </span>u32)).ln().ceil() <span class="kw">as </span>usize
+    };
+
+    <span class="kw">fn </span>get_at&lt;F: PrimeField&gt;(segment: usize, c: usize, bytes: <span class="kw-2">&amp;</span>F::Repr) -&gt; usize {
+        <span class="kw">let </span>skip_bits = segment * c;
+        <span class="kw">let </span>skip_bytes = skip_bits / <span class="number">8</span>;
+
+        <span class="kw">if </span>skip_bytes &gt;= <span class="number">32 </span>{
+            <span class="kw">return </span><span class="number">0</span>;
+        }
+
+        <span class="kw">let </span><span class="kw-2">mut </span>v = [<span class="number">0</span>; <span class="number">8</span>];
+        <span class="kw">for </span>(v, o) <span class="kw">in </span>v.iter_mut().zip(bytes.as_ref()[skip_bytes..].iter()) {
+            <span class="kw-2">*</span>v = <span class="kw-2">*</span>o;
+        }
+
+        <span class="kw">let </span><span class="kw-2">mut </span>tmp = u64::from_le_bytes(v);
+        tmp &gt;&gt;= skip_bits - (skip_bytes * <span class="number">8</span>);
+        tmp = tmp % (<span class="number">1 </span>&lt;&lt; c);
+
+        tmp <span class="kw">as </span>usize
+    }
+
+    <span class="kw">let </span>segments = (<span class="number">256 </span>/ c) + <span class="number">1</span>;
+
+    <span class="kw">for </span>current_segment <span class="kw">in </span>(<span class="number">0</span>..segments).rev() {
+        <span class="kw">for _ in </span><span class="number">0</span>..c {
+            <span class="kw-2">*</span>acc = acc.double();
+        }
+
+        <span class="attribute">#[derive(Clone, Copy)]
+        </span><span class="kw">enum </span>Bucket&lt;C: CurveAffine&gt; {
+            <span class="prelude-val">None</span>,
+            Affine(C),
+            Projective(C::Curve),
+        }
+
+        <span class="kw">impl</span>&lt;C: CurveAffine&gt; Bucket&lt;C&gt; {
+            <span class="kw">fn </span>add_assign(<span class="kw-2">&amp;mut </span><span class="self">self</span>, other: <span class="kw-2">&amp;</span>C) {
+                <span class="kw-2">*</span><span class="self">self </span>= <span class="kw">match </span><span class="kw-2">*</span><span class="self">self </span>{
+                    Bucket::None =&gt; Bucket::Affine(<span class="kw-2">*</span>other),
+                    Bucket::Affine(a) =&gt; Bucket::Projective(a + <span class="kw-2">*</span>other),
+                    Bucket::Projective(<span class="kw-2">mut </span>a) =&gt; {
+                        a += <span class="kw-2">*</span>other;
+                        Bucket::Projective(a)
+                    }
+                }
+            }
+
+            <span class="kw">fn </span>add(<span class="self">self</span>, <span class="kw-2">mut </span>other: C::Curve) -&gt; C::Curve {
+                <span class="kw">match </span><span class="self">self </span>{
+                    Bucket::None =&gt; other,
+                    Bucket::Affine(a) =&gt; {
+                        other += a;
+                        other
+                    }
+                    Bucket::Projective(a) =&gt; other + <span class="kw-2">&amp;</span>a,
+                }
+            }
+        }
+
+        <span class="kw">let </span><span class="kw-2">mut </span>buckets: Vec&lt;Bucket&lt;C&gt;&gt; = <span class="macro">vec!</span>[Bucket::None; (<span class="number">1 </span>&lt;&lt; c) - <span class="number">1</span>];
+
+        <span class="kw">for </span>(coeff, base) <span class="kw">in </span>coeffs.iter().zip(bases.iter()) {
+            <span class="kw">let </span>coeff = get_at::&lt;C::Scalar&gt;(current_segment, c, coeff);
+            <span class="kw">if </span>coeff != <span class="number">0 </span>{
+                buckets[coeff - <span class="number">1</span>].add_assign(base);
+            }
+        }
+
+        <span class="comment">// Summation by parts
+        // e.g. 3a + 2b + 1c = a +
+        //                    (a) + b +
+        //                    ((a) + b) + c
+        </span><span class="kw">let </span><span class="kw-2">mut </span>running_sum = C::Curve::identity();
+        <span class="kw">for </span>exp <span class="kw">in </span>buckets.into_iter().rev() {
+            running_sum = exp.add(running_sum);
+            <span class="kw-2">*</span>acc = <span class="kw-2">*</span>acc + <span class="kw-2">&amp;</span>running_sum;
+        }
+    }
+}
+
+<span class="doccomment">/// Performs a small multi-exponentiation operation.
+/// Uses the double-and-add algorithm with doublings shared across points.
+</span><span class="kw">pub fn </span>small_multiexp&lt;C: CurveAffine&gt;(coeffs: <span class="kw-2">&amp;</span>[C::Scalar], bases: <span class="kw-2">&amp;</span>[C]) -&gt; C::Curve {
+    <span class="kw">let </span>coeffs: Vec&lt;<span class="kw">_</span>&gt; = coeffs.iter().map(|a| a.to_repr()).collect();
+    <span class="kw">let </span><span class="kw-2">mut </span>acc = C::Curve::identity();
+
+    <span class="comment">// for byte idx
+    </span><span class="kw">for </span>byte_idx <span class="kw">in </span>(<span class="number">0</span>..<span class="number">32</span>).rev() {
+        <span class="comment">// for bit idx
+        </span><span class="kw">for </span>bit_idx <span class="kw">in </span>(<span class="number">0</span>..<span class="number">8</span>).rev() {
+            acc = acc.double();
+            <span class="comment">// for each coeff
+            </span><span class="kw">for </span>coeff_idx <span class="kw">in </span><span class="number">0</span>..coeffs.len() {
+                <span class="kw">let </span>byte = coeffs[coeff_idx].as_ref()[byte_idx];
+                <span class="kw">if </span>((byte &gt;&gt; bit_idx) &amp; <span class="number">1</span>) != <span class="number">0 </span>{
+                    acc += bases[coeff_idx];
+                }
+            }
+        }
+    }
+
+    acc
+}
+
+<span class="doccomment">/// Performs a multi-exponentiation operation.
+///
+/// This function will panic if coeffs and bases have a different length.
+///
+/// This will use multithreading if beneficial.
+</span><span class="kw">pub fn </span>best_multiexp&lt;C: CurveAffine&gt;(coeffs: <span class="kw-2">&amp;</span>[C::Scalar], bases: <span class="kw-2">&amp;</span>[C]) -&gt; C::Curve {
+    <span class="macro">assert_eq!</span>(coeffs.len(), bases.len());
+
+    <span class="kw">let </span>num_threads = multicore::current_num_threads();
+    <span class="kw">if </span>coeffs.len() &gt; num_threads {
+        <span class="kw">let </span>chunk = coeffs.len() / num_threads;
+        <span class="kw">let </span>num_chunks = coeffs.chunks(chunk).len();
+        <span class="kw">let </span><span class="kw-2">mut </span>results = <span class="macro">vec!</span>[C::Curve::identity(); num_chunks];
+        multicore::scope(|scope| {
+            <span class="kw">let </span>chunk = coeffs.len() / num_threads;
+
+            <span class="kw">for </span>((coeffs, bases), acc) <span class="kw">in </span>coeffs
+                .chunks(chunk)
+                .zip(bases.chunks(chunk))
+                .zip(results.iter_mut())
+            {
+                scope.spawn(<span class="kw">move </span>|<span class="kw">_</span>| {
+                    multiexp_serial(coeffs, bases, acc);
+                });
+            }
+        });
+        results.iter().fold(C::Curve::identity(), |a, b| a + b)
+    } <span class="kw">else </span>{
+        <span class="kw">let </span><span class="kw-2">mut </span>acc = C::Curve::identity();
+        multiexp_serial(coeffs, bases, <span class="kw-2">&amp;mut </span>acc);
+        acc
+    }
+}
+
+<span class="doccomment">/// Performs a radix-$2$ Fast-Fourier Transformation (FFT) on a vector of size
+/// $n = 2^k$, when provided `log_n` = $k$ and an element of multiplicative
+/// order $n$ called `omega` ($\omega$). The result is that the vector `a`, when
+/// interpreted as the coefficients of a polynomial of degree $n - 1$, is
+/// transformed into the evaluations of this polynomial at each of the $n$
+/// distinct powers of $\omega$. This transformation is invertible by providing
+/// $\omega^{-1}$ in place of $\omega$ and dividing each resulting field element
+/// by $n$.
+///
+/// This will use multithreading if beneficial.
+</span><span class="kw">pub fn </span>best_fft&lt;G: Group&gt;(a: <span class="kw-2">&amp;mut </span>[G], omega: G::Scalar, log_n: u32) {
+    <span class="kw">fn </span>bitreverse(<span class="kw-2">mut </span>n: usize, l: usize) -&gt; usize {
+        <span class="kw">let </span><span class="kw-2">mut </span>r = <span class="number">0</span>;
+        <span class="kw">for _ in </span><span class="number">0</span>..l {
+            r = (r &lt;&lt; <span class="number">1</span>) | (n &amp; <span class="number">1</span>);
+            n &gt;&gt;= <span class="number">1</span>;
+        }
+        r
+    }
+
+    <span class="kw">let </span>threads = multicore::current_num_threads();
+    <span class="kw">let </span>log_threads = log2_floor(threads);
+    <span class="kw">let </span>n = a.len() <span class="kw">as </span>usize;
+    <span class="macro">assert_eq!</span>(n, <span class="number">1 </span>&lt;&lt; log_n);
+
+    <span class="kw">for </span>k <span class="kw">in </span><span class="number">0</span>..n {
+        <span class="kw">let </span>rk = bitreverse(k, log_n <span class="kw">as </span>usize);
+        <span class="kw">if </span>k &lt; rk {
+            a.swap(rk, k);
+        }
+    }
+
+    <span class="comment">// precompute twiddle factors
+    </span><span class="kw">let </span>twiddles: Vec&lt;<span class="kw">_</span>&gt; = (<span class="number">0</span>..(n / <span class="number">2</span>) <span class="kw">as </span>usize)
+        .scan(G::Scalar::one(), |w, <span class="kw">_</span>| {
+            <span class="kw">let </span>tw = <span class="kw-2">*</span>w;
+            w.group_scale(<span class="kw-2">&amp;</span>omega);
+            <span class="prelude-val">Some</span>(tw)
+        })
+        .collect();
+
+    <span class="kw">if </span>log_n &lt;= log_threads {
+        <span class="kw">let </span><span class="kw-2">mut </span>chunk = <span class="number">2_usize</span>;
+        <span class="kw">let </span><span class="kw-2">mut </span>twiddle_chunk = (n / <span class="number">2</span>) <span class="kw">as </span>usize;
+        <span class="kw">for _ in </span><span class="number">0</span>..log_n {
+            a.chunks_mut(chunk).for_each(|coeffs| {
+                <span class="kw">let </span>(left, right) = coeffs.split_at_mut(chunk / <span class="number">2</span>);
+
+                <span class="comment">// case when twiddle factor is one
+                </span><span class="kw">let </span>(a, left) = left.split_at_mut(<span class="number">1</span>);
+                <span class="kw">let </span>(b, right) = right.split_at_mut(<span class="number">1</span>);
+                <span class="kw">let </span>t = b[<span class="number">0</span>];
+                b[<span class="number">0</span>] = a[<span class="number">0</span>];
+                a[<span class="number">0</span>].group_add(<span class="kw-2">&amp;</span>t);
+                b[<span class="number">0</span>].group_sub(<span class="kw-2">&amp;</span>t);
+
+                left.iter_mut()
+                    .zip(right.iter_mut())
+                    .enumerate()
+                    .for_each(|(i, (a, b))| {
+                        <span class="kw">let </span><span class="kw-2">mut </span>t = <span class="kw-2">*</span>b;
+                        t.group_scale(<span class="kw-2">&amp;</span>twiddles[(i + <span class="number">1</span>) * twiddle_chunk]);
+                        <span class="kw-2">*</span>b = <span class="kw-2">*</span>a;
+                        a.group_add(<span class="kw-2">&amp;</span>t);
+                        b.group_sub(<span class="kw-2">&amp;</span>t);
+                    });
+            });
+            chunk <span class="kw-2">*</span>= <span class="number">2</span>;
+            twiddle_chunk /= <span class="number">2</span>;
+        }
+    } <span class="kw">else </span>{
+        recursive_butterfly_arithmetic(a, n, <span class="number">1</span>, <span class="kw-2">&amp;</span>twiddles)
+    }
+}
+
+<span class="doccomment">/// This perform recursive butterfly arithmetic
+</span><span class="kw">pub fn </span>recursive_butterfly_arithmetic&lt;G: Group&gt;(
+    a: <span class="kw-2">&amp;mut </span>[G],
+    n: usize,
+    twiddle_chunk: usize,
+    twiddles: <span class="kw-2">&amp;</span>[G::Scalar],
+) {
+    <span class="kw">if </span>n == <span class="number">2 </span>{
+        <span class="kw">let </span>t = a[<span class="number">1</span>];
+        a[<span class="number">1</span>] = a[<span class="number">0</span>];
+        a[<span class="number">0</span>].group_add(<span class="kw-2">&amp;</span>t);
+        a[<span class="number">1</span>].group_sub(<span class="kw-2">&amp;</span>t);
+    } <span class="kw">else </span>{
+        <span class="kw">let </span>(left, right) = a.split_at_mut(n / <span class="number">2</span>);
+        rayon::join(
+            || recursive_butterfly_arithmetic(left, n / <span class="number">2</span>, twiddle_chunk * <span class="number">2</span>, twiddles),
+            || recursive_butterfly_arithmetic(right, n / <span class="number">2</span>, twiddle_chunk * <span class="number">2</span>, twiddles),
+        );
+
+        <span class="comment">// case when twiddle factor is one
+        </span><span class="kw">let </span>(a, left) = left.split_at_mut(<span class="number">1</span>);
+        <span class="kw">let </span>(b, right) = right.split_at_mut(<span class="number">1</span>);
+        <span class="kw">let </span>t = b[<span class="number">0</span>];
+        b[<span class="number">0</span>] = a[<span class="number">0</span>];
+        a[<span class="number">0</span>].group_add(<span class="kw-2">&amp;</span>t);
+        b[<span class="number">0</span>].group_sub(<span class="kw-2">&amp;</span>t);
+
+        left.iter_mut()
+            .zip(right.iter_mut())
+            .enumerate()
+            .for_each(|(i, (a, b))| {
+                <span class="kw">let </span><span class="kw-2">mut </span>t = <span class="kw-2">*</span>b;
+                t.group_scale(<span class="kw-2">&amp;</span>twiddles[(i + <span class="number">1</span>) * twiddle_chunk]);
+                <span class="kw-2">*</span>b = <span class="kw-2">*</span>a;
+                a.group_add(<span class="kw-2">&amp;</span>t);
+                b.group_sub(<span class="kw-2">&amp;</span>t);
+            });
+    }
+}
+
+<span class="doccomment">/// Convert coefficient bases group elements to lagrange basis by inverse FFT.
+</span><span class="kw">pub fn </span>g_to_lagrange&lt;C: CurveAffine&gt;(g_projective: Vec&lt;C::Curve&gt;, k: u32) -&gt; Vec&lt;C&gt; {
+    <span class="kw">let </span>n_inv = C::Scalar::TWO_INV.pow_vartime(<span class="kw-2">&amp;</span>[k <span class="kw">as </span>u64, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>]);
+    <span class="kw">let </span><span class="kw-2">mut </span>omega_inv = C::Scalar::ROOT_OF_UNITY_INV;
+    <span class="kw">for _ in </span>k..C::Scalar::S {
+        omega_inv = omega_inv.square();
+    }
+
+    <span class="kw">let </span><span class="kw-2">mut </span>g_lagrange_projective = g_projective;
+    best_fft(<span class="kw-2">&amp;mut </span>g_lagrange_projective, omega_inv, k);
+    parallelize(<span class="kw-2">&amp;mut </span>g_lagrange_projective, |g, <span class="kw">_</span>| {
+        <span class="kw">for </span>g <span class="kw">in </span>g.iter_mut() {
+            <span class="kw-2">*</span>g <span class="kw-2">*</span>= n_inv;
+        }
+    });
+
+    <span class="kw">let </span><span class="kw-2">mut </span>g_lagrange = <span class="macro">vec!</span>[C::identity(); <span class="number">1 </span>&lt;&lt; k];
+    parallelize(<span class="kw-2">&amp;mut </span>g_lagrange, |g_lagrange, starts| {
+        C::Curve::batch_normalize(
+            <span class="kw-2">&amp;</span>g_lagrange_projective[starts..(starts + g_lagrange.len())],
+            g_lagrange,
+        );
+    });
+
+    g_lagrange
+}
+
+<span class="doccomment">/// This evaluates a provided polynomial (in coefficient form) at `point`.
+</span><span class="kw">pub fn </span>eval_polynomial&lt;F: Field&gt;(poly: <span class="kw-2">&amp;</span>[F], point: F) -&gt; F {
+    <span class="kw">fn </span>evaluate&lt;F: Field&gt;(poly: <span class="kw-2">&amp;</span>[F], point: F) -&gt; F {
+        poly.iter()
+            .rev()
+            .fold(F::zero(), |acc, coeff| acc * point + coeff)
+    }
+    <span class="kw">let </span>n = poly.len();
+    <span class="kw">let </span>num_threads = multicore::current_num_threads();
+    <span class="kw">if </span>n * <span class="number">2 </span>&lt; num_threads {
+        evaluate(poly, point)
+    } <span class="kw">else </span>{
+        <span class="kw">let </span>chunk_size = (n + num_threads - <span class="number">1</span>) / num_threads;
+        <span class="kw">let </span><span class="kw-2">mut </span>parts = <span class="macro">vec!</span>[F::zero(); num_threads];
+        multicore::scope(|scope| {
+            <span class="kw">for </span>(chunk_idx, (out, poly)) <span class="kw">in
+                </span>parts.chunks_mut(<span class="number">1</span>).zip(poly.chunks(chunk_size)).enumerate()
+            {
+                scope.spawn(<span class="kw">move </span>|<span class="kw">_</span>| {
+                    <span class="kw">let </span>start = chunk_idx * chunk_size;
+                    out[<span class="number">0</span>] = evaluate(poly, point) * point.pow_vartime(<span class="kw-2">&amp;</span>[start <span class="kw">as </span>u64, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>]);
+                });
+            }
+        });
+        parts.iter().fold(F::zero(), |acc, coeff| acc + coeff)
+    }
+}
+
+<span class="doccomment">/// This computes the inner product of two vectors `a` and `b`.
+///
+/// This function will panic if the two vectors are not the same size.
+</span><span class="kw">pub fn </span>compute_inner_product&lt;F: Field&gt;(a: <span class="kw-2">&amp;</span>[F], b: <span class="kw-2">&amp;</span>[F]) -&gt; F {
+    <span class="comment">// TODO: parallelize?
+    </span><span class="macro">assert_eq!</span>(a.len(), b.len());
+
+    <span class="kw">let </span><span class="kw-2">mut </span>acc = F::zero();
+    <span class="kw">for </span>(a, b) <span class="kw">in </span>a.iter().zip(b.iter()) {
+        acc += (<span class="kw-2">*</span>a) * (<span class="kw-2">*</span>b);
+    }
+
+    acc
+}
+
+<span class="doccomment">/// Divides polynomial `a` in `X` by `X - b` with
+/// no remainder.
+</span><span class="kw">pub fn </span>kate_division&lt;<span class="lifetime">&#39;a</span>, F: Field, I: IntoIterator&lt;Item = <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>F&gt;&gt;(a: I, <span class="kw-2">mut </span>b: F) -&gt; Vec&lt;F&gt;
+<span class="kw">where
+    </span>I::IntoIter: DoubleEndedIterator + ExactSizeIterator,
+{
+    b = -b;
+    <span class="kw">let </span>a = a.into_iter();
+
+    <span class="kw">let </span><span class="kw-2">mut </span>q = <span class="macro">vec!</span>[F::zero(); a.len() - <span class="number">1</span>];
+
+    <span class="kw">let </span><span class="kw-2">mut </span>tmp = F::zero();
+    <span class="kw">for </span>(q, r) <span class="kw">in </span>q.iter_mut().rev().zip(a.rev()) {
+        <span class="kw">let </span><span class="kw-2">mut </span>lead_coeff = <span class="kw-2">*</span>r;
+        lead_coeff.sub_assign(<span class="kw-2">&amp;</span>tmp);
+        <span class="kw-2">*</span>q = lead_coeff;
+        tmp = lead_coeff;
+        tmp.mul_assign(<span class="kw-2">&amp;</span>b);
+    }
+
+    q
+}
+
+<span class="doccomment">/// This simple utility function will parallelize an operation that is to be
+/// performed over a mutable slice.
+</span><span class="kw">pub fn </span>parallelize&lt;T: Send, F: Fn(<span class="kw-2">&amp;mut </span>[T], usize) + Send + Sync + Clone&gt;(v: <span class="kw-2">&amp;mut </span>[T], f: F) {
+    <span class="kw">let </span>n = v.len();
+    <span class="kw">let </span>num_threads = multicore::current_num_threads();
+    <span class="kw">let </span><span class="kw-2">mut </span>chunk = (n <span class="kw">as </span>usize) / num_threads;
+    <span class="kw">if </span>chunk &lt; num_threads {
+        chunk = n <span class="kw">as </span>usize;
+    }
+
+    multicore::scope(|scope| {
+        <span class="kw">for </span>(chunk_num, v) <span class="kw">in </span>v.chunks_mut(chunk).enumerate() {
+            <span class="kw">let </span>f = f.clone();
+            scope.spawn(<span class="kw">move </span>|<span class="kw">_</span>| {
+                <span class="kw">let </span>start = chunk_num * chunk;
+                f(v, start);
+            });
+        }
+    });
+}
+
+<span class="kw">fn </span>log2_floor(num: usize) -&gt; u32 {
+    <span class="macro">assert!</span>(num &gt; <span class="number">0</span>);
+
+    <span class="kw">let </span><span class="kw-2">mut </span>pow = <span class="number">0</span>;
+
+    <span class="kw">while </span>(<span class="number">1 </span>&lt;&lt; (pow + <span class="number">1</span>)) &lt;= num {
+        pow += <span class="number">1</span>;
+    }
+
+    pow
+}
+
+<span class="doccomment">/// Returns coefficients of an n - 1 degree polynomial given a set of n points
+/// and their evaluations. This function will panic if two values in `points`
+/// are the same.
+</span><span class="kw">pub fn </span>lagrange_interpolate&lt;F: FieldExt&gt;(points: <span class="kw-2">&amp;</span>[F], evals: <span class="kw-2">&amp;</span>[F]) -&gt; Vec&lt;F&gt; {
+    <span class="macro">assert_eq!</span>(points.len(), evals.len());
+    <span class="kw">if </span>points.len() == <span class="number">1 </span>{
+        <span class="comment">// Constant polynomial
+        </span><span class="macro">vec!</span>[evals[<span class="number">0</span>]]
+    } <span class="kw">else </span>{
+        <span class="kw">let </span><span class="kw-2">mut </span>denoms = Vec::with_capacity(points.len());
+        <span class="kw">for </span>(j, x_j) <span class="kw">in </span>points.iter().enumerate() {
+            <span class="kw">let </span><span class="kw-2">mut </span>denom = Vec::with_capacity(points.len() - <span class="number">1</span>);
+            <span class="kw">for </span>x_k <span class="kw">in </span>points
+                .iter()
+                .enumerate()
+                .filter(|<span class="kw-2">&amp;</span>(k, <span class="kw">_</span>)| k != j)
+                .map(|a| a.<span class="number">1</span>)
+            {
+                denom.push(<span class="kw-2">*</span>x_j - x_k);
+            }
+            denoms.push(denom);
+        }
+        <span class="comment">// Compute (x_j - x_k)^(-1) for each j != i
+        </span>denoms.iter_mut().flat_map(|v| v.iter_mut()).batch_invert();
+
+        <span class="kw">let </span><span class="kw-2">mut </span>final_poly = <span class="macro">vec!</span>[F::zero(); points.len()];
+        <span class="kw">for </span>(j, (denoms, eval)) <span class="kw">in </span>denoms.into_iter().zip(evals.iter()).enumerate() {
+            <span class="kw">let </span><span class="kw-2">mut </span>tmp: Vec&lt;F&gt; = Vec::with_capacity(points.len());
+            <span class="kw">let </span><span class="kw-2">mut </span>product = Vec::with_capacity(points.len() - <span class="number">1</span>);
+            tmp.push(F::one());
+            <span class="kw">for </span>(x_k, denom) <span class="kw">in </span>points
+                .iter()
+                .enumerate()
+                .filter(|<span class="kw-2">&amp;</span>(k, <span class="kw">_</span>)| k != j)
+                .map(|a| a.<span class="number">1</span>)
+                .zip(denoms.into_iter())
+            {
+                product.resize(tmp.len() + <span class="number">1</span>, F::zero());
+                <span class="kw">for </span>((a, b), product) <span class="kw">in </span>tmp
+                    .iter()
+                    .chain(std::iter::once(<span class="kw-2">&amp;</span>F::zero()))
+                    .zip(std::iter::once(<span class="kw-2">&amp;</span>F::zero()).chain(tmp.iter()))
+                    .zip(product.iter_mut())
+                {
+                    <span class="kw-2">*</span>product = <span class="kw-2">*</span>a * (-denom * x_k) + <span class="kw-2">*</span>b * denom;
+                }
+                std::mem::swap(<span class="kw-2">&amp;mut </span>tmp, <span class="kw-2">&amp;mut </span>product);
+            }
+            <span class="macro">assert_eq!</span>(tmp.len(), points.len());
+            <span class="macro">assert_eq!</span>(product.len(), points.len() - <span class="number">1</span>);
+            <span class="kw">for </span>(final_coeff, interpolation_coeff) <span class="kw">in </span>final_poly.iter_mut().zip(tmp.into_iter()) {
+                <span class="kw-2">*</span>final_coeff += interpolation_coeff * eval;
+            }
+        }
+        final_poly
+    }
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>evaluate_vanishing_polynomial&lt;F: FieldExt&gt;(roots: <span class="kw-2">&amp;</span>[F], z: F) -&gt; F {
+    <span class="kw">fn </span>evaluate&lt;F: FieldExt&gt;(roots: <span class="kw-2">&amp;</span>[F], z: F) -&gt; F {
+        roots.iter().fold(F::one(), |acc, point| (z - point) * acc)
+    }
+    <span class="kw">let </span>n = roots.len();
+    <span class="kw">let </span>num_threads = multicore::current_num_threads();
+    <span class="kw">if </span>n * <span class="number">2 </span>&lt; num_threads {
+        evaluate(roots, z)
+    } <span class="kw">else </span>{
+        <span class="kw">let </span>chunk_size = (n + num_threads - <span class="number">1</span>) / num_threads;
+        <span class="kw">let </span><span class="kw-2">mut </span>parts = <span class="macro">vec!</span>[F::one(); num_threads];
+        multicore::scope(|scope| {
+            <span class="kw">for </span>(out, roots) <span class="kw">in </span>parts.chunks_mut(<span class="number">1</span>).zip(roots.chunks(chunk_size)) {
+                scope.spawn(<span class="kw">move </span>|<span class="kw">_</span>| out[<span class="number">0</span>] = evaluate(roots, z));
+            }
+        });
+        parts.iter().fold(F::one(), |acc, part| acc * part)
+    }
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>powers&lt;F: FieldExt&gt;(base: F) -&gt; <span class="kw">impl </span>Iterator&lt;Item = F&gt; {
+    std::iter::successors(<span class="prelude-val">Some</span>(F::one()), <span class="kw">move </span>|power| <span class="prelude-val">Some</span>(base * power))
+}
+
+<span class="attribute">#[cfg(test)]
+</span><span class="kw">use </span>rand_core::OsRng;
+
+<span class="attribute">#[cfg(test)]
+</span><span class="kw">use </span><span class="kw">crate</span>::halo2curves::pasta::Fp;
+
+<span class="attribute">#[test]
+</span><span class="kw">fn </span>test_lagrange_interpolate() {
+    <span class="kw">let </span>rng = OsRng;
+
+    <span class="kw">let </span>points = (<span class="number">0</span>..<span class="number">5</span>).map(|<span class="kw">_</span>| Fp::random(rng)).collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
+    <span class="kw">let </span>evals = (<span class="number">0</span>..<span class="number">5</span>).map(|<span class="kw">_</span>| Fp::random(rng)).collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
+
+    <span class="kw">for </span>coeffs <span class="kw">in </span><span class="number">0</span>..<span class="number">5 </span>{
+        <span class="kw">let </span>points = <span class="kw-2">&amp;</span>points[<span class="number">0</span>..coeffs];
+        <span class="kw">let </span>evals = <span class="kw-2">&amp;</span>evals[<span class="number">0</span>..coeffs];
+
+        <span class="kw">let </span>poly = lagrange_interpolate(points, evals);
+        <span class="macro">assert_eq!</span>(poly.len(), points.len());
+
+        <span class="kw">for </span>(point, eval) <span class="kw">in </span>points.iter().zip(evals) {
+            <span class="macro">assert_eq!</span>(eval_polynomial(<span class="kw-2">&amp;</span>poly, <span class="kw-2">*</span>point), <span class="kw-2">*</span>eval);
+        }
+    }
+}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="halo2_proofs" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0-nightly (0da281b60 2022-10-27)" ></div></body></html>

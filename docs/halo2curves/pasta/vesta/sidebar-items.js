@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"type":[["Affine","A Vesta point in the affine coordinate space (or the point at infinity)."],["Base","The base field of the Vesta and iso-Vesta curves."],["Point","A Vesta point in the projective coordinate space."],["Scalar","The scalar field of the Vesta and iso-Vesta curves."]]};

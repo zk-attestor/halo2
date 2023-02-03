@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":[["MSMIPA","A multiscalar multiplication in the polynomial commitment scheme"]]};

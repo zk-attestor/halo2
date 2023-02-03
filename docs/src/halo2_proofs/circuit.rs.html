@@ -1,0 +1,1132 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `halo2_proofs/src/circuit.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>circuit.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../normalize.css"><link rel="stylesheet" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../ayu.css" disabled><link rel="stylesheet" href="../../dark.css" disabled><link rel="stylesheet" href="../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../storage.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script><script defer src="../../main.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../halo2_proofs/index.html"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></a><form class="search-form"><div class="search-container"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../wheel.svg"></a></div></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
+<span id="397">397</span>
+<span id="398">398</span>
+<span id="399">399</span>
+<span id="400">400</span>
+<span id="401">401</span>
+<span id="402">402</span>
+<span id="403">403</span>
+<span id="404">404</span>
+<span id="405">405</span>
+<span id="406">406</span>
+<span id="407">407</span>
+<span id="408">408</span>
+<span id="409">409</span>
+<span id="410">410</span>
+<span id="411">411</span>
+<span id="412">412</span>
+<span id="413">413</span>
+<span id="414">414</span>
+<span id="415">415</span>
+<span id="416">416</span>
+<span id="417">417</span>
+<span id="418">418</span>
+<span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
+<span id="441">441</span>
+<span id="442">442</span>
+<span id="443">443</span>
+<span id="444">444</span>
+<span id="445">445</span>
+<span id="446">446</span>
+<span id="447">447</span>
+<span id="448">448</span>
+<span id="449">449</span>
+<span id="450">450</span>
+<span id="451">451</span>
+<span id="452">452</span>
+<span id="453">453</span>
+<span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
+<span id="473">473</span>
+<span id="474">474</span>
+<span id="475">475</span>
+<span id="476">476</span>
+<span id="477">477</span>
+<span id="478">478</span>
+<span id="479">479</span>
+<span id="480">480</span>
+<span id="481">481</span>
+<span id="482">482</span>
+<span id="483">483</span>
+<span id="484">484</span>
+<span id="485">485</span>
+<span id="486">486</span>
+<span id="487">487</span>
+<span id="488">488</span>
+<span id="489">489</span>
+<span id="490">490</span>
+<span id="491">491</span>
+<span id="492">492</span>
+<span id="493">493</span>
+<span id="494">494</span>
+<span id="495">495</span>
+<span id="496">496</span>
+<span id="497">497</span>
+<span id="498">498</span>
+<span id="499">499</span>
+<span id="500">500</span>
+<span id="501">501</span>
+<span id="502">502</span>
+<span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+<span id="509">509</span>
+<span id="510">510</span>
+<span id="511">511</span>
+<span id="512">512</span>
+<span id="513">513</span>
+<span id="514">514</span>
+<span id="515">515</span>
+<span id="516">516</span>
+<span id="517">517</span>
+<span id="518">518</span>
+<span id="519">519</span>
+<span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
+<span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
+<span id="529">529</span>
+<span id="530">530</span>
+<span id="531">531</span>
+<span id="532">532</span>
+<span id="533">533</span>
+<span id="534">534</span>
+<span id="535">535</span>
+<span id="536">536</span>
+<span id="537">537</span>
+<span id="538">538</span>
+<span id="539">539</span>
+<span id="540">540</span>
+<span id="541">541</span>
+<span id="542">542</span>
+<span id="543">543</span>
+<span id="544">544</span>
+<span id="545">545</span>
+<span id="546">546</span>
+<span id="547">547</span>
+<span id="548">548</span>
+<span id="549">549</span>
+<span id="550">550</span>
+<span id="551">551</span>
+<span id="552">552</span>
+<span id="553">553</span>
+<span id="554">554</span>
+<span id="555">555</span>
+<span id="556">556</span>
+<span id="557">557</span>
+<span id="558">558</span>
+<span id="559">559</span>
+<span id="560">560</span>
+<span id="561">561</span>
+<span id="562">562</span>
+<span id="563">563</span>
+<span id="564">564</span>
+<span id="565">565</span>
+</pre><pre class="rust"><code><span class="doccomment">//! Traits and structs for implementing circuit components.
+
+</span><span class="kw">use </span>std::{convert::TryInto, fmt, marker::PhantomData};
+
+<span class="kw">use </span>ff::Field;
+
+<span class="kw">use crate</span>::{
+    arithmetic::FieldExt,
+    plonk::{
+        Advice, Any, Assigned, Challenge, Column, Error, Fixed, Instance, Selector, TableColumn,
+    },
+};
+
+<span class="kw">mod </span>value;
+<span class="kw">pub use </span>value::Value;
+
+<span class="kw">pub mod </span>floor_planner;
+<span class="kw">pub use </span>floor_planner::single_pass::SimpleFloorPlanner;
+
+<span class="kw">pub mod </span>layouter;
+
+<span class="doccomment">/// A chip implements a set of instructions that can be used by gadgets.
+///
+/// The chip stores state that is required at circuit synthesis time in
+/// [`Chip::Config`], which can be fetched via [`Chip::config`].
+///
+/// The chip also loads any fixed configuration needed at synthesis time
+/// using its own implementation of `load`, and stores it in [`Chip::Loaded`].
+/// This can be accessed via [`Chip::loaded`].
+</span><span class="kw">pub trait </span>Chip&lt;F: FieldExt&gt;: Sized {
+    <span class="doccomment">/// A type that holds the configuration for this chip, and any other state it may need
+    /// during circuit synthesis, that can be derived during [`Circuit::configure`].
+    ///
+    /// [`Circuit::configure`]: crate::plonk::Circuit::configure
+    </span><span class="kw">type </span>Config: fmt::Debug + Clone;
+
+    <span class="doccomment">/// A type that holds any general chip state that needs to be loaded at the start of
+    /// [`Circuit::synthesize`]. This might simply be `()` for some chips.
+    ///
+    /// [`Circuit::synthesize`]: crate::plonk::Circuit::synthesize
+    </span><span class="kw">type </span>Loaded: fmt::Debug + Clone;
+
+    <span class="doccomment">/// The chip holds its own configuration.
+    </span><span class="kw">fn </span>config(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="self">Self</span>::Config;
+
+    <span class="doccomment">/// Provides access to general chip state loaded at the beginning of circuit
+    /// synthesis.
+    ///
+    /// Panics if called before `Chip::load`.
+    </span><span class="kw">fn </span>loaded(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="self">Self</span>::Loaded;
+}
+
+<span class="doccomment">/// Index of a region in a layouter
+</span><span class="attribute">#[derive(Clone, Copy, Debug)]
+</span><span class="kw">pub struct </span>RegionIndex(usize);
+
+<span class="kw">impl </span>From&lt;usize&gt; <span class="kw">for </span>RegionIndex {
+    <span class="kw">fn </span>from(idx: usize) -&gt; RegionIndex {
+        RegionIndex(idx)
+    }
+}
+
+<span class="kw">impl </span>std::ops::Deref <span class="kw">for </span>RegionIndex {
+    <span class="kw">type </span>Target = usize;
+
+    <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="self">Self</span>::Target {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0
+    </span>}
+}
+
+<span class="doccomment">/// Starting row of a region in a layouter
+</span><span class="attribute">#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+</span><span class="kw">pub struct </span>RegionStart(usize);
+
+<span class="kw">impl </span>From&lt;usize&gt; <span class="kw">for </span>RegionStart {
+    <span class="kw">fn </span>from(idx: usize) -&gt; RegionStart {
+        RegionStart(idx)
+    }
+}
+
+<span class="kw">impl </span>std::ops::Deref <span class="kw">for </span>RegionStart {
+    <span class="kw">type </span>Target = usize;
+
+    <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="self">Self</span>::Target {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0
+    </span>}
+}
+
+<span class="doccomment">/// A pointer to a cell within a circuit.
+</span><span class="attribute">#[derive(Clone, Copy, Debug)]
+</span><span class="kw">pub struct </span>Cell {
+    <span class="doccomment">/// Identifies the region in which this cell resides.
+    </span><span class="comment">// region_index: RegionIndex,
+    </span><span class="doccomment">/// The relative offset of this cell within its region.
+    </span>row_offset: usize,
+    <span class="doccomment">/// The column of this cell.
+    </span>column: Column&lt;Any&gt;,
+}
+
+<span class="kw">impl </span>Cell {
+    <span class="doccomment">/// Returns row offset
+    </span><span class="kw">pub fn </span>row_offset(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+        <span class="self">self</span>.row_offset
+    }
+    <span class="doccomment">/// Returns reference to column
+    </span><span class="kw">pub fn </span>column(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>Column&lt;Any&gt; {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.column
+    }
+}
+
+<span class="doccomment">/// An assigned cell.
+</span><span class="attribute">#[derive(Clone, Debug)]
+</span><span class="kw">pub struct </span>AssignedCell&lt;V, F: Field&gt; {
+    value: Value&lt;V&gt;,
+    cell: Cell,
+    _marker: PhantomData&lt;F&gt;,
+}
+
+<span class="kw">impl</span>&lt;V, F: Field&gt; AssignedCell&lt;V, F&gt; {
+    <span class="doccomment">/// Returns the value of the [`AssignedCell`].
+    </span><span class="kw">pub fn </span>value(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Value&lt;<span class="kw-2">&amp;</span>V&gt; {
+        <span class="self">self</span>.value.as_ref()
+    }
+
+    <span class="doccomment">/// Returns the cell.
+    </span><span class="kw">pub fn </span>cell(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>Cell {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.cell
+    }
+
+    <span class="kw">pub fn </span>row_offset(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+        <span class="self">self</span>.cell.row_offset
+    }
+
+    <span class="kw">pub fn </span>column(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>Column&lt;Any&gt; {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.cell.column
+    }
+}
+
+<span class="kw">impl</span>&lt;V, F: Field&gt; AssignedCell&lt;V, F&gt;
+<span class="kw">where
+    for</span>&lt;<span class="lifetime">&#39;v</span>&gt; Assigned&lt;F&gt;: From&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;v </span>V&gt;,
+{
+    <span class="doccomment">/// Returns the field element value of the [`AssignedCell`].
+    </span><span class="kw">pub fn </span>value_field(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Value&lt;Assigned&lt;F&gt;&gt; {
+        <span class="self">self</span>.value.to_field()
+    }
+}
+
+<span class="kw">impl</span>&lt;F: Field&gt; AssignedCell&lt;Assigned&lt;F&gt;, F&gt; {
+    <span class="doccomment">/// Evaluates this assigned cell&#39;s value directly, performing an unbatched inversion
+    /// if necessary.
+    ///
+    /// If the denominator is zero, the returned cell&#39;s value is zero.
+    </span><span class="kw">pub fn </span>evaluate(<span class="self">self</span>) -&gt; AssignedCell&lt;F, F&gt; {
+        AssignedCell {
+            value: <span class="self">self</span>.value.evaluate(),
+            cell: <span class="self">self</span>.cell,
+            _marker: Default::default(),
+        }
+    }
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;v</span>, F: Field&gt; AssignedCell&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;v </span>Assigned&lt;F&gt;, F&gt; {
+    <span class="doccomment">/// Copies the value to a given advice cell and constrains them to be equal.
+    ///
+    /// Returns an error if either this cell or the given cell are in columns
+    /// where equality has not been enabled.
+    </span><span class="kw">pub fn </span>copy_advice(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        region: <span class="kw-2">&amp;mut </span>Region&lt;<span class="lifetime">&#39;_</span>, F&gt;,
+        column: Column&lt;Advice&gt;,
+        offset: usize,
+    ) -&gt; AssignedCell&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;_ </span>Assigned&lt;F&gt;, F&gt; {
+        <span class="kw">let </span>assigned_cell = region
+            .assign_advice(column, offset, <span class="self">self</span>.value.map(|v| <span class="kw-2">*</span>v))
+            .unwrap_or_else(|err| <span class="macro">panic!</span>(<span class="string">&quot;{err:?}&quot;</span>));
+        region.constrain_equal(<span class="kw-2">&amp;</span>assigned_cell.cell, <span class="kw-2">&amp;</span><span class="self">self</span>.cell);
+        assigned_cell
+    }
+}
+
+<span class="doccomment">/// A region of the circuit in which a [`Chip`] can assign cells.
+///
+/// Inside a region, the chip may freely use relative offsets; the [`Layouter`] will
+/// treat these assignments as a single &quot;region&quot; within the circuit.
+///
+/// The [`Layouter`] is allowed to optimise between regions as it sees fit. Chips must use
+/// [`Region::constrain_equal`] to copy in variables assigned in other regions.
+///
+/// TODO: It would be great if we could constrain the columns in these types to be
+/// &quot;logical&quot; columns that are guaranteed to correspond to the chip (and have come from
+/// `Chip::Config`).
+</span><span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub struct </span>Region&lt;<span class="lifetime">&#39;r</span>, F: Field&gt; {
+    region: <span class="kw-2">&amp;</span><span class="lifetime">&#39;r </span><span class="kw-2">mut </span><span class="kw">dyn </span>layouter::RegionLayouter&lt;F&gt;,
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;r</span>, F: Field&gt; From&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;r </span><span class="kw-2">mut </span><span class="kw">dyn </span>layouter::RegionLayouter&lt;F&gt;&gt; <span class="kw">for </span>Region&lt;<span class="lifetime">&#39;r</span>, F&gt; {
+    <span class="kw">fn </span>from(region: <span class="kw-2">&amp;</span><span class="lifetime">&#39;r </span><span class="kw-2">mut </span><span class="kw">dyn </span>layouter::RegionLayouter&lt;F&gt;) -&gt; <span class="self">Self </span>{
+        Region { region }
+    }
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;r</span>, F: Field&gt; Region&lt;<span class="lifetime">&#39;r</span>, F&gt; {
+    <span class="doccomment">/// Enables a selector at the given offset.
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>enable_selector&lt;A, AR&gt;(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        annotation: A,
+        selector: <span class="kw-2">&amp;</span>Selector,
+        offset: usize,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), Error&gt;
+    <span class="kw">where
+        </span>A: Fn() -&gt; AR,
+        AR: Into&lt;String&gt;,
+    {
+        <span class="self">self</span>.region
+            .enable_selector(<span class="kw-2">&amp;</span>|| annotation().into(), selector, offset)
+    }
+
+    <span class="doccomment">/// Assign an advice column value (witness).
+    ///
+    /// Even though `to` has `FnMut` bounds, it is guaranteed to be called at most once.
+    </span><span class="comment">// The returned &amp;&#39;v Assigned&lt;F&gt; lives longer than the mutable borrow of &amp;mut self
+    </span><span class="kw">pub fn </span>assign_advice&lt;<span class="lifetime">&#39;v</span>&gt;(
+        <span class="comment">//, V, VR, A, AR&gt;(
+        </span><span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="comment">//annotation: A,
+        </span>column: Column&lt;Advice&gt;,
+        offset: usize,
+        to: Value&lt;<span class="kw">impl </span>Into&lt;Assigned&lt;F&gt;&gt;&gt;, <span class="comment">// For now only accept Value&lt;F&gt;, later might change to Value&lt;Assigned&lt;F&gt;&gt; for batch inversion
+    </span>) -&gt; <span class="prelude-ty">Result</span>&lt;AssignedCell&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;v </span>Assigned&lt;F&gt;, F&gt;, Error&gt; {
+        <span class="comment">//let mut value = Value::unknown();
+        </span><span class="self">self</span>.region.assign_advice(
+            <span class="comment">//&amp;|| annotation().into(),
+            </span>column,
+            offset,
+            to.map(|v| v.into()),
+        )
+
+        <span class="comment">/*
+        Ok(AssignedCell {
+            value,
+            cell,
+            _marker: PhantomData,
+        })
+        */
+    </span>}
+
+    <span class="doccomment">/// Assigns a constant value to the column `advice` at `offset` within this region.
+    ///
+    /// The constant value will be assigned to a cell within one of the fixed columns
+    /// configured via `ConstraintSystem::enable_constant`.
+    ///
+    /// Returns the advice cell.
+    </span><span class="kw">pub fn </span>assign_advice_from_constant&lt;VR, A, AR&gt;(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        annotation: A,
+        column: Column&lt;Advice&gt;,
+        offset: usize,
+        constant: VR,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;AssignedCell&lt;VR, F&gt;, Error&gt;
+    <span class="kw">where
+        for</span>&lt;<span class="lifetime">&#39;vr</span>&gt; Assigned&lt;F&gt;: From&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;vr </span>VR&gt;,
+        A: Fn() -&gt; AR,
+        AR: Into&lt;String&gt;,
+    {
+        <span class="kw">let </span>cell = <span class="self">self</span>.region.assign_advice_from_constant(
+            <span class="kw-2">&amp;</span>|| annotation().into(),
+            column,
+            offset,
+            (<span class="kw-2">&amp;</span>constant).into(),
+        )<span class="question-mark">?</span>;
+
+        <span class="prelude-val">Ok</span>(AssignedCell {
+            value: Value::known(constant),
+            cell,
+            _marker: PhantomData,
+        })
+    }
+
+    <span class="doccomment">/// Assign the value of the instance column&#39;s cell at absolute location
+    /// `row` to the column `advice` at `offset` within this region.
+    ///
+    /// Returns the advice cell, and its value if known.
+    </span><span class="kw">pub fn </span>assign_advice_from_instance&lt;A, AR&gt;(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        annotation: A,
+        instance: Column&lt;Instance&gt;,
+        row: usize,
+        advice: Column&lt;Advice&gt;,
+        offset: usize,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;AssignedCell&lt;F, F&gt;, Error&gt;
+    <span class="kw">where
+        </span>A: Fn() -&gt; AR,
+        AR: Into&lt;String&gt;,
+    {
+        <span class="kw">let </span>(cell, value) = <span class="self">self</span>.region.assign_advice_from_instance(
+            <span class="kw-2">&amp;</span>|| annotation().into(),
+            instance,
+            row,
+            advice,
+            offset,
+        )<span class="question-mark">?</span>;
+
+        <span class="prelude-val">Ok</span>(AssignedCell {
+            value,
+            cell,
+            _marker: PhantomData,
+        })
+    }
+
+    <span class="doccomment">/// Assign a fixed value.
+    ///
+    /// Even though `to` has `FnMut` bounds, it is guaranteed to be called at most once.
+    </span><span class="kw">pub fn </span>assign_fixed(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="comment">// annotation: A,
+        </span>column: Column&lt;Fixed&gt;,
+        offset: usize,
+        to: <span class="kw">impl </span>Into&lt;Assigned&lt;F&gt;&gt;,
+    ) -&gt; Cell {
+        <span class="self">self</span>.region.assign_fixed(column, offset, to.into())
+        <span class="comment">/*
+        Ok(AssignedCell {
+            value,
+            cell,
+            _marker: PhantomData,
+        })
+        */
+    </span>}
+
+    <span class="doccomment">/// Constrains a cell to have a constant value.
+    ///
+    /// Returns an error if the cell is in a column where equality has not been enabled.
+    </span><span class="kw">pub fn </span>constrain_constant&lt;VR&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cell: Cell, constant: VR) -&gt; <span class="prelude-ty">Result</span>&lt;(), Error&gt;
+    <span class="kw">where
+        </span>VR: Into&lt;Assigned&lt;F&gt;&gt;,
+    {
+        <span class="self">self</span>.region.constrain_constant(cell, constant.into())
+    }
+
+    <span class="doccomment">/// Constrains two cells to have the same value.
+    ///
+    /// Returns an error if either of the cells are in columns where equality
+    /// has not been enabled.
+    </span><span class="kw">pub fn </span>constrain_equal(<span class="kw-2">&amp;mut </span><span class="self">self</span>, left: <span class="kw-2">&amp;</span>Cell, right: <span class="kw-2">&amp;</span>Cell) {
+        <span class="self">self</span>.region.constrain_equal(left, right);
+    }
+
+    <span class="doccomment">/// Queries the value of the given challenge.
+    ///
+    /// Returns `Value::unknown()` if the current synthesis phase is before the challenge can be queried.
+    </span><span class="kw">pub fn </span>get_challenge(<span class="kw-2">&amp;</span><span class="self">self</span>, challenge: Challenge) -&gt; Value&lt;F&gt; {
+        <span class="self">self</span>.region.get_challenge(challenge)
+    }
+
+    <span class="doccomment">/// Commit advice columns in current phase and squeeze challenges.
+    /// This can be called DURING synthesize.
+    </span><span class="kw">pub fn </span>next_phase(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+        <span class="self">self</span>.region.next_phase();
+    }
+}
+
+<span class="doccomment">/// A lookup table in the circuit.
+</span><span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub struct </span>Table&lt;<span class="lifetime">&#39;r</span>, F: Field&gt; {
+    table: <span class="kw-2">&amp;</span><span class="lifetime">&#39;r </span><span class="kw-2">mut </span><span class="kw">dyn </span>layouter::TableLayouter&lt;F&gt;,
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;r</span>, F: Field&gt; From&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;r </span><span class="kw-2">mut </span><span class="kw">dyn </span>layouter::TableLayouter&lt;F&gt;&gt; <span class="kw">for </span>Table&lt;<span class="lifetime">&#39;r</span>, F&gt; {
+    <span class="kw">fn </span>from(table: <span class="kw-2">&amp;</span><span class="lifetime">&#39;r </span><span class="kw-2">mut </span><span class="kw">dyn </span>layouter::TableLayouter&lt;F&gt;) -&gt; <span class="self">Self </span>{
+        Table { table }
+    }
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;r</span>, F: Field&gt; Table&lt;<span class="lifetime">&#39;r</span>, F&gt; {
+    <span class="doccomment">/// Assigns a fixed value to a table cell.
+    ///
+    /// Returns an error if the table cell has already been assigned to.
+    ///
+    /// Even though `to` has `FnMut` bounds, it is guaranteed to be called at most once.
+    </span><span class="kw">pub fn </span>assign_cell&lt;<span class="lifetime">&#39;v</span>, V, VR, A, AR&gt;(
+        <span class="kw-2">&amp;</span><span class="lifetime">&#39;v </span><span class="kw-2">mut </span><span class="self">self</span>,
+        annotation: A,
+        column: TableColumn,
+        offset: usize,
+        <span class="kw-2">mut </span>to: V,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), Error&gt;
+    <span class="kw">where
+        </span>V: FnMut() -&gt; Value&lt;VR&gt; + <span class="lifetime">&#39;v</span>,
+        VR: Into&lt;Assigned&lt;F&gt;&gt;,
+        A: Fn() -&gt; AR,
+        AR: Into&lt;String&gt;,
+    {
+        <span class="self">self</span>.table
+            .assign_cell(<span class="kw-2">&amp;</span>|| annotation().into(), column, offset, <span class="kw-2">&amp;mut </span>|| {
+                to().into_field()
+            })
+    }
+}
+
+<span class="doccomment">/// A layout strategy within a circuit. The layouter is chip-agnostic and applies its
+/// strategy to the context and config it is given.
+///
+/// This abstracts over the circuit assignments, handling row indices etc.
+///
+</span><span class="kw">pub trait </span>Layouter&lt;F: Field&gt; {
+    <span class="doccomment">/// Represents the type of the &quot;root&quot; of this layouter, so that nested namespaces
+    /// can minimize indirection.
+    </span><span class="kw">type </span>Root: Layouter&lt;F&gt;;
+
+    <span class="doccomment">/// Assign a region of gates to an absolute row number.
+    ///
+    /// Inside the closure, the chip may freely use relative offsets; the `Layouter` will
+    /// treat these assignments as a single &quot;region&quot; within the circuit. Outside this
+    /// closure, the `Layouter` is allowed to optimise as it sees fit.
+    ///
+    /// ```ignore
+    /// fn assign_region(&amp;mut self, || &quot;region name&quot;, |region| {
+    ///     let config = chip.config();
+    ///     region.assign_advice(config.a, offset, || { Some(value)});
+    /// });
+    /// ```
+    </span><span class="kw">fn </span>assign_region&lt;A, AR, N, NR&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, name: N, assignment: A) -&gt; <span class="prelude-ty">Result</span>&lt;AR, Error&gt;
+    <span class="kw">where
+        </span>A: FnOnce(Region&lt;<span class="lifetime">&#39;_</span>, F&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;AR, Error&gt;,
+        N: Fn() -&gt; NR,
+        NR: Into&lt;String&gt;;
+
+    <span class="doccomment">/// Assign a table region to an absolute row number.
+    ///
+    /// ```ignore
+    /// fn assign_table(&amp;mut self, || &quot;table name&quot;, |table| {
+    ///     let config = chip.config();
+    ///     table.assign_fixed(config.a, offset, || { Some(value)});
+    /// });
+    /// ```
+    </span><span class="kw">fn </span>assign_table&lt;A, N, NR&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, name: N, assignment: A) -&gt; <span class="prelude-ty">Result</span>&lt;(), Error&gt;
+    <span class="kw">where
+        </span>A: FnMut(Table&lt;<span class="lifetime">&#39;_</span>, F&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), Error&gt;,
+        N: Fn() -&gt; NR,
+        NR: Into&lt;String&gt;;
+
+    <span class="doccomment">/// Constrains a [`Cell`] to equal an instance column&#39;s row value at an
+    /// absolute position.
+    </span><span class="kw">fn </span>constrain_instance(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cell: Cell, column: Column&lt;Instance&gt;, row: usize);
+
+    <span class="doccomment">/// Queries the value of the given challenge.
+    ///
+    /// Returns `Value::unknown()` if the current synthesis phase is before the challenge can be queried.
+    </span><span class="kw">fn </span>get_challenge(<span class="kw-2">&amp;</span><span class="self">self</span>, challenge: Challenge) -&gt; Value&lt;F&gt;;
+
+    <span class="doccomment">/// Gets the &quot;root&quot; of this assignment, bypassing the namespacing.
+    ///
+    /// Not intended for downstream consumption; use [`Layouter::namespace`] instead.
+    </span><span class="kw">fn </span>get_root(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><span class="self">Self</span>::Root;
+
+    <span class="doccomment">/// Creates a new (sub)namespace and enters into it.
+    ///
+    /// Not intended for downstream consumption; use [`Layouter::namespace`] instead.
+    </span><span class="kw">fn </span>push_namespace&lt;NR, N&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, name_fn: N)
+    <span class="kw">where
+        </span>NR: Into&lt;String&gt;,
+        N: FnOnce() -&gt; NR;
+
+    <span class="doccomment">/// Exits out of the existing namespace.
+    ///
+    /// Not intended for downstream consumption; use [`Layouter::namespace`] instead.
+    </span><span class="kw">fn </span>pop_namespace(<span class="kw-2">&amp;mut </span><span class="self">self</span>, gadget_name: <span class="prelude-ty">Option</span>&lt;String&gt;);
+
+    <span class="doccomment">/// Enters into a namespace.
+    </span><span class="kw">fn </span>namespace&lt;NR, N&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, name_fn: N) -&gt; NamespacedLayouter&lt;<span class="lifetime">&#39;_</span>, F, <span class="self">Self</span>::Root&gt;
+    <span class="kw">where
+        </span>NR: Into&lt;String&gt;,
+        N: FnOnce() -&gt; NR,
+    {
+        <span class="self">self</span>.get_root().push_namespace(name_fn);
+
+        NamespacedLayouter(<span class="self">self</span>.get_root(), PhantomData)
+    }
+}
+
+<span class="doccomment">/// This is a &quot;namespaced&quot; layouter which borrows a `Layouter` (pushing a namespace
+/// context) and, when dropped, pops out of the namespace context.
+</span><span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub struct </span>NamespacedLayouter&lt;<span class="lifetime">&#39;a</span>, F: Field, L: Layouter&lt;F&gt; + <span class="lifetime">&#39;a</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span><span class="kw-2">mut </span>L, PhantomData&lt;F&gt;);
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;a</span>, F: Field, L: Layouter&lt;F&gt; + <span class="lifetime">&#39;a</span>&gt; Layouter&lt;F&gt; <span class="kw">for </span>NamespacedLayouter&lt;<span class="lifetime">&#39;a</span>, F, L&gt; {
+    <span class="kw">type </span>Root = L::Root;
+
+    <span class="kw">fn </span>assign_region&lt;A, AR, N, NR&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, name: N, assignment: A) -&gt; <span class="prelude-ty">Result</span>&lt;AR, Error&gt;
+    <span class="kw">where
+        </span>A: FnOnce(Region&lt;<span class="lifetime">&#39;_</span>, F&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;AR, Error&gt;,
+        N: Fn() -&gt; NR,
+        NR: Into&lt;String&gt;,
+    {
+        <span class="self">self</span>.<span class="number">0</span>.assign_region(name, assignment)
+    }
+
+    <span class="kw">fn </span>assign_table&lt;A, N, NR&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, name: N, assignment: A) -&gt; <span class="prelude-ty">Result</span>&lt;(), Error&gt;
+    <span class="kw">where
+        </span>A: FnMut(Table&lt;<span class="lifetime">&#39;_</span>, F&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), Error&gt;,
+        N: Fn() -&gt; NR,
+        NR: Into&lt;String&gt;,
+    {
+        <span class="self">self</span>.<span class="number">0</span>.assign_table(name, assignment)
+    }
+
+    <span class="kw">fn </span>constrain_instance(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cell: Cell, column: Column&lt;Instance&gt;, row: usize) {
+        <span class="self">self</span>.<span class="number">0</span>.constrain_instance(cell, column, row);
+    }
+
+    <span class="kw">fn </span>get_challenge(<span class="kw-2">&amp;</span><span class="self">self</span>, challenge: Challenge) -&gt; Value&lt;F&gt; {
+        <span class="self">self</span>.<span class="number">0</span>.get_challenge(challenge)
+    }
+
+    <span class="kw">fn </span>get_root(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><span class="self">Self</span>::Root {
+        <span class="self">self</span>.<span class="number">0</span>.get_root()
+    }
+
+    <span class="kw">fn </span>push_namespace&lt;NR, N&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _name_fn: N)
+    <span class="kw">where
+        </span>NR: Into&lt;String&gt;,
+        N: FnOnce() -&gt; NR,
+    {
+        <span class="macro">panic!</span>(<span class="string">&quot;Only the root&#39;s push_namespace should be called&quot;</span>);
+    }
+
+    <span class="kw">fn </span>pop_namespace(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _gadget_name: <span class="prelude-ty">Option</span>&lt;String&gt;) {
+        <span class="macro">panic!</span>(<span class="string">&quot;Only the root&#39;s pop_namespace should be called&quot;</span>);
+    }
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;a</span>, F: Field, L: Layouter&lt;F&gt; + <span class="lifetime">&#39;a</span>&gt; Drop <span class="kw">for </span>NamespacedLayouter&lt;<span class="lifetime">&#39;a</span>, F, L&gt; {
+    <span class="kw">fn </span>drop(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+        <span class="kw">let </span>gadget_name = {
+            <span class="attribute">#[cfg(feature = <span class="string">&quot;gadget-traces&quot;</span>)]
+            </span>{
+                <span class="kw">let </span><span class="kw-2">mut </span>gadget_name = <span class="prelude-val">None</span>;
+                <span class="kw">let </span><span class="kw-2">mut </span>is_second_frame = <span class="bool-val">false</span>;
+                backtrace::trace(|frame| {
+                    <span class="kw">if </span>is_second_frame {
+                        <span class="comment">// Resolve this instruction pointer to a symbol name.
+                        </span>backtrace::resolve_frame(frame, |symbol| {
+                            gadget_name = symbol.name().map(|name| <span class="macro">format!</span>(<span class="string">&quot;{:#}&quot;</span>, name));
+                        });
+
+                        <span class="comment">// We are done!
+                        </span><span class="bool-val">false
+                    </span>} <span class="kw">else </span>{
+                        <span class="comment">// We want the next frame.
+                        </span>is_second_frame = <span class="bool-val">true</span>;
+                        <span class="bool-val">true
+                    </span>}
+                });
+                gadget_name
+            }
+
+            <span class="attribute">#[cfg(not(feature = <span class="string">&quot;gadget-traces&quot;</span>))]
+            </span><span class="prelude-val">None
+        </span>};
+
+        <span class="self">self</span>.get_root().pop_namespace(gadget_name);
+    }
+}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="halo2_proofs" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0-nightly (0da281b60 2022-10-27)" ></div></body></html>

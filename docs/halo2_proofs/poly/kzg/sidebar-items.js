@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":[["commitment","KZG commitment scheme"],["msm","Multiscalar multiplication engines"],["multiopen","KZG multi-open scheme"],["strategy","Strategies used with KZG scheme"]]};

@@ -1,0 +1,3 @@
+(function() {var implementors = {
+"halo2curves":[["impl PrimeCurveAffine for <a class=\"struct\" href=\"halo2curves/bn256/struct.G1Affine.html\" title=\"struct halo2curves::bn256::G1Affine\">G1Affine</a>"],["impl PrimeCurveAffine for <a class=\"struct\" href=\"halo2curves/bn256/struct.G2Affine.html\" title=\"struct halo2curves::bn256::G2Affine\">G2Affine</a>"],["impl PrimeCurveAffine for <a class=\"struct\" href=\"halo2curves/secp256k1/struct.Secp256k1Affine.html\" title=\"struct halo2curves::secp256k1::Secp256k1Affine\">Secp256k1Affine</a>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

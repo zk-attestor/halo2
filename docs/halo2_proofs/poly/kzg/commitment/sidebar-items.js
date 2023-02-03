@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":[["KZGCommitmentScheme","Umbrella commitment scheme construction for all KZG variants"],["ParamsKZG","These are the public parameters for the polynomial commitment scheme."]],"type":[["ParamsVerifierKZG","KZG multi-open verification parameters"]]};

@@ -1,0 +1,294 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `halo2_proofs/src/helpers.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>helpers.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../normalize.css"><link rel="stylesheet" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../ayu.css" disabled><link rel="stylesheet" href="../../dark.css" disabled><link rel="stylesheet" href="../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../storage.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script><script defer src="../../main.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../halo2_proofs/index.html"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></a><form class="search-form"><div class="search-container"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../wheel.svg"></a></div></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+</pre><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::poly::Polynomial;
+<span class="kw">use </span>ff::PrimeField;
+<span class="kw">use </span>halo2curves::{pairing::Engine, serde::SerdeObject, CurveAffine};
+<span class="kw">use </span>std::io;
+
+<span class="doccomment">/// This enum specifies how various types are serialized and deserialized.
+</span><span class="attribute">#[derive(Clone, Copy, Debug)]
+</span><span class="kw">pub enum </span>SerdeFormat {
+    <span class="doccomment">/// Curve elements are serialized in compressed form.
+    /// Field elements are serialized in standard form, with endianness specified by the
+    /// `PrimeField` implementation.
+    </span>Processed,
+    <span class="doccomment">/// Curve elements are serialized in uncompressed form. Field elements are serialized
+    /// in their internal Montgomery representation.
+    /// When deserializing, checks are performed to ensure curve elements indeed lie on the curve and field elements
+    /// are less than modulus.
+    </span>RawBytes,
+    <span class="doccomment">/// Serialization is the same as `RawBytes`, but no checks are performed.
+    </span>RawBytesUnchecked,
+}
+
+<span class="comment">// Keep this trait for compatibility with IPA serialization
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">trait </span>CurveRead: CurveAffine {
+    <span class="doccomment">/// Reads a compressed element from the buffer and attempts to parse it
+    /// using `from_bytes`.
+    </span><span class="kw">fn </span>read&lt;R: io::Read&gt;(reader: <span class="kw-2">&amp;mut </span>R) -&gt; io::Result&lt;<span class="self">Self</span>&gt; {
+        <span class="kw">let </span><span class="kw-2">mut </span>compressed = <span class="self">Self</span>::Repr::default();
+        reader.read_exact(compressed.as_mut())<span class="question-mark">?</span>;
+        Option::from(<span class="self">Self</span>::from_bytes(<span class="kw-2">&amp;</span>compressed))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, <span class="string">&quot;Invalid point encoding in proof&quot;</span>))
+    }
+}
+<span class="kw">impl</span>&lt;C: CurveAffine&gt; CurveRead <span class="kw">for </span>C {}
+
+<span class="kw">pub trait </span>SerdeCurveAffine: CurveAffine + SerdeObject {
+    <span class="doccomment">/// Reads an element from the buffer and parses it according to the `format`:
+    /// - `Processed`: Reads a compressed curve element and decompress it
+    /// - `RawBytes`: Reads an uncompressed curve element with coordinates in Montgomery form.
+    /// Checks that field elements are less than modulus, and then checks that the point is on the curve.
+    /// - `RawBytesUnchecked`: Reads an uncompressed curve element with coordinates in Montgomery form;
+    /// does not perform any checks
+    </span><span class="kw">fn </span>read&lt;R: io::Read&gt;(reader: <span class="kw-2">&amp;mut </span>R, format: SerdeFormat) -&gt; <span class="self">Self </span>{
+        <span class="kw">match </span>format {
+            SerdeFormat::Processed =&gt; &lt;<span class="self">Self </span><span class="kw">as </span>CurveRead&gt;::read(reader).unwrap(),
+            SerdeFormat::RawBytes =&gt; &lt;<span class="self">Self </span><span class="kw">as </span>SerdeObject&gt;::read_raw(reader).unwrap(),
+            SerdeFormat::RawBytesUnchecked =&gt; &lt;<span class="self">Self </span><span class="kw">as </span>SerdeObject&gt;::read_raw_unchecked(reader),
+        }
+    }
+    <span class="doccomment">/// Writes a curve element according to `format`:
+    /// - `Processed`: Writes a compressed curve element
+    /// - Otherwise: Writes an uncompressed curve element with coordinates in Montgomery form
+    </span><span class="kw">fn </span>write&lt;W: io::Write&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, writer: <span class="kw-2">&amp;mut </span>W, format: SerdeFormat) {
+        <span class="kw">match </span>format {
+            SerdeFormat::Processed =&gt; writer.write_all(<span class="self">self</span>.to_bytes().as_ref()).unwrap(),
+            <span class="kw">_ </span>=&gt; <span class="self">self</span>.write_raw(writer).unwrap(),
+        }
+    }
+}
+<span class="kw">impl</span>&lt;C: CurveAffine + SerdeObject&gt; SerdeCurveAffine <span class="kw">for </span>C {}
+
+<span class="kw">pub trait </span>SerdePrimeField: PrimeField + SerdeObject {
+    <span class="doccomment">/// Reads a field element as bytes from the buffer according to the `format`:
+    /// - `Processed`: Reads a field element in standard form, with endianness specified by the
+    /// `PrimeField` implementation, and checks that the element is less than the modulus.
+    /// - `RawBytes`: Reads a field element from raw bytes in its internal Montgomery representations,
+    /// and checks that the element is less than the modulus.
+    /// - `RawBytesUnchecked`: Reads a field element in Montgomery form and performs no checks.
+    </span><span class="kw">fn </span>read&lt;R: io::Read&gt;(reader: <span class="kw-2">&amp;mut </span>R, format: SerdeFormat) -&gt; <span class="self">Self </span>{
+        <span class="kw">match </span>format {
+            SerdeFormat::Processed =&gt; {
+                <span class="kw">let </span><span class="kw-2">mut </span>compressed = <span class="self">Self</span>::Repr::default();
+                reader.read_exact(compressed.as_mut()).unwrap();
+                Option::from(<span class="self">Self</span>::from_repr(compressed))
+                    .unwrap_or_else(|| <span class="macro">panic!</span>(<span class="string">&quot;Invalid prime field point encoding&quot;</span>))
+            }
+            SerdeFormat::RawBytes =&gt; &lt;<span class="self">Self </span><span class="kw">as </span>SerdeObject&gt;::read_raw(reader).unwrap(),
+            SerdeFormat::RawBytesUnchecked =&gt; &lt;<span class="self">Self </span><span class="kw">as </span>SerdeObject&gt;::read_raw_unchecked(reader),
+        }
+    }
+
+    <span class="doccomment">/// Writes a field element as bytes to the buffer according to the `format`:
+    /// - `Processed`: Writes a field element in standard form, with endianness specified by the
+    /// `PrimeField` implementation.
+    /// - Otherwise: Writes a field element into raw bytes in its internal Montgomery representation,
+    /// WITHOUT performing the expensive Montgomery reduction.
+    </span><span class="kw">fn </span>write&lt;W: io::Write&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, writer: <span class="kw-2">&amp;mut </span>W, format: SerdeFormat) {
+        <span class="kw">match </span>format {
+            SerdeFormat::Processed =&gt; writer.write_all(<span class="self">self</span>.to_repr().as_ref()).unwrap(),
+            <span class="kw">_ </span>=&gt; <span class="self">self</span>.write_raw(writer).unwrap(),
+        }
+    }
+}
+<span class="kw">impl</span>&lt;F: PrimeField + SerdeObject&gt; SerdePrimeField <span class="kw">for </span>F {}
+
+<span class="doccomment">/// Convert a slice of `bool` into a `u8`.
+///
+/// Panics if the slice has length greater than 8.
+</span><span class="kw">pub fn </span>pack(bits: <span class="kw-2">&amp;</span>[bool]) -&gt; u8 {
+    <span class="kw">let </span><span class="kw-2">mut </span>value = <span class="number">0u8</span>;
+    <span class="macro">assert!</span>(bits.len() &lt;= <span class="number">8</span>);
+    <span class="kw">for </span>(bit_index, bit) <span class="kw">in </span>bits.iter().enumerate() {
+        value |= (<span class="kw-2">*</span>bit <span class="kw">as </span>u8) &lt;&lt; bit_index;
+    }
+    value
+}
+
+<span class="doccomment">/// Writes the first `bits.len()` bits of a `u8` into `bits`.
+</span><span class="kw">pub fn </span>unpack(byte: u8, bits: <span class="kw-2">&amp;mut </span>[bool]) {
+    <span class="kw">for </span>(bit_index, bit) <span class="kw">in </span>bits.iter_mut().enumerate() {
+        <span class="kw-2">*</span>bit = (byte &gt;&gt; bit_index) &amp; <span class="number">1 </span>== <span class="number">1</span>;
+    }
+}
+
+<span class="doccomment">/// Reads a vector of polynomials from buffer
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>read_polynomial_vec&lt;R: io::Read, F: SerdePrimeField, B&gt;(
+    reader: <span class="kw-2">&amp;mut </span>R,
+    format: SerdeFormat,
+) -&gt; Vec&lt;Polynomial&lt;F, B&gt;&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>len = [<span class="number">0u8</span>; <span class="number">4</span>];
+    reader.read_exact(<span class="kw-2">&amp;mut </span>len).unwrap();
+    <span class="kw">let </span>len = u32::from_be_bytes(len);
+
+    (<span class="number">0</span>..len)
+        .map(|<span class="kw">_</span>| Polynomial::&lt;F, B&gt;::read(reader, format))
+        .collect()
+}
+
+<span class="doccomment">/// Writes a slice of polynomials to buffer
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>write_polynomial_slice&lt;W: io::Write, F: SerdePrimeField, B&gt;(
+    slice: <span class="kw-2">&amp;</span>[Polynomial&lt;F, B&gt;],
+    writer: <span class="kw-2">&amp;mut </span>W,
+    format: SerdeFormat,
+) {
+    writer
+        .write_all(<span class="kw-2">&amp;</span>(slice.len() <span class="kw">as </span>u32).to_be_bytes())
+        .unwrap();
+    <span class="kw">for </span>poly <span class="kw">in </span>slice.iter() {
+        poly.write(writer, format);
+    }
+}
+
+<span class="doccomment">/// Gets the total number of bytes of a slice of polynomials, assuming all polynomials are the same length
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>polynomial_slice_byte_length&lt;F: PrimeField, B&gt;(slice: <span class="kw-2">&amp;</span>[Polynomial&lt;F, B&gt;]) -&gt; usize {
+    <span class="kw">let </span>field_len = F::default().to_repr().as_ref().len();
+    <span class="number">4 </span>+ slice.len() * (<span class="number">4 </span>+ field_len * slice.get(<span class="number">0</span>).map(|poly| poly.len()).unwrap_or(<span class="number">0</span>))
+}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="halo2_proofs" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0-nightly (0da281b60 2022-10-27)" ></div></body></html>

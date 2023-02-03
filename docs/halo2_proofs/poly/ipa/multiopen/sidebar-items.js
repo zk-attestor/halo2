@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":[["ProverIPA","IPA multi-open prover"],["VerifierIPA","IPA multi-open verifier"]]};

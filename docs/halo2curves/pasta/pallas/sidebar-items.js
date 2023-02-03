@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"type":[["Affine","A Pallas point in the affine coordinate space (or the point at infinity)."],["Base","The base field of the Pallas and iso-Pallas curves."],["Point","A Pallas point in the projective coordinate space."],["Scalar","The scalar field of the Pallas and iso-Pallas curves."]]};

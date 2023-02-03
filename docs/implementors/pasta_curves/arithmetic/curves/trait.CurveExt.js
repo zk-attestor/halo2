@@ -1,0 +1,4 @@
+(function() {var implementors = {
+"halo2_proofs":[],
+"halo2curves":[["impl <a class=\"trait\" href=\"halo2curves/trait.CurveExt.html\" title=\"trait halo2curves::CurveExt\">CurveExt</a> for <a class=\"struct\" href=\"halo2curves/bn256/struct.G1.html\" title=\"struct halo2curves::bn256::G1\">G1</a>"],["impl <a class=\"trait\" href=\"halo2curves/trait.CurveExt.html\" title=\"trait halo2curves::CurveExt\">CurveExt</a> for <a class=\"struct\" href=\"halo2curves/bn256/struct.G2.html\" title=\"struct halo2curves::bn256::G2\">G2</a>"],["impl <a class=\"trait\" href=\"halo2curves/trait.CurveExt.html\" title=\"trait halo2curves::CurveExt\">CurveExt</a> for <a class=\"struct\" href=\"halo2curves/secp256k1/struct.Secp256k1.html\" title=\"struct halo2curves::secp256k1::Secp256k1\">Secp256k1</a>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

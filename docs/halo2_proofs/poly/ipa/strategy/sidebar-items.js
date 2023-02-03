@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":[["Accumulator","An accumulator instance consisting of an evaluation claim and a proof."],["AccumulatorStrategy","A verifier that checks multiple proofs in a batch."],["GuardIPA","Wrapper for verification accumulator"],["SingleStrategy","A verifier that checks single proof"]]};
