@@ -1,5 +1,6 @@
 //! Developer tools for investigating the cost of a circuit.
 
+use std::ops::Range;
 use std::{
     collections::{HashMap, HashSet},
     iter,
@@ -67,6 +68,10 @@ impl<F: Field> Assignment<F> for Assembly {
         self.selectors[selector.0][row] = true;
 
         Ok(())
+    }
+
+    fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
+        todo!()
     }
 
     fn query_instance(&self, _: Column<Instance>, _: usize) -> Result<Value<F>, Error> {

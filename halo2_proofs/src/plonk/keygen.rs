@@ -84,6 +84,10 @@ impl<F: Field> Assignment<F> for Assembly<F> {
         Ok(())
     }
 
+    fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
+        todo!()
+    }
+
     fn query_instance(&self, _: Column<Instance>, row: usize) -> Result<Value<F>, Error> {
         if !self.usable_rows.contains(&row) {
             return Err(Error::not_enough_rows_available(self.k));

@@ -4,7 +4,7 @@ use halo2curves::CurveExt;
 use rand_core::RngCore;
 use std::collections::BTreeSet;
 use std::env::var;
-use std::ops::RangeTo;
+use std::ops::{Range, RangeTo};
 use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 use std::{collections::HashMap, iter, mem, sync::atomic::Ordering};
@@ -162,6 +162,10 @@ pub fn create_proof<
             // We only care about advice columns here
 
             Ok(())
+        }
+
+        fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
+            todo!()
         }
 
         fn query_instance(&self, column: Column<Instance>, row: usize) -> Result<Value<F>, Error> {

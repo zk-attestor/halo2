@@ -1,6 +1,7 @@
 use core::cmp::max;
 use core::ops::{Add, Mul};
 use ff::Field;
+use std::ops::Range;
 use std::{
     convert::TryFrom,
     ops::{Neg, Sub},
@@ -523,7 +524,7 @@ impl Challenge {
 
 /// This trait allows a [`Circuit`] to direct some backend to assign a witness
 /// for a constraint system.
-pub trait Assignment<F: Field> {
+pub trait Assignment<F: Field>: Sized + Send {
     /// Creates a new region and enters into it.
     ///
     /// Panics if we are currently in a region (if `exit_region` was not called).
@@ -555,6 +556,9 @@ pub trait Assignment<F: Field> {
     where
         A: FnOnce() -> AR,
         AR: Into<String>;
+
+    /// fork
+    fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error>;
 
     /// Queries the cell of an instance column at a particular absolute row.
     ///

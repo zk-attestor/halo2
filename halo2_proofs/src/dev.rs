@@ -355,6 +355,10 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
         Ok(())
     }
 
+    fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
+        todo!()
+    }
+
     fn query_instance(
         &self,
         column: Column<Instance>,

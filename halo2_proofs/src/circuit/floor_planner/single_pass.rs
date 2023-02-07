@@ -2,6 +2,8 @@ use std::cmp;
 use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
+use std::ops::Range;
+use std::sync::{Arc, Mutex};
 
 use ff::Field;
 
@@ -12,6 +14,7 @@ use crate::{
         layouter::{RegionColumn, RegionLayouter, RegionShape, TableLayouter},
         Cell, Layouter, Region, RegionIndex, RegionStart, Table, Value,
     },
+    multicore,
     plonk::{
         Advice, Any, Assigned, Assignment, Challenge, Circuit, Column, Error, Fixed, FloorPlanner,
         Instance, Selector, TableColumn,
@@ -42,7 +45,7 @@ impl FloorPlanner for SimpleFloorPlanner {
 }
 
 /// A [`Layouter`] for a single-chip circuit.
-pub struct SingleChipLayouter<'a, F: Field, CS: Assignment<F> + 'a> {
+pub struct SingleChipLayouter<'a, F: Field, CS: Assignment<F>> {
     cs: &'a mut CS,
     constants: Vec<Column<Fixed>>,
     /// Stores the starting row for each region.
@@ -75,6 +78,24 @@ impl<'a, F: Field, CS: Assignment<F>> SingleChipLayouter<'a, F, CS> {
             _marker: PhantomData,
         };
         Ok(ret)
+    }
+
+    fn fork(
+        &mut self,
+        sub_cs: Vec<&'a mut CS>,
+        ranges: &Vec<Range<usize>>,
+    ) -> Result<Vec<Self>, Error> {
+        Ok(sub_cs
+            .into_iter()
+            .map(|mut sub_cs| Self {
+                cs: sub_cs,
+                constants: self.constants.clone(),
+                regions: self.regions.clone(),
+                columns: self.columns.clone(),
+                table_columns: self.table_columns.clone(),
+                _marker: Default::default(),
+            })
+            .collect::<Vec<_>>())
     }
 }
 
@@ -168,6 +189,124 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
 
         end_timer!(timer);
         Ok(result)
+    }
+
+    fn assign_regions<A, AR, N, NR>(
+        &mut self,
+        name: N,
+        mut assignments: Vec<A>,
+    ) -> Result<Vec<AR>, Error>
+    where
+        A: FnMut(Region<'_, F>) -> Result<AR, Error> + Send,
+        AR: Send,
+        N: Fn() -> NR,
+        NR: Into<String>,
+    {
+        let region_index = self.regions.len();
+        let region_name: String = name().into();
+        // Get region shapes sequentially
+        let mut ranges = vec![];
+        for (i, assignment) in assignments.iter_mut().enumerate() {
+            // Get shape of the ith sub-region.
+            let mut shape = RegionShape::new((region_index + i).into());
+            let region: &mut dyn RegionLayouter<F> = &mut shape;
+            assignment(region.into())?;
+
+            let mut region_start = 0;
+            for column in &shape.columns {
+                let column_start = self.columns.get(column).cloned().unwrap_or(0);
+                region_start = cmp::max(region_start, column_start);
+            }
+            log::debug!(
+                "{}_{} start: {}, end: {}",
+                region_name,
+                i,
+                region_start,
+                region_start + shape.row_count()
+            );
+            self.regions.push(region_start.into());
+            ranges.push(region_start..(region_start + shape.row_count()));
+
+            // Update column usage information.
+            for column in shape.columns.iter() {
+                self.columns
+                    .insert(*column, region_start + shape.row_count());
+            }
+        }
+
+        // Do actual synthesis of sub-regions in parallel
+        let mut sub_cs = self.cs.fork(&ranges)?;
+        let mut sub_layouters = self.fork(sub_cs.iter_mut().collect(), &ranges)?;
+        let ret = crossbeam::scope(|scope| {
+            let mut handles = vec![];
+            for (i, (mut assignment, sub_layouter)) in assignments
+                .into_iter()
+                .zip(sub_layouters.iter_mut())
+                .enumerate()
+            {
+                let sub_layouter = Arc::new(Mutex::new(sub_layouter));
+                handles.push(scope.spawn(move |_| {
+                    let mut sub_layouter = sub_layouter.lock().unwrap(); // it's the only thread that's accessing sub_layouter
+                    let mut region =
+                        SingleChipLayouterRegion::new(*sub_layouter, (region_index + i).into());
+                    let region_ref: &mut dyn RegionLayouter<F> = &mut region;
+                    let result = assignment(region_ref.into());
+                    let constant = region.constants.clone();
+
+                    (result, constant)
+                }));
+            }
+
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("handle.join should never fail"))
+                .collect::<Vec<_>>()
+        })
+        .expect("scope should not fail");
+        let (results, constants): (Vec<_>, Vec<_>) = ret.into_iter().unzip();
+
+        // Check if there are errors in sub-region synthesis
+        let results = results
+            .into_iter()
+            .map(|result| result)
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        // Merge all constants from sub-regions together
+        let constants_to_assign = constants
+            .into_iter()
+            .flat_map(|constant_to_assign| constant_to_assign.into_iter())
+            .collect::<Vec<_>>();
+
+        // Assign constants. For the simple floor planner, we assign constants in order in
+        // the first `constants` column.
+        if self.constants.is_empty() {
+            if !constants_to_assign.is_empty() {
+                return Err(Error::NotEnoughColumnsForConstants);
+            }
+        } else {
+            let constants_column = self.constants[0];
+            let next_constant_row = self
+                .columns
+                .entry(Column::<Any>::from(constants_column).into())
+                .or_default();
+            for (constant, advice) in constants_to_assign {
+                self.cs.assign_fixed(
+                    || format!("Constant({:?})", constant.evaluate()),
+                    constants_column,
+                    *next_constant_row,
+                    || Value::known(constant),
+                )?;
+                self.cs.copy(
+                    constants_column.into(),
+                    *next_constant_row,
+                    advice.column,
+                    *self.regions[*advice.region_index] + advice.row_offset,
+                )?;
+                *next_constant_row += 1;
+            }
+        }
+
+        Ok(results)
     }
 
     fn assign_table<A, N, NR>(&mut self, name: N, mut assignment: A) -> Result<(), Error>
