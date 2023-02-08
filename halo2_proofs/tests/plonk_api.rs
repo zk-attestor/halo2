@@ -3,7 +3,7 @@
 
 use assert_matches::assert_matches;
 use halo2_proofs::arithmetic::{Field, FieldExt};
-use halo2_proofs::circuit::{Cell, Layouter, SimpleFloorPlanner, Value};
+use halo2_proofs::circuit::{Cell, Layouter, Region, SimpleFloorPlanner, Value};
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::plonk::{
     create_proof as create_plonk_proof, keygen_pk, keygen_vk, verify_proof as verify_plonk_proof,
@@ -22,7 +22,7 @@ use std::marker::PhantomData;
 
 #[test]
 fn plonk_api() {
-    const K: u32 = 5;
+    const K: u32 = 16;
 
     /// This represents an advice column at a certain row in the ConstraintSystem
     #[derive(Copy, Clone, Debug)]
@@ -376,6 +376,25 @@ fn plonk_api() {
 
             let _ = cs.public_input(&mut layouter, || Value::known(F::one() + F::one()))?;
 
+            let a: Value<Assigned<_>> = self.a.into();
+            let assignments = |mut region: Region<'_, F>| -> Result<(), Error> {
+                for i in 0..(1<<12) {
+                    region.assign_advice(|| "config.a", cs.config.a, i, || a)?;
+                    region.assign_advice(|| "config.b", cs.config.b, i, || a)?;
+                    region.assign_advice(|| "config.c", cs.config.c, i, || a.double())?;
+
+                    region.assign_fixed(|| "a", cs.config.sa, i, || Value::known(F::one()))?;
+                    region.assign_fixed(|| "b", cs.config.sb, i, || Value::known(F::one()))?;
+                    region.assign_fixed(|| "c", cs.config.sc, i, || Value::known(F::one()))?;
+                    region.assign_fixed(|| "a * b", cs.config.sm, i, || Value::known(F::zero()))?;
+                }
+                Ok(())
+            };
+            layouter.assign_regions(
+                || "regions",
+                (0..8).into_iter().map(|_| assignments).collect(),
+            )?;
+
             for _ in 0..10 {
                 let a: Value<Assigned<_>> = self.a.into();
                 let mut a_squared = Value::unknown();
@@ -392,6 +411,7 @@ fn plonk_api() {
                 cs.copy(&mut layouter, a0, a1)?;
                 cs.copy(&mut layouter, b1, c0)?;
             }
+
 
             cs.lookup_table(&mut layouter, &self.lookup_table)?;
 
