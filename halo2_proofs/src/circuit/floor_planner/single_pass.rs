@@ -80,10 +80,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> SingleChipLayouter<'a, F, CS> {
         Ok(ret)
     }
 
-    fn fork(
-        &self,
-        sub_cs: Vec<&'a mut CS>,
-    ) -> Result<Vec<Self>, Error> {
+    fn fork(&self, sub_cs: Vec<&'a mut CS>) -> Result<Vec<Self>, Error> {
         Ok(sub_cs
             .into_iter()
             .map(|sub_cs| Self {

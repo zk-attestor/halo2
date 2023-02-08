@@ -378,7 +378,7 @@ fn plonk_api() {
 
             let a: Value<Assigned<_>> = self.a.into();
             let assignments = |mut region: Region<'_, F>| -> Result<(), Error> {
-                for i in 0..(1<<12) {
+                for i in 0..(1 << 12) {
                     region.assign_advice(|| "config.a", cs.config.a, i, || a)?;
                     region.assign_advice(|| "config.b", cs.config.b, i, || a)?;
                     region.assign_advice(|| "config.c", cs.config.c, i, || a.double())?;
@@ -411,7 +411,6 @@ fn plonk_api() {
                 cs.copy(&mut layouter, a0, a1)?;
                 cs.copy(&mut layouter, b1, c0)?;
             }
-
 
             cs.lookup_table(&mut layouter, &self.lookup_table)?;
 
