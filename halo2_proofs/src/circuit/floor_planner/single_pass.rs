@@ -45,7 +45,7 @@ impl FloorPlanner for SimpleFloorPlanner {
 }
 
 /// A [`Layouter`] for a single-chip circuit.
-pub struct SingleChipLayouter<'a, F: Field, CS: Assignment<F>> {
+pub struct SingleChipLayouter<'a, F: Field, CS: Assignment<F> + 'a> {
     cs: &'a mut CS,
     constants: Vec<Column<Fixed>>,
     /// Stores the starting row for each region.
@@ -66,7 +66,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> fmt::Debug for SingleChipLayouter<'a,
     }
 }
 
-impl<'a, F: Field, CS: Assignment<F>> SingleChipLayouter<'a, F, CS> {
+impl<'a, F: Field, CS: Assignment<F> + 'a> SingleChipLayouter<'a, F, CS> {
     /// Creates a new single-chip layouter.
     pub fn new(cs: &'a mut CS, constants: Vec<Column<Fixed>>) -> Result<Self, Error> {
         let ret = SingleChipLayouter {
@@ -81,13 +81,12 @@ impl<'a, F: Field, CS: Assignment<F>> SingleChipLayouter<'a, F, CS> {
     }
 
     fn fork(
-        &mut self,
+        &self,
         sub_cs: Vec<&'a mut CS>,
-        ranges: &Vec<Range<usize>>,
     ) -> Result<Vec<Self>, Error> {
         Ok(sub_cs
             .into_iter()
-            .map(|mut sub_cs| Self {
+            .map(|sub_cs| Self {
                 cs: sub_cs,
                 constants: self.constants.clone(),
                 regions: self.regions.clone(),
@@ -236,19 +235,22 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
 
         // Do actual synthesis of sub-regions in parallel
         let mut sub_cs = self.cs.fork(&ranges)?;
-        let mut sub_layouters = self.fork(sub_cs.iter_mut().collect(), &ranges)?;
+        let sub_cs = sub_cs.iter_mut().collect();
+        let sub_layouters = self.fork(sub_cs)?;
         let ret = crossbeam::scope(|scope| {
             let mut handles = vec![];
             for (i, (mut assignment, sub_layouter)) in assignments
                 .into_iter()
-                .zip(sub_layouters.iter_mut())
+                .zip(sub_layouters.into_iter())
                 .enumerate()
             {
                 let sub_layouter = Arc::new(Mutex::new(sub_layouter));
                 handles.push(scope.spawn(move |_| {
                     let mut sub_layouter = sub_layouter.lock().unwrap(); // it's the only thread that's accessing sub_layouter
-                    let mut region =
-                        SingleChipLayouterRegion::new(*sub_layouter, (region_index + i).into());
+                    let mut region = SingleChipLayouterRegion::new(
+                        &mut *sub_layouter,
+                        (region_index + i).into(),
+                    );
                     let region_ref: &mut dyn RegionLayouter<F> = &mut region;
                     let result = assignment(region_ref.into());
                     let constant = region.constants.clone();
