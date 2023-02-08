@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
 use std::iter;
-use std::ops::{Add, Mul, Neg, Range};
+use std::ops::{Add, DerefMut, Mul, Neg, Range};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use blake2b_simd::blake2b;
@@ -49,7 +50,7 @@ mod graph;
 #[cfg_attr(docsrs, doc(cfg(feature = "dev-graph")))]
 pub use graph::{circuit_dot_graph, layout::CircuitLayout};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Region {
     /// The name of the region. Not required to be unique.
     name: String,
@@ -280,7 +281,7 @@ impl<F: Group + Field> Mul<F> for Value<F> {
 /// ));
 /// ```
 #[derive(Debug)]
-pub struct MockProver<F: Group + Field> {
+pub struct MockProver<'a, F: Group + Field> {
     k: u32,
     n: u32,
     cs: ConstraintSystem<F>,
@@ -292,14 +293,16 @@ pub struct MockProver<F: Group + Field> {
     current_region: Option<Region>,
 
     // The fixed cells in the circuit, arranged as [column][row].
-    fixed: Vec<Vec<CellValue<F>>>,
+    fixed_vec: Arc<Vec<Vec<CellValue<F>>>>,
+    fixed: Vec<&'a mut [CellValue<F>]>,
     // The advice cells in the circuit, arranged as [column][row].
     pub(crate) advice: Vec<Vec<CellValue<F>>>,
     advice_prev: Vec<Vec<CellValue<F>>>,
     // The instance cells in the circuit, arranged as [column][row].
     instance: Vec<Vec<F>>,
 
-    selectors: Vec<Vec<bool>>,
+    selectors_vec: Arc<Vec<Vec<bool>>>,
+    selectors: Vec<&'a mut [bool]>,
 
     challenges: Vec<F>,
 
@@ -311,7 +314,7 @@ pub struct MockProver<F: Group + Field> {
     current_phase: crate::plonk::sealed::Phase,
 }
 
-impl<F: Field + Group> Assignment<F> for MockProver<F> {
+impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
     fn enter_region<NR, N>(&mut self, name: N)
     where
         NR: Into<String>,
@@ -356,7 +359,69 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
     }
 
     fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
-        todo!()
+        // check ranges are non-overlapping and monotonically increasing
+        let mut range_start = self.usable_rows.start;
+        for (i, sub_range) in ranges.iter().enumerate() {
+            if sub_range.start < range_start {
+                return Err(Error::Synthesis);
+            }
+            range_start = sub_range.end;
+        }
+
+        // split self.fixed into several pieces
+        let fixed_ptrs = self
+            .fixed
+            .iter_mut()
+            .map(|vec| vec.as_mut_ptr())
+            .collect::<Vec<_>>();
+        let selectors_ptrs = self
+            .selectors
+            .iter_mut()
+            .map(|vec| vec.as_mut_ptr())
+            .collect::<Vec<_>>();
+
+        let mut sub_cs = vec![];
+        for (i, sub_range) in ranges.iter().enumerate() {
+            let fixed = fixed_ptrs
+                .iter()
+                .map(|ptr| unsafe {
+                    std::slice::from_raw_parts_mut(
+                        ptr.add(sub_range.start),
+                        sub_range.end - sub_range.start,
+                    )
+                })
+                .collect::<Vec<&mut [CellValue<F>]>>();
+            let selectors = selectors_ptrs
+                .iter()
+                .map(|ptr| unsafe {
+                    std::slice::from_raw_parts_mut(
+                        ptr.add(sub_range.start),
+                        sub_range.end - sub_range.start,
+                    )
+                })
+                .collect::<Vec<&mut [bool]>>();
+
+            sub_cs.push(Self {
+                k: self.k,
+                n: self.n,
+                cs: self.cs.clone(),
+                regions: self.regions.clone(),
+                current_region: None,
+                fixed_vec: self.fixed_vec.clone(),
+                fixed,
+                advice: self.advice.clone(),
+                advice_prev: self.advice_prev.clone(),
+                instance: self.instance.clone(),
+                selectors_vec: self.selectors_vec.clone(),
+                selectors,
+                challenges: self.challenges.clone(),
+                permutation: self.permutation.clone(),
+                usable_rows: sub_range.clone(),
+                current_phase: self.current_phase,
+            });
+        }
+
+        Ok(sub_cs)
     }
 
     fn query_instance(
@@ -459,12 +524,15 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
                 .or_default();
         }
 
-        *self
+        let fix_cell = self
             .fixed
             .get_mut(column.index())
-            .and_then(|v| v.get_mut(row))
-            .ok_or(Error::BoundsFailure)? =
-            CellValue::Assigned(to().into_field().evaluate().assign()?);
+            .and_then(|v| v.get_mut(row - self.usable_rows.start))
+            .ok_or(Error::BoundsFailure);
+        if fix_cell.is_err() {
+            println!("fix cell is none: {}, row: {}", column.index(), row);
+        }
+        *fix_cell? = CellValue::Assigned(to().into_field().evaluate().assign()?);
 
         Ok(())
     }
@@ -521,7 +589,7 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
     }
 }
 
-impl<F: FieldExt> MockProver<F> {
+impl<'a, F: FieldExt> MockProver<'a, F> {
     /// Runs a synthetic keygen-and-prove operation on the given circuit, collecting data
     /// about the constraints and their assignments.
     pub fn run<ConcreteCircuit: Circuit<F>>(
@@ -556,8 +624,29 @@ impl<F: FieldExt> MockProver<F> {
             .collect::<Result<Vec<_>, _>>()?;
 
         // Fixed columns contain no blinding factors.
-        let fixed = vec![vec![CellValue::Unassigned; n]; cs.num_fixed_columns];
-        let selectors = vec![vec![false; n]; cs.num_selectors];
+        let fixed_vec = Arc::new(vec![vec![CellValue::Unassigned; n]; cs.num_fixed_columns]);
+
+        let fixed = unsafe {
+            // extract an mutable reference to the 2-dimensional vector
+            // we are forced to use unsafe method because vec is
+            // protected by the Arc struct
+            let fixed_vec_clone = fixed_vec.clone();
+            let ptr = Arc::as_ptr(&fixed_vec_clone) as *mut Vec<Vec<CellValue<F>>>;
+            let mut_ref = &mut (*ptr);
+            mut_ref
+                .iter_mut()
+                .map(|fixed| fixed.as_mut_slice())
+                .collect::<Vec<_>>()
+        };
+
+        let selectors_vec = Arc::new(vec![vec![false; n]; cs.num_selectors]);
+        let selectors = unsafe {
+            let selectors_vec_clone = selectors_vec.clone();
+            let ptr = Arc::as_ptr(&selectors_vec_clone) as *mut Vec<Vec<bool>>;
+            let mut_ref = &mut (*ptr);
+
+            mut_ref.iter_mut().map(|item| item.as_mut_slice()).collect()
+        };
         // Advice columns contain blinding factors.
         let blinding_factors = cs.blinding_factors();
         let usable_rows = n - (blinding_factors + 1);
@@ -649,10 +738,12 @@ impl<F: FieldExt> MockProver<F> {
             cs,
             regions: vec![],
             current_region: None,
+            fixed_vec,
             fixed,
             advice,
             advice_prev: vec![],
             instance,
+            selectors_vec,
             selectors,
             challenges: challenges.clone(),
             permutation,
@@ -661,15 +752,23 @@ impl<F: FieldExt> MockProver<F> {
         };
         ConcreteCircuit::FloorPlanner::synthesize(&mut prover, circuit, config, constants)?;
 
-        let (cs, selector_polys) = prover.cs.compress_selectors(prover.selectors.clone());
+        let (cs, selector_polys) = prover
+            .cs
+            .compress_selectors(prover.selectors_vec.as_ref().clone());
         prover.cs = cs;
-        prover.fixed.extend(selector_polys.into_iter().map(|poly| {
-            let mut v = vec![CellValue::Unassigned; n];
-            for (v, p) in v.iter_mut().zip(&poly[..]) {
-                *v = CellValue::Assigned(*p);
-            }
-            v
-        }));
+        println!(
+            "prover.fixed_vec.strong_count: {}",
+            Arc::strong_count(&prover.fixed_vec)
+        );
+        Arc::get_mut(&mut prover.fixed_vec)
+            .expect("get_mut prover.fixed_vec")
+            .extend(selector_polys.into_iter().map(|poly| {
+                let mut v = vec![CellValue::Unassigned; n];
+                for (v, p) in v.iter_mut().zip(&poly[..]) {
+                    *v = CellValue::Assigned(*p);
+                }
+                v
+            }));
 
         Ok(prover)
     }
@@ -766,7 +865,7 @@ impl<F: FieldExt> MockProver<F> {
                             move |(poly_index, poly)| match poly.evaluate_lazy(
                                 &|scalar| Value::Real(scalar),
                                 &|_| panic!("virtual selectors are removed during optimization"),
-                                &util::load(n, row, &self.cs.fixed_queries, &self.fixed),
+                                &util::load_slice(n, row, &self.cs.fixed_queries, &self.fixed),
                                 &util::load(n, row, &self.cs.advice_queries, &self.advice),
                                 &util::load_instance(
                                     n,
@@ -798,7 +897,12 @@ impl<F: FieldExt> MockProver<F> {
                                     cell_values: util::cell_values(
                                         gate,
                                         poly,
-                                        &util::load(n, row, &self.cs.fixed_queries, &self.fixed),
+                                        &util::load_slice(
+                                            n,
+                                            row,
+                                            &self.cs.fixed_queries,
+                                            &self.fixed,
+                                        ),
                                         &util::load(n, row, &self.cs.advice_queries, &self.advice),
                                         &util::load_instance(
                                             n,
@@ -1135,7 +1239,7 @@ impl<F: FieldExt> MockProver<F> {
                             match poly.evaluate_lazy(
                                 &|scalar| Value::Real(scalar),
                                 &|_| panic!("virtual selectors are removed during optimization"),
-                                &util::load(n, row, &self.cs.fixed_queries, &self.fixed),
+                                &util::load_slice(n, row, &self.cs.fixed_queries, &self.fixed),
                                 &util::load(n, row, &self.cs.advice_queries, &self.advice),
                                 &util::load_instance(
                                     n,
@@ -1167,7 +1271,12 @@ impl<F: FieldExt> MockProver<F> {
                                     cell_values: util::cell_values(
                                         gate,
                                         poly,
-                                        &util::load(n, row, &self.cs.fixed_queries, &self.fixed),
+                                        &util::load_slice(
+                                            n,
+                                            row,
+                                            &self.cs.fixed_queries,
+                                            &self.fixed,
+                                        ),
                                         &util::load(n, row, &self.cs.advice_queries, &self.advice),
                                         &util::load_instance(
                                             n,

@@ -236,18 +236,16 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
         let sub_layouters = self.fork(sub_cs)?;
         let ret = crossbeam::scope(|scope| {
             let mut handles = vec![];
-            for (i, (mut assignment, sub_layouter)) in assignments
+            for (i, (mut assignment, mut sub_layouter)) in assignments
                 .into_iter()
                 .zip(sub_layouters.into_iter())
                 .enumerate()
             {
-                let sub_layouter = Arc::new(Mutex::new(sub_layouter));
+                // let sub_layouter = sub_layouter;
                 handles.push(scope.spawn(move |_| {
-                    let mut sub_layouter = sub_layouter.lock().unwrap(); // it's the only thread that's accessing sub_layouter
-                    let mut region = SingleChipLayouterRegion::new(
-                        &mut *sub_layouter,
-                        (region_index + i).into(),
-                    );
+                    // let mut sub_layouter = sub_layouter.lock().unwrap(); // it's the only thread that's accessing sub_layouter
+                    let mut region =
+                        SingleChipLayouterRegion::new(&mut sub_layouter, (region_index + i).into());
                     let region_ref: &mut dyn RegionLayouter<F> = &mut region;
                     let result = assignment(region_ref.into());
                     let constant = region.constants.clone();

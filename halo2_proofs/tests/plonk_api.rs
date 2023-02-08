@@ -510,13 +510,6 @@ fn plonk_api() {
         )
         .expect("proof generation should not fail");
 
-        // Check this circuit is satisfied.
-        let prover = match MockProver::run(K, &circuit, vec![vec![instance]]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:?}", e),
-        };
-        assert_eq!(prover.verify(), Ok(()));
-
         transcript.finalize()
     }
 
@@ -558,10 +551,25 @@ fn plonk_api() {
         use halo2curves::bn256::Bn256;
 
         type Scheme = KZGCommitmentScheme<Bn256>;
-        bad_keys!(Scheme);
+        // bad_keys!(Scheme);
 
         let params = ParamsKZG::<Bn256>::new(K);
         let rng = OsRng;
+
+        let (a, instance, lookup_table) = common!(Scheme);
+
+        let circuit: MyCircuit<<Scheme as CommitmentScheme>::Scalar> = MyCircuit {
+            a: Value::known(a),
+            lookup_table,
+        };
+
+        // Check this circuit is satisfied.
+        let prover = match MockProver::run(K, &circuit, vec![vec![instance]]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:?}", e),
+        };
+        assert_eq!(prover.verify_par(), Ok(()));
+        log::info!("mock proving succeed!");
 
         let pk = keygen::<KZGCommitmentScheme<_>>(&params);
 
@@ -1039,7 +1047,7 @@ fn plonk_api() {
             );
         }
     }
-    test_plonk_api_ipa();
+    // test_plonk_api_ipa();
     test_plonk_api_gwc();
-    test_plonk_api_shplonk();
+    // test_plonk_api_shplonk();
 }

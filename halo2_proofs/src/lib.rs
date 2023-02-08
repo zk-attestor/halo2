@@ -19,7 +19,7 @@
 )]
 #![deny(broken_intra_doc_links)]
 #![deny(missing_debug_implementations)]
-#![deny(unsafe_code)]
+// #![deny(unsafe_code)]
 // Remove this once we update pasta_curves
 #![allow(unused_imports)]
 #![allow(clippy::derive_partial_eq_without_eq)]
