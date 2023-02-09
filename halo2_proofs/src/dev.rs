@@ -46,6 +46,7 @@ pub use gates::CircuitGates;
 #[cfg(feature = "dev-graph")]
 mod graph;
 
+use crate::circuit::Cell;
 #[cfg(feature = "dev-graph")]
 #[cfg_attr(docsrs, doc(cfg(feature = "dev-graph")))]
 pub use graph::{circuit_dot_graph, layout::CircuitLayout};
@@ -296,7 +297,8 @@ pub struct MockProver<'a, F: Group + Field> {
     fixed_vec: Arc<Vec<Vec<CellValue<F>>>>,
     fixed: Vec<&'a mut [CellValue<F>]>,
     // The advice cells in the circuit, arranged as [column][row].
-    pub(crate) advice: Vec<Vec<CellValue<F>>>,
+    pub(crate) advice_vec: Arc<Vec<Vec<CellValue<F>>>>,
+    pub(crate) advice: Vec<&'a mut [CellValue<F>]>,
     advice_prev: Vec<Vec<CellValue<F>>>,
     // The instance cells in the circuit, arranged as [column][row].
     instance: Vec<Vec<F>>,
@@ -307,6 +309,8 @@ pub struct MockProver<'a, F: Group + Field> {
     challenges: Vec<F>,
 
     permutation: permutation::keygen::Assembly,
+
+    rw_rows: Range<usize>,
 
     // A range of available rows for assignment and copies.
     usable_rows: Range<usize>,
@@ -343,6 +347,16 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
             return Err(Error::not_enough_rows_available(self.k));
         }
 
+        if !self.rw_rows.contains(&row) {
+            return Err(Error::InvalidRange(
+                row,
+                self.current_region
+                    .as_ref()
+                    .map(|region| region.name.clone())
+                    .unwrap(),
+            ));
+        }
+
         // Track that this selector was enabled. We require that all selectors are enabled
         // inside some region (i.e. no floating selectors).
         self.current_region
@@ -353,19 +367,24 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
             .or_default()
             .push(row);
 
-        self.selectors[selector.0][row] = true;
+        self.selectors[selector.0][row - self.rw_rows.start] = true;
 
         Ok(())
     }
 
     fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
         // check ranges are non-overlapping and monotonically increasing
-        let mut range_start = self.usable_rows.start;
+        let mut range_start = self.rw_rows.start;
         for (i, sub_range) in ranges.iter().enumerate() {
             if sub_range.start < range_start {
+                // TODO: use more precise error type
+                return Err(Error::Synthesis);
+            }
+            if i == ranges.len() - 1 && sub_range.end >= self.rw_rows.end {
                 return Err(Error::Synthesis);
             }
             range_start = sub_range.end;
+            println!("subCS_{} rw_rows: {}..{}", i, sub_range.start, sub_range.end);
         }
 
         // split self.fixed into several pieces
@@ -376,6 +395,11 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
             .collect::<Vec<_>>();
         let selectors_ptrs = self
             .selectors
+            .iter_mut()
+            .map(|vec| vec.as_mut_ptr())
+            .collect::<Vec<_>>();
+        let advice_ptrs = self
+            .advice
             .iter_mut()
             .map(|vec| vec.as_mut_ptr())
             .collect::<Vec<_>>();
@@ -400,23 +424,36 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
                     )
                 })
                 .collect::<Vec<&mut [bool]>>();
+            let advice = advice_ptrs
+                .iter()
+                .map(|ptr| unsafe {
+                    std::slice::from_raw_parts_mut(
+                        ptr.add(sub_range.start),
+                        sub_range.end - sub_range.start,
+                    )
+                })
+                .collect::<Vec<&mut [CellValue<F>]>>();
 
             sub_cs.push(Self {
                 k: self.k,
                 n: self.n,
                 cs: self.cs.clone(),
+                // TODO: use a cheaper way to clone
                 regions: self.regions.clone(),
                 current_region: None,
                 fixed_vec: self.fixed_vec.clone(),
                 fixed,
-                advice: self.advice.clone(),
+                advice_vec: self.advice_vec.clone(),
+                advice,
                 advice_prev: self.advice_prev.clone(),
                 instance: self.instance.clone(),
                 selectors_vec: self.selectors_vec.clone(),
                 selectors,
                 challenges: self.challenges.clone(),
+                // TODO: use a cheaper way to clone
                 permutation: self.permutation.clone(),
-                usable_rows: sub_range.clone(),
+                rw_rows: sub_range.clone(),
+                usable_rows: self.usable_rows.clone(),
                 current_phase: self.current_phase,
             });
         }
@@ -461,6 +498,16 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
             return Err(Error::not_enough_rows_available(self.k));
         }
 
+        if !self.rw_rows.contains(&row) {
+            return Err(Error::InvalidRange(
+                row,
+                self.current_region
+                    .as_ref()
+                    .map(|region| region.name.clone())
+                    .unwrap(),
+            ));
+        }
+
         if let Some(region) = self.current_region.as_mut() {
             region.update_extent(column.into(), row);
             region
@@ -474,7 +521,7 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
         *self
             .advice
             .get_mut(column.index())
-            .and_then(|v| v.get_mut(row))
+            .and_then(|v| v.get_mut(row - self.rw_rows.start))
             .ok_or(Error::BoundsFailure)? = assigned;
 
         #[cfg(feature = "phase-check")]
@@ -515,6 +562,16 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
             return Err(Error::not_enough_rows_available(self.k));
         }
 
+        if !self.rw_rows.contains(&row) {
+            return Err(Error::InvalidRange(
+                row,
+                self.current_region
+                    .as_ref()
+                    .map(|region| region.name.clone())
+                    .unwrap(),
+            ));
+        }
+
         if let Some(region) = self.current_region.as_mut() {
             region.update_extent(column.into(), row);
             region
@@ -527,7 +584,7 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
         let fix_cell = self
             .fixed
             .get_mut(column.index())
-            .and_then(|v| v.get_mut(row - self.usable_rows.start))
+            .and_then(|v| v.get_mut(row - self.rw_rows.start))
             .ok_or(Error::BoundsFailure);
         if fix_cell.is_err() {
             println!("fix cell is none: {}, row: {}", column.index(), row);
@@ -625,7 +682,6 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
 
         // Fixed columns contain no blinding factors.
         let fixed_vec = Arc::new(vec![vec![CellValue::Unassigned; n]; cs.num_fixed_columns]);
-
         let fixed = unsafe {
             // extract an mutable reference to the 2-dimensional vector
             // we are forced to use unsafe method because vec is
@@ -647,10 +703,11 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
 
             mut_ref.iter_mut().map(|item| item.as_mut_slice()).collect()
         };
+
         // Advice columns contain blinding factors.
         let blinding_factors = cs.blinding_factors();
         let usable_rows = n - (blinding_factors + 1);
-        let advice = vec![
+        let advice_vec = Arc::new(vec![
             {
                 let mut column = vec![CellValue::Unassigned; n];
                 // Poison unusable rows.
@@ -660,7 +717,15 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
                 column
             };
             cs.num_advice_columns
-        ];
+        ]);
+        let advice = unsafe {
+            let advice_vec_clone = advice_vec.clone();
+            let ptr = Arc::as_ptr(&advice_vec_clone) as *mut Vec<Vec<CellValue<F>>>;
+            let mut_ref = &mut (*ptr);
+
+            mut_ref.iter_mut().map(|item| item.as_mut_slice()).collect()
+        };
+
         let permutation = permutation::keygen::Assembly::new(n, &cs.permutation);
         let constants = cs.constants.clone();
 
@@ -740,6 +805,7 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
             current_region: None,
             fixed_vec,
             fixed,
+            advice_vec,
             advice,
             advice_prev: vec![],
             instance,
@@ -747,6 +813,7 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
             selectors,
             challenges: challenges.clone(),
             permutation,
+            rw_rows: 0..usable_rows,
             usable_rows: 0..usable_rows,
             current_phase: ThirdPhase.to_sealed(),
         };
@@ -756,10 +823,6 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
             .cs
             .compress_selectors(prover.selectors_vec.as_ref().clone());
         prover.cs = cs;
-        println!(
-            "prover.fixed_vec.strong_count: {}",
-            Arc::strong_count(&prover.fixed_vec)
-        );
         Arc::get_mut(&mut prover.fixed_vec)
             .expect("get_mut prover.fixed_vec")
             .extend(selector_polys.into_iter().map(|poly| {
@@ -866,7 +929,7 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
                                 &|scalar| Value::Real(scalar),
                                 &|_| panic!("virtual selectors are removed during optimization"),
                                 &util::load_slice(n, row, &self.cs.fixed_queries, &self.fixed),
-                                &util::load(n, row, &self.cs.advice_queries, &self.advice),
+                                &util::load_slice(n, row, &self.cs.advice_queries, &self.advice),
                                 &util::load_instance(
                                     n,
                                     row,
@@ -903,7 +966,12 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
                                             &self.cs.fixed_queries,
                                             &self.fixed,
                                         ),
-                                        &util::load(n, row, &self.cs.advice_queries, &self.advice),
+                                        &util::load_slice(
+                                            n,
+                                            row,
+                                            &self.cs.advice_queries,
+                                            &self.advice,
+                                        ),
                                         &util::load_instance(
                                             n,
                                             row,
@@ -1240,7 +1308,7 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
                                 &|scalar| Value::Real(scalar),
                                 &|_| panic!("virtual selectors are removed during optimization"),
                                 &util::load_slice(n, row, &self.cs.fixed_queries, &self.fixed),
-                                &util::load(n, row, &self.cs.advice_queries, &self.advice),
+                                &util::load_slice(n, row, &self.cs.advice_queries, &self.advice),
                                 &util::load_instance(
                                     n,
                                     row,
@@ -1277,7 +1345,12 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
                                             &self.cs.fixed_queries,
                                             &self.fixed,
                                         ),
-                                        &util::load(n, row, &self.cs.advice_queries, &self.advice),
+                                        &util::load_slice(
+                                            n,
+                                            row,
+                                            &self.cs.advice_queries,
+                                            &self.advice,
+                                        ),
                                         &util::load_instance(
                                             n,
                                             row,

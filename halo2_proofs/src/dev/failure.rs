@@ -462,7 +462,12 @@ fn render_lookup<F: FieldExt>(
                 &cs.fixed_queries,
                 &prover.fixed.as_slice(),
             )),
-            &cell_value(&util::load(n, row, &cs.advice_queries, &prover.advice)),
+            &cell_value(&util::load_slice(
+                n,
+                row,
+                &cs.advice_queries,
+                &prover.advice,
+            )),
             &cell_value(&util::load_instance(
                 n,
                 row,

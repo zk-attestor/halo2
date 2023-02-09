@@ -1,3 +1,4 @@
+use crate::circuit::RegionIndex;
 use std::cmp;
 use std::error;
 use std::fmt;
@@ -18,6 +19,8 @@ pub enum Error {
     ConstraintSystemFailure,
     /// Out of bounds index passed to a backend
     BoundsFailure,
+    /// Out of bounds an subCS is allowed to access(r/w).
+    InvalidRange(usize, String),
     /// Opening error
     Opening,
     /// Transcript error
@@ -60,6 +63,12 @@ impl fmt::Display for Error {
             Error::InvalidInstances => write!(f, "Provided instances do not match the circuit"),
             Error::ConstraintSystemFailure => write!(f, "The constraint system is not satisfied"),
             Error::BoundsFailure => write!(f, "An out-of-bounds index was passed to the backend"),
+            Error::InvalidRange(row, region_name) => write!(
+                f,
+                "the row={} is not in the range that this subCS owns (region name = {})",
+                row,
+                region_name,
+            ),
             Error::Opening => write!(f, "Multi-opening proof was invalid"),
             Error::Transcript(e) => write!(f, "Transcript error: {}", e),
             Error::NotEnoughRowsAvailable { current_k } => write!(
