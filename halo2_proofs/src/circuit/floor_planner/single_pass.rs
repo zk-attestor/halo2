@@ -239,8 +239,8 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
             sub_cs.len(),
             cs_fork_time.elapsed()
         );
-        let sub_cs = sub_cs.iter_mut().collect();
-        let sub_layouters = self.fork(sub_cs)?;
+        let ref_sub_cs = sub_cs.iter_mut().collect();
+        let sub_layouters = self.fork(ref_sub_cs)?;
         let regions_2nd_pass = Instant::now();
         let ret = crossbeam::scope(|scope| {
             let mut handles = vec![];
@@ -275,6 +275,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
                 .collect::<Vec<_>>()
         })
         .expect("scope should not fail");
+        self.cs.merge(sub_cs)?;
         println!(
             "{} sub_regions of {} 2nd pass synthesis took {:?}",
             ranges.len(),

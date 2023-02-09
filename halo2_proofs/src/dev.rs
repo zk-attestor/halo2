@@ -52,6 +52,12 @@ use crate::circuit::Cell;
 pub use graph::{circuit_dot_graph, layout::CircuitLayout};
 
 #[derive(Clone, Debug)]
+struct CopyCell {
+    pub column: Column<Any>,
+    pub row: usize,
+}
+
+#[derive(Clone, Debug)]
 struct Region {
     /// The name of the region. Not required to be unique.
     name: String,
@@ -65,6 +71,8 @@ struct Region {
     /// The cells assigned in this region. We store this as a `HashMap` with count so that if any cells
     /// are double-assigned, they will be visibly darker.
     cells: HashMap<(Column<Any>, usize), usize>,
+    /// The copies that need to be enforced in this region.
+    copies: Vec<(CopyCell, CopyCell)>,
 }
 
 impl Region {
@@ -308,7 +316,8 @@ pub struct MockProver<'a, F: Group + Field> {
 
     challenges: Vec<F>,
 
-    permutation: permutation::keygen::Assembly,
+    /// For mock prover which is generated from `fork()`, this field is None.
+    permutation: Option<permutation::keygen::Assembly>,
 
     rw_rows: Range<usize>,
 
@@ -331,6 +340,7 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
             rows: None,
             enabled_selectors: HashMap::default(),
             cells: HashMap::default(),
+            copies: Vec::new(),
         });
     }
 
@@ -441,8 +451,7 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
                 k: self.k,
                 n: self.n,
                 cs: self.cs.clone(),
-                // TODO: use a cheaper way to clone
-                regions: self.regions.clone(),
+                regions: vec![],
                 current_region: None,
                 fixed_vec: self.fixed_vec.clone(),
                 fixed,
@@ -453,8 +462,7 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
                 selectors_vec: self.selectors_vec.clone(),
                 selectors,
                 challenges: self.challenges.clone(),
-                // TODO: use a cheaper way to clone
-                permutation: self.permutation.clone(),
+                permutation: None,
                 rw_rows: sub_range.clone(),
                 usable_rows: self.usable_rows.clone(),
                 current_phase: self.current_phase,
@@ -462,6 +470,22 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
         }
 
         Ok(sub_cs)
+    }
+
+    fn merge(&mut self, sub_cs: Vec<Self>) -> Result<(), Error> {
+        for (left, right) in self
+            .regions
+            .iter()
+            .skip(self.regions.len() - sub_cs.len())
+            .flat_map(|region| region.copies.iter())
+        {
+            self.permutation
+                .as_mut()
+                .expect("root cs permutation should be Some")
+                .copy(left.column, left.row, right.column, right.row)?;
+        }
+
+        Ok(())
     }
 
     fn query_instance(
@@ -608,8 +632,25 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
             return Err(Error::not_enough_rows_available(self.k));
         }
 
-        self.permutation
-            .copy(left_column, left_row, right_column, right_row)
+        match self.permutation.as_mut() {
+            Some(permutation) => permutation.copy(left_column, left_row, right_column, right_row),
+            None => {
+                let left_cell = CopyCell {
+                    column: left_column,
+                    row: left_row,
+                };
+                let right_cell = CopyCell {
+                    column: right_column,
+                    row: right_row,
+                };
+                self.current_region
+                    .as_mut()
+                    .unwrap()
+                    .copies
+                    .push((left_cell, right_cell));
+                Ok(())
+            }
+        }
     }
 
     fn fill_from_row(
@@ -815,7 +856,7 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
             selectors_vec,
             selectors,
             challenges: challenges.clone(),
-            permutation,
+            permutation: Some(permutation),
             rw_rows: 0..usable_rows,
             usable_rows: 0..usable_rows,
             current_phase: ThirdPhase.to_sealed(),
@@ -1154,6 +1195,8 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
 
             // Iterate over each column of the permutation
             self.permutation
+                .as_ref()
+                .expect("root cs permutation must be Some")
                 .mapping
                 .iter()
                 .enumerate()
@@ -1521,6 +1564,8 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
 
             // Iterate over each column of the permutation
             self.permutation
+                .as_ref()
+                .expect("root cs permutation must be Some")
                 .mapping
                 .iter()
                 .enumerate()

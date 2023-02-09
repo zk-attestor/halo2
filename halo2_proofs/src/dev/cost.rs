@@ -74,6 +74,10 @@ impl<F: Field> Assignment<F> for Assembly {
         todo!()
     }
 
+    fn merge(&mut self, sub_cs: Vec<Self>) -> Result<(), Error> {
+        todo!()
+    }
+
     fn query_instance(&self, _: Column<Instance>, _: usize) -> Result<Value<F>, Error> {
         Ok(Value::unknown())
     }

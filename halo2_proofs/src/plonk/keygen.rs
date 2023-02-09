@@ -53,6 +53,7 @@ struct Assembly<F: Field> {
     permutation: permutation::keygen::Assembly,
     selectors: Vec<Vec<bool>>,
     // A range of available rows for assignment and copies.
+    rw_rows: Range<usize>,
     usable_rows: Range<usize>,
     _marker: std::marker::PhantomData<F>,
 }
@@ -85,6 +86,27 @@ impl<F: Field> Assignment<F> for Assembly<F> {
     }
 
     fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
+        let mut range_start = self.rw_rows.start;
+        for (i, sub_range) in ranges.iter().enumerate() {
+            if sub_range.start < range_start {
+                // TODO: use more precise error type
+                return Err(Error::Synthesis);
+            }
+            if i == ranges.len() - 1 && sub_range.end >= self.rw_rows.end {
+                return Err(Error::Synthesis);
+            }
+            range_start = sub_range.end;
+            println!(
+                "subCS_{} rw_rows: {}..{}",
+                i, sub_range.start, sub_range.end
+            );
+        }
+
+        for (i, sub_range) in ranges.iter().enumerate() {}
+        todo!()
+    }
+
+    fn merge(&mut self, sub_cs: Vec<Self>) -> Result<(), Error> {
         todo!()
     }
 
@@ -216,6 +238,7 @@ where
         fixed: vec![domain.empty_lagrange_assigned(); cs.num_fixed_columns],
         permutation: permutation::keygen::Assembly::new(params.n() as usize, &cs.permutation),
         selectors: vec![vec![false; params.n() as usize]; cs.num_selectors],
+        rw_rows: 0..params.n() as usize - (cs.blinding_factors() + 1),
         usable_rows: 0..params.n() as usize - (cs.blinding_factors() + 1),
         _marker: std::marker::PhantomData,
     };
@@ -302,6 +325,7 @@ where
         fixed: vec![domain.empty_lagrange_assigned(); cs.num_fixed_columns],
         permutation: permutation::keygen::Assembly::new(params.n() as usize, &cs.permutation),
         selectors: vec![vec![false; params.n() as usize]; cs.num_selectors],
+        rw_rows: 0..params.n() as usize - (cs.blinding_factors() + 1),
         usable_rows: 0..params.n() as usize - (cs.blinding_factors() + 1),
         _marker: std::marker::PhantomData,
     };

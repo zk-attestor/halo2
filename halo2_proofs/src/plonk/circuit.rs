@@ -557,8 +557,11 @@ pub trait Assignment<F: Field>: Sized + Send {
         A: FnOnce() -> AR,
         AR: Into<String>;
 
-    /// fork
+    /// Fork
     fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error>;
+
+    /// Merge
+    fn merge(&mut self, sub_cs: Vec<Self>) -> Result<(), Error>;
 
     /// Queries the cell of an instance column at a particular absolute row.
     ///

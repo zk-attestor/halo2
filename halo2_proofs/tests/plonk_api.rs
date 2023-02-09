@@ -379,14 +379,16 @@ fn plonk_api() {
             let a: Value<Assigned<_>> = self.a.into();
             let assignments = |mut region: Region<'_, F>| -> Result<(), Error> {
                 for i in 0..(1 << 12) {
-                    region.assign_advice(|| "config.a", cs.config.a, i, || a)?;
-                    region.assign_advice(|| "config.b", cs.config.b, i, || a)?;
+                    let a0 = region.assign_advice(|| "config.a", cs.config.a, i, || a)?;
+                    let a1 = region.assign_advice(|| "config.b", cs.config.b, i, || a)?;
                     region.assign_advice(|| "config.c", cs.config.c, i, || a.double())?;
 
                     region.assign_fixed(|| "a", cs.config.sa, i, || Value::known(F::one()))?;
                     region.assign_fixed(|| "b", cs.config.sb, i, || Value::known(F::one()))?;
                     region.assign_fixed(|| "c", cs.config.sc, i, || Value::known(F::one()))?;
                     region.assign_fixed(|| "a * b", cs.config.sm, i, || Value::known(F::zero()))?;
+
+                    region.constrain_equal(a0.cell(), a1.cell())?;
                 }
                 Ok(())
             };

@@ -168,6 +168,10 @@ pub fn create_proof<
             todo!()
         }
 
+        fn merge(&mut self, sub_cs: Vec<Self>) -> Result<(), Error> {
+            todo!()
+        }
+
         fn query_instance(&self, column: Column<Instance>, row: usize) -> Result<Value<F>, Error> {
             if !self.usable_rows.contains(&row) {
                 return Err(Error::not_enough_rows_available(self.k));
