@@ -234,7 +234,11 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
         // Do actual synthesis of sub-regions in parallel
         let cs_fork_time = Instant::now();
         let mut sub_cs = self.cs.fork(&ranges)?;
-        println!("CS forked into {} subCS took {:?}", sub_cs.len(), cs_fork_time.elapsed());
+        println!(
+            "CS forked into {} subCS took {:?}",
+            sub_cs.len(),
+            cs_fork_time.elapsed()
+        );
         let sub_cs = sub_cs.iter_mut().collect();
         let sub_layouters = self.fork(sub_cs)?;
         let regions_2nd_pass = Instant::now();
@@ -255,7 +259,11 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
                     let result = assignment(region_ref.into());
                     let constant = region.constants.clone();
                     sub_layouter.cs.exit_region();
-                    println!("region {} 2nd pass synthesis took {:?}", region_name, sub_region_2nd_pass.elapsed());
+                    println!(
+                        "region {} 2nd pass synthesis took {:?}",
+                        region_name,
+                        sub_region_2nd_pass.elapsed()
+                    );
 
                     (result, constant)
                 }));
@@ -267,7 +275,12 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
                 .collect::<Vec<_>>()
         })
         .expect("scope should not fail");
-        println!("{} sub_regions of {} 2nd pass synthesis took {:?}", ranges.len(), region_name, regions_2nd_pass.elapsed());
+        println!(
+            "{} sub_regions of {} 2nd pass synthesis took {:?}",
+            ranges.len(),
+            region_name,
+            regions_2nd_pass.elapsed()
+        );
         let (results, constants): (Vec<_>, Vec<_>) = ret.into_iter().unzip();
 
         // Check if there are errors in sub-region synthesis

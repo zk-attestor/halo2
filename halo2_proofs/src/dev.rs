@@ -384,7 +384,10 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
                 return Err(Error::Synthesis);
             }
             range_start = sub_range.end;
-            println!("subCS_{} rw_rows: {}..{}", i, sub_range.start, sub_range.end);
+            println!(
+                "subCS_{} rw_rows: {}..{}",
+                i, sub_range.start, sub_range.end
+            );
         }
 
         // split self.fixed into several pieces
