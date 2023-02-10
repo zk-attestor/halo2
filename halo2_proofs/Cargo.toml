@@ -53,6 +53,7 @@ rand_core = { version = "0.6", default-features = false }
 tracing = "0.1"
 blake2b_simd = "1"
 rustc-hash = "1.1.0"
+sha3 = "0.9.1"
 
 # Developer tooling dependencies
 plotters = { version = "0.3.0", optional = true }

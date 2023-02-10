@@ -373,7 +373,7 @@ pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mu
     let num_threads = multicore::current_num_threads();
     let mut chunk = n / num_threads;
     if chunk < num_threads {
-        chunk = n;
+        chunk = 1;
     }
 
     multicore::scope(|scope| {

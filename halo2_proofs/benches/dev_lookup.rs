@@ -81,7 +81,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                             config.advice,
                             offset as usize,
                             Value::known(F::from((offset % 256) + 1)),
-                        )?;
+                        );
                     }
 
                     Ok(())

@@ -94,38 +94,18 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || "raw_multiply",
                 |mut region| {
                     let mut value = None;
-                    let lhs = region.assign_advice(
-                        || "lhs",
-                        self.config.a,
-                        0,
-                        || {
-                            value = Some(f());
-                            value.unwrap().map(|v| v.0)
-                        },
-                    )?;
-                    let rhs = region.assign_advice(
-                        || "rhs",
-                        self.config.b,
-                        0,
-                        || value.unwrap().map(|v| v.1),
-                    )?;
-                    let out = region.assign_advice(
-                        || "out",
-                        self.config.c,
-                        0,
-                        || value.unwrap().map(|v| v.2),
-                    )?;
+                    let lhs = region.assign_advice(self.config.a, 0, {
+                        value = Some(f());
+                        value.unwrap().map(|v| v.0)
+                    });
+                    let rhs = region.assign_advice(self.config.b, 0, value.unwrap().map(|v| v.1));
+                    let out = region.assign_advice(self.config.c, 0, value.unwrap().map(|v| v.2));
 
-                    region.assign_fixed(|| "a", self.config.sa, 0, || Value::known(FF::zero()))?;
-                    region.assign_fixed(|| "b", self.config.sb, 0, || Value::known(FF::zero()))?;
-                    region.assign_fixed(|| "c", self.config.sc, 0, || Value::known(FF::one()))?;
-                    region.assign_fixed(
-                        || "a * b",
-                        self.config.sm,
-                        0,
-                        || Value::known(FF::one()),
-                    )?;
-                    Ok((lhs.cell(), rhs.cell(), out.cell()))
+                    region.assign_fixed(self.config.sa, 0, FF::zero());
+                    region.assign_fixed(self.config.sb, 0, FF::zero());
+                    region.assign_fixed(self.config.sc, 0, FF::one());
+                    region.assign_fixed(self.config.sm, 0, FF::one());
+                    Ok((*lhs.cell(), *rhs.cell(), *out.cell()))
                 },
             )
         }
@@ -141,38 +121,18 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || "raw_add",
                 |mut region| {
                     let mut value = None;
-                    let lhs = region.assign_advice(
-                        || "lhs",
-                        self.config.a,
-                        0,
-                        || {
-                            value = Some(f());
-                            value.unwrap().map(|v| v.0)
-                        },
-                    )?;
-                    let rhs = region.assign_advice(
-                        || "rhs",
-                        self.config.b,
-                        0,
-                        || value.unwrap().map(|v| v.1),
-                    )?;
-                    let out = region.assign_advice(
-                        || "out",
-                        self.config.c,
-                        0,
-                        || value.unwrap().map(|v| v.2),
-                    )?;
+                    let lhs = region.assign_advice(self.config.a, 0, {
+                        value = Some(f());
+                        value.unwrap().map(|v| v.0)
+                    });
+                    let rhs = region.assign_advice(self.config.b, 0, value.unwrap().map(|v| v.1));
+                    let out = region.assign_advice(self.config.c, 0, value.unwrap().map(|v| v.2));
 
-                    region.assign_fixed(|| "a", self.config.sa, 0, || Value::known(FF::one()))?;
-                    region.assign_fixed(|| "b", self.config.sb, 0, || Value::known(FF::one()))?;
-                    region.assign_fixed(|| "c", self.config.sc, 0, || Value::known(FF::one()))?;
-                    region.assign_fixed(
-                        || "a * b",
-                        self.config.sm,
-                        0,
-                        || Value::known(FF::zero()),
-                    )?;
-                    Ok((lhs.cell(), rhs.cell(), out.cell()))
+                    region.assign_fixed(self.config.sa, 0, FF::one());
+                    region.assign_fixed(self.config.sb, 0, FF::one());
+                    region.assign_fixed(self.config.sc, 0, FF::one());
+                    region.assign_fixed(self.config.sm, 0, FF::zero());
+                    Ok((*lhs.cell(), *rhs.cell(), *out.cell()))
                 },
             )
         }
@@ -182,7 +142,13 @@ fn criterion_benchmark(c: &mut Criterion) {
             left: Cell,
             right: Cell,
         ) -> Result<(), Error> {
-            layouter.assign_region(|| "copy", |mut region| region.constrain_equal(left, right))
+            layouter.assign_region(
+                || "copy",
+                |mut region| {
+                    region.constrain_equal(&left, &right);
+                    Ok(())
+                },
+            )
         }
     }
 

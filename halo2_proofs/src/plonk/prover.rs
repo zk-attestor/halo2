@@ -179,6 +179,14 @@ pub fn create_proof<
             Ok(())
         }
 
+        fn annotate_column<A, AR>(&mut self, _annotation: A, _column: Column<Any>)
+        where
+            A: FnOnce() -> AR,
+            AR: Into<String>,
+        {
+            // Do nothing
+        }
+
         fn query_instance(&self, column: Column<Instance>, row: usize) -> Result<Value<F>, Error> {
             if !self.usable_rows.contains(&row) {
                 return Err(Error::not_enough_rows_available(self.params.k()));
@@ -375,11 +383,13 @@ pub fn create_proof<
         // WARNING: this will currently not work if `circuits` has more than 1 circuit
         // because the original API squeezes the challenges for a phase after running all circuits
         // once in that phase.
-        assert_eq!(
-            circuits.len(),
-            1,
-            "New challenge API doesn't work with multiple circuits yet"
-        );
+        if num_phases > 1 {
+            assert_eq!(
+                circuits.len(),
+                1,
+                "New challenge API doesn't work with multiple circuits yet"
+            );
+        }
         for ((circuit, instances), instance_single) in
             circuits.iter().zip(instances).zip(instance.iter())
         {

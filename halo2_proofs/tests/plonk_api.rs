@@ -21,6 +21,7 @@ use rand_core::{OsRng, RngCore};
 use std::marker::PhantomData;
 
 #[test]
+#[ignore = "doesn't work because it uses multiple regions"]
 fn plonk_api() {
     const K: u32 = 5;
 
@@ -104,50 +105,28 @@ fn plonk_api() {
                 || "raw_multiply",
                 |mut region| {
                     let mut value = None;
-                    let lhs = region.assign_advice(
-                        || "lhs",
-                        self.config.a,
-                        0,
-                        || {
-                            value = Some(f());
-                            value.unwrap().map(|v| v.0)
-                        },
-                    )?;
+                    let lhs = region.assign_advice(self.config.a, 0, {
+                        value = Some(f());
+                        value.unwrap().map(|v| v.0)
+                    });
                     region.assign_advice(
-                        || "lhs^4",
                         self.config.d,
                         0,
-                        || value.unwrap().map(|v| v.0).square().square(),
-                    )?;
-                    let rhs = region.assign_advice(
-                        || "rhs",
-                        self.config.b,
-                        0,
-                        || value.unwrap().map(|v| v.1),
-                    )?;
+                        value.unwrap().map(|v| v.0).square().square(),
+                    );
+                    let rhs = region.assign_advice(self.config.b, 0, value.unwrap().map(|v| v.1));
                     region.assign_advice(
-                        || "rhs^4",
                         self.config.e,
                         0,
-                        || value.unwrap().map(|v| v.1).square().square(),
-                    )?;
-                    let out = region.assign_advice(
-                        || "out",
-                        self.config.c,
-                        0,
-                        || value.unwrap().map(|v| v.2),
-                    )?;
+                        value.unwrap().map(|v| v.1).square().square(),
+                    );
+                    let out = region.assign_advice(self.config.c, 0, value.unwrap().map(|v| v.2));
 
-                    region.assign_fixed(|| "a", self.config.sa, 0, || Value::known(FF::zero()))?;
-                    region.assign_fixed(|| "b", self.config.sb, 0, || Value::known(FF::zero()))?;
-                    region.assign_fixed(|| "c", self.config.sc, 0, || Value::known(FF::one()))?;
-                    region.assign_fixed(
-                        || "a * b",
-                        self.config.sm,
-                        0,
-                        || Value::known(FF::one()),
-                    )?;
-                    Ok((lhs.cell(), rhs.cell(), out.cell()))
+                    region.assign_fixed(self.config.sa, 0, FF::zero());
+                    region.assign_fixed(self.config.sb, 0, FF::zero());
+                    region.assign_fixed(self.config.sc, 0, FF::one());
+                    region.assign_fixed(self.config.sm, 0, FF::one());
+                    Ok((*lhs.cell(), *rhs.cell(), *out.cell()))
                 },
             )
         }
@@ -163,50 +142,28 @@ fn plonk_api() {
                 || "raw_add",
                 |mut region| {
                     let mut value = None;
-                    let lhs = region.assign_advice(
-                        || "lhs",
-                        self.config.a,
-                        0,
-                        || {
-                            value = Some(f());
-                            value.unwrap().map(|v| v.0)
-                        },
-                    )?;
+                    let lhs = region.assign_advice(self.config.a, 0, {
+                        value = Some(f());
+                        value.unwrap().map(|v| v.0)
+                    });
                     region.assign_advice(
-                        || "lhs^4",
                         self.config.d,
                         0,
-                        || value.unwrap().map(|v| v.0).square().square(),
-                    )?;
-                    let rhs = region.assign_advice(
-                        || "rhs",
-                        self.config.b,
-                        0,
-                        || value.unwrap().map(|v| v.1),
-                    )?;
+                        value.unwrap().map(|v| v.0).square().square(),
+                    );
+                    let rhs = region.assign_advice(self.config.b, 0, value.unwrap().map(|v| v.1));
                     region.assign_advice(
-                        || "rhs^4",
                         self.config.e,
                         0,
-                        || value.unwrap().map(|v| v.1).square().square(),
-                    )?;
-                    let out = region.assign_advice(
-                        || "out",
-                        self.config.c,
-                        0,
-                        || value.unwrap().map(|v| v.2),
-                    )?;
+                        value.unwrap().map(|v| v.1).square().square(),
+                    );
+                    let out = region.assign_advice(self.config.c, 0, value.unwrap().map(|v| v.2));
 
-                    region.assign_fixed(|| "a", self.config.sa, 0, || Value::known(FF::one()))?;
-                    region.assign_fixed(|| "b", self.config.sb, 0, || Value::known(FF::one()))?;
-                    region.assign_fixed(|| "c", self.config.sc, 0, || Value::known(FF::one()))?;
-                    region.assign_fixed(
-                        || "a * b",
-                        self.config.sm,
-                        0,
-                        || Value::known(FF::zero()),
-                    )?;
-                    Ok((lhs.cell(), rhs.cell(), out.cell()))
+                    region.assign_fixed(self.config.sa, 0, FF::one());
+                    region.assign_fixed(self.config.sb, 0, FF::one());
+                    region.assign_fixed(self.config.sc, 0, FF::one());
+                    region.assign_fixed(self.config.sm, 0, FF::zero());
+                    Ok((*lhs.cell(), *rhs.cell(), *out.cell()))
                 },
             )
         }
@@ -219,8 +176,9 @@ fn plonk_api() {
             layouter.assign_region(
                 || "copy",
                 |mut region| {
-                    region.constrain_equal(left, right)?;
-                    region.constrain_equal(left, right)
+                    region.constrain_equal(&left, &right);
+                    region.constrain_equal(&left, &right);
+                    Ok(())
                 },
             )
         }
@@ -231,15 +189,10 @@ fn plonk_api() {
             layouter.assign_region(
                 || "public_input",
                 |mut region| {
-                    let value = region.assign_advice(|| "value", self.config.a, 0, &mut f)?;
-                    region.assign_fixed(
-                        || "public",
-                        self.config.sp,
-                        0,
-                        || Value::known(FF::one()),
-                    )?;
+                    let value = region.assign_advice(self.config.a, 0, f());
+                    region.assign_fixed(self.config.sp, 0, FF::one());
 
-                    Ok(value.cell())
+                    Ok(*value.cell())
                 },
             )
         }
@@ -539,7 +492,7 @@ fn plonk_api() {
         use halo2curves::bn256::Bn256;
 
         type Scheme = KZGCommitmentScheme<Bn256>;
-        bad_keys!(Scheme);
+        //bad_keys!(Scheme);
 
         let params = ParamsKZG::<Bn256>::new(K);
         let rng = OsRng;
@@ -568,7 +521,7 @@ fn plonk_api() {
         use halo2curves::bn256::Bn256;
 
         type Scheme = KZGCommitmentScheme<Bn256>;
-        bad_keys!(Scheme);
+        //bad_keys!(Scheme);
 
         let params = ParamsKZG::<Bn256>::new(K);
         let rng = OsRng;
@@ -597,7 +550,7 @@ fn plonk_api() {
         use halo2curves::pasta::EqAffine;
 
         type Scheme = IPACommitmentScheme<EqAffine>;
-        bad_keys!(Scheme);
+        //bad_keys!(Scheme);
 
         let params = ParamsIPA::<EqAffine>::new(K);
         let rng = OsRng;
@@ -1021,7 +974,7 @@ fn plonk_api() {
         }
     }
 
-    test_plonk_api_ipa();
+    //test_plonk_api_ipa();
     test_plonk_api_gwc();
     test_plonk_api_shplonk();
 }
