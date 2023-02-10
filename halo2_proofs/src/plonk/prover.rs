@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::env::var;
 use std::ops::{Range, RangeTo};
 use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 use std::time::Instant;
 use std::{collections::HashMap, iter, mem, sync::atomic::Ordering};
 
@@ -134,9 +135,11 @@ pub fn create_proof<
     struct WitnessCollection<'a, F: Field> {
         k: u32,
         current_phase: sealed::Phase,
-        advice: Vec<Polynomial<Assigned<F>, LagrangeCoeff>>,
+        advice_vec: Arc<Vec<Polynomial<Assigned<F>, LagrangeCoeff>>>,
+        advice: Vec<&'a mut [Assigned<F>]>,
         challenges: &'a HashMap<usize, F>,
         instances: &'a [&'a [F]],
+        rw_rows: Range<usize>,
         usable_rows: RangeTo<usize>,
         _marker: std::marker::PhantomData<F>,
     }
@@ -165,11 +168,59 @@ pub fn create_proof<
         }
 
         fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
-            todo!()
+            let mut range_start = self.rw_rows.start;
+            for (i, sub_range) in ranges.iter().enumerate() {
+                if sub_range.start < range_start {
+                    return Err(Error::Synthesis);
+                }
+                if i == ranges.len() - 1 && sub_range.end >= self.rw_rows.end {
+                    return Err(Error::Synthesis);
+                }
+                range_start = sub_range.end;
+                log::debug!(
+                    "subCS_{} rw_rows: {}..{}",
+                    i,
+                    sub_range.start,
+                    sub_range.end
+                );
+            }
+
+            let advice_ptrs = self
+                .advice
+                .iter_mut()
+                .map(|vec| vec.as_mut_ptr())
+                .collect::<Vec<_>>();
+
+            let mut sub_cs = vec![];
+            for sub_range in ranges {
+                let advice = advice_ptrs
+                    .iter()
+                    .map(|ptr| unsafe {
+                        std::slice::from_raw_parts_mut(
+                            ptr.add(sub_range.start),
+                            sub_range.end - sub_range.start,
+                        )
+                    })
+                    .collect::<Vec<&mut [Assigned<F>]>>();
+
+                sub_cs.push(Self {
+                    k: 0,
+                    current_phase: self.current_phase,
+                    advice_vec: self.advice_vec.clone(),
+                    advice,
+                    challenges: self.challenges,
+                    instances: self.instances.clone(),
+                    rw_rows: sub_range.clone(),
+                    usable_rows: self.usable_rows.clone(),
+                    _marker: Default::default(),
+                });
+            }
+
+            Ok(sub_cs)
         }
 
         fn merge(&mut self, sub_cs: Vec<Self>) -> Result<(), Error> {
-            todo!()
+            Ok(())
         }
 
         fn query_instance(&self, column: Column<Instance>, row: usize) -> Result<Value<F>, Error> {
@@ -206,10 +257,14 @@ pub fn create_proof<
                 return Err(Error::not_enough_rows_available(self.k));
             }
 
+            if !self.rw_rows.contains(&row) {
+                return Err(Error::Synthesis);
+            }
+
             *self
                 .advice
                 .get_mut(column.index())
-                .and_then(|v| v.get_mut(row))
+                .and_then(|v| v.get_mut(row - self.rw_rows.start))
                 .ok_or(Error::BoundsFailure)? = to().into_field().assign()?;
 
             Ok(())
@@ -309,10 +364,25 @@ pub fn create_proof<
                 .zip(instances)
                 .enumerate()
             {
+                let advice_vec = Arc::new(vec![
+                    domain.empty_lagrange_assigned();
+                    meta.num_advice_columns
+                ]);
+                let advice_slice = unsafe {
+                    let advice_vec_clone = advice_vec.clone();
+                    let ptr =
+                        Arc::as_ptr(&advice_vec_clone) as *mut Vec<Polynomial<_, LagrangeCoeff>>;
+                    let mut_ref = &mut (*ptr);
+                    mut_ref
+                        .iter_mut()
+                        .map(|poly| poly.values.as_mut_slice())
+                        .collect()
+                };
                 let mut witness = WitnessCollection {
                     k: params.k(),
                     current_phase,
-                    advice: vec![domain.empty_lagrange_assigned(); meta.num_advice_columns],
+                    advice_vec,
+                    advice: advice_slice,
                     instances,
                     challenges: &challenges,
                     // The prover will not be allowed to assign values to advice
@@ -320,6 +390,7 @@ pub fn create_proof<
                     // number of blinding factors and an extra row for use in the
                     // permutation argument.
                     usable_rows: ..unusable_rows_start,
+                    rw_rows: 0..unusable_rows_start,
                     _marker: std::marker::PhantomData,
                 };
 
@@ -348,8 +419,8 @@ pub fn create_proof<
                 }
 
                 let mut advice_values = batch_invert_assigned::<Scheme::Scalar>(
-                    witness
-                        .advice
+                    Arc::try_unwrap(witness.advice_vec)
+                        .expect("there must only one Arc for advice_vec")
                         .into_iter()
                         .enumerate()
                         .filter_map(|(column_index, advice)| {

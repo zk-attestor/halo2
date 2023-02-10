@@ -278,7 +278,11 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
         let cs_merge_time = Instant::now();
         let num_sub_cs = sub_cs.len();
         self.cs.merge(sub_cs)?;
-        log::info!("Merge {} subCS back took {:?}", num_sub_cs, cs_merge_time.elapsed());
+        log::info!(
+            "Merge {} subCS back took {:?}",
+            num_sub_cs,
+            cs_merge_time.elapsed()
+        );
         log::info!(
             "{} sub_regions of {} 2nd pass synthesis took {:?}",
             ranges.len(),
