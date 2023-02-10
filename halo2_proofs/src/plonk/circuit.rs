@@ -560,18 +560,11 @@ pub trait Assignment<F: Field> {
 
     /// Assign an advice column value (witness)
     fn assign_advice<'r, 'v>(
-        //<V, VR, A, AR>(
         &'r mut self,
-        // annotation: A,
         column: Column<Advice>,
         row: usize,
-        to: Value<Assigned<F>>, // V,
-    ) -> Result<Value<&'v Assigned<F>>, Error>;
-    // where
-    // V: FnOnce() -> Value<VR>,
-    // VR: Into<Assigned<F>>,
-    // A: FnOnce() -> AR,
-    // AR: Into<String>;
+        to: Value<Assigned<F>>,
+    ) -> Value<&'v Assigned<F>>;
 
     /// Assign a fixed value
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>);

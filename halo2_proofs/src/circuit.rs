@@ -171,9 +171,7 @@ impl<'v, F: Field> AssignedCell<&'v Assigned<F>, F> {
         column: Column<Advice>,
         offset: usize,
     ) -> AssignedCell<&'_ Assigned<F>, F> {
-        let assigned_cell = region
-            .assign_advice(column, offset, self.value.map(|v| *v))
-            .unwrap_or_else(|err| panic!("{err:?}"));
+        let assigned_cell = region.assign_advice(column, offset, self.value.map(|v| *v));
         region.constrain_equal(&assigned_cell.cell, &self.cell);
         assigned_cell
     }
@@ -228,7 +226,7 @@ impl<'r, F: Field> Region<'r, F> {
         column: Column<Advice>,
         offset: usize,
         to: Value<impl Into<Assigned<F>>>, // For now only accept Value<F>, later might change to Value<Assigned<F>> for batch inversion
-    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error> {
+    ) -> AssignedCell<&'v Assigned<F>, F> {
         //let mut value = Value::unknown();
         self.region.assign_advice(
             //&|| annotation().into(),

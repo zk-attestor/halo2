@@ -180,7 +180,7 @@ pub fn best_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
 
     let threads = multicore::current_num_threads();
     let log_threads = log2_floor(threads);
-    let n = a.len() as usize;
+    let n = a.len();
     assert_eq!(n, 1 << log_n);
 
     for k in 0..n {
@@ -191,7 +191,7 @@ pub fn best_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
     }
 
     // precompute twiddle factors
-    let twiddles: Vec<_> = (0..(n / 2) as usize)
+    let twiddles: Vec<_> = (0..(n / 2))
         .scan(G::Scalar::one(), |w, _| {
             let tw = *w;
             w.group_scale(&omega);
@@ -201,7 +201,7 @@ pub fn best_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
 
     if log_n <= log_threads {
         let mut chunk = 2_usize;
-        let mut twiddle_chunk = (n / 2) as usize;
+        let mut twiddle_chunk = n / 2;
         for _ in 0..log_n {
             a.chunks_mut(chunk).for_each(|coeffs| {
                 let (left, right) = coeffs.split_at_mut(chunk / 2);
@@ -275,7 +275,7 @@ pub fn recursive_butterfly_arithmetic<G: Group>(
 
 /// Convert coefficient bases group elements to lagrange basis by inverse FFT.
 pub fn g_to_lagrange<C: CurveAffine>(g_projective: Vec<C::Curve>, k: u32) -> Vec<C> {
-    let n_inv = C::Scalar::TWO_INV.pow_vartime(&[k as u64, 0, 0, 0]);
+    let n_inv = C::Scalar::TWO_INV.pow_vartime([k as u64, 0, 0, 0]);
     let mut omega_inv = C::Scalar::ROOT_OF_UNITY_INV;
     for _ in k..C::Scalar::S {
         omega_inv = omega_inv.square();
@@ -320,7 +320,7 @@ pub fn eval_polynomial<F: Field>(poly: &[F], point: F) -> F {
             {
                 scope.spawn(move |_| {
                     let start = chunk_idx * chunk_size;
-                    out[0] = evaluate(poly, point) * point.pow_vartime(&[start as u64, 0, 0, 0]);
+                    out[0] = evaluate(poly, point) * point.pow_vartime([start as u64, 0, 0, 0]);
                 });
             }
         });
@@ -371,9 +371,9 @@ where
 pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mut [T], f: F) {
     let n = v.len();
     let num_threads = multicore::current_num_threads();
-    let mut chunk = (n as usize) / num_threads;
+    let mut chunk = n / num_threads;
     if chunk < num_threads {
-        chunk = n as usize;
+        chunk = n;
     }
 
     multicore::scope(|scope| {

@@ -100,8 +100,8 @@ impl<F: Field> Assignment<F> for Assembly<F> {
         _: Column<Advice>,
         _: usize,
         _: Value<Assigned<F>>,
-    ) -> Result<Value<&'v Assigned<F>>, Error> {
-        Ok(Value::unknown())
+    ) -> Value<&'v Assigned<F>> {
+        Value::unknown()
     }
 
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>) {

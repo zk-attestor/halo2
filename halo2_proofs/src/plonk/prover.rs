@@ -198,16 +198,14 @@ pub fn create_proof<
             column: Column<Advice>,
             row: usize,
             to: Value<Assigned<F>>,
-        ) -> Result<Value<&'v Assigned<F>>, Error> {
-            // TODO: better to assign all at once, deal with phases later
-            // Ignore assignment of advice column in different phase than current one.
-            if self.current_phase != column.column_type().phase {
-                return Ok(Value::unknown());
-            }
+        ) -> Value<&'v Assigned<F>> {
+            debug_assert_eq!(self.current_phase, column.column_type().phase);
 
-            if !self.usable_rows.contains(&row) {
-                return Err(Error::not_enough_rows_available(self.params.k()));
-            }
+            debug_assert!(
+                self.usable_rows.contains(&row),
+                "{:?}",
+                Error::not_enough_rows_available(self.params.k())
+            );
 
             let advice_get_mut = self
                 .advice
@@ -227,7 +225,7 @@ pub fn create_proof<
                 .assign()
                 .expect("No Value::unknown() in advice column allowed during create_proof");
             let immutable_raw_ptr = advice_get_mut as *const Assigned<F>;
-            Ok(Value::known(unsafe { &*immutable_raw_ptr }))
+            Value::known(unsafe { &*immutable_raw_ptr })
         }
 
         fn assign_fixed(&mut self, _: Column<Fixed>, _: usize, _: Assigned<F>) {

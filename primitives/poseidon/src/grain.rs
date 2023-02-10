@@ -46,7 +46,7 @@ impl<F: FieldExt, const T: usize, const RATE: usize> Grain<F, T, RATE> {
         }
         assert_eq!(grain.bit_sequence.len(), 80);
 
-        let number_of_rounds = r_p as usize + r_f as usize;
+        let number_of_rounds = r_p + r_f;
         let constants = (0..number_of_rounds)
             .map(|_| {
                 let mut round_constants = [F::zero(); T];
@@ -154,7 +154,7 @@ impl<F: FieldExt, const T: usize, const RATE: usize> Iterator for Grain<F, T, RA
 }
 
 fn append_bits<T: Into<u128>>(vec: &mut Vec<bool>, n: usize, from: T) {
-    let val = from.into() as u128;
+    let val = from.into();
     for i in (0..n).rev() {
         vec.push((val >> i) & 1 != 0);
     }

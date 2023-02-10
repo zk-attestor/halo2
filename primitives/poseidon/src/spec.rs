@@ -75,7 +75,7 @@ pub struct Spec<F: FieldExt, const T: usize, const RATE: usize> {
 impl<F: FieldExt, const T: usize, const RATE: usize> Spec<F, T, RATE> {
     /// Number of full rounds
     pub fn r_f(&self) -> usize {
-        self.r_f.clone()
+        self.r_f
     }
     /// Set of MDS Matrices used in permutation line
     pub fn mds_matrices(&self) -> &MDSMatrices<F, T, RATE> {
@@ -328,7 +328,7 @@ impl<F: FieldExt, const T: usize, const RATE: usize> Spec<F, T, RATE> {
 
         // Calculate optimized constants for first half of the full rounds
         let mut constants_start: Vec<[F; T]> = vec![[F::zero(); T]; r_f_half];
-        constants_start[0] = constants[0].clone();
+        constants_start[0] = constants[0];
         for (optimized, constants) in constants_start
             .iter_mut()
             .skip(1)
@@ -338,7 +338,7 @@ impl<F: FieldExt, const T: usize, const RATE: usize> Spec<F, T, RATE> {
         }
 
         // Calculate constants for partial rounds
-        let mut acc = constants[r_f_half + r_p].clone();
+        let mut acc = constants[r_f_half + r_p];
         let mut constants_partial = vec![F::zero(); r_p];
         for (optimized, constants) in constants_partial
             .iter_mut()
@@ -352,7 +352,7 @@ impl<F: FieldExt, const T: usize, const RATE: usize> Spec<F, T, RATE> {
             for ((acc, tmp), constant) in acc
                 .iter_mut()
                 .zip(tmp.into_iter())
-                .zip(constants.into_iter())
+                .zip(constants.iter())
             {
                 *acc = tmp + constant
             }

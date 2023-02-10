@@ -382,9 +382,9 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
         column: Column<Advice>,
         row: usize,
         to: circuit::Value<Assigned<F>>,
-    ) -> Result<circuit::Value<&'v Assigned<F>>, Error> {
+    ) -> circuit::Value<&'v Assigned<F>> {
         if !self.usable_rows.contains(&row) {
-            return Err(Error::not_enough_rows_available(self.k));
+            panic!("{:?}", Error::not_enough_rows_available(self.k));
         }
 
         if let Some(region) = self.current_region.as_mut() {
@@ -400,13 +400,13 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
             .advice
             .get_mut(column.index())
             .and_then(|v| v.get_mut(row))
-            .ok_or(Error::BoundsFailure)?;
+            .unwrap_or_else(|| panic!("{:?}", Error::BoundsFailure));
 
-        let val = Arc::new(to.assign()?);
+        let val = Arc::new(to.assign().unwrap());
         let val_ref = Arc::downgrade(&val);
         *advice_get_mut = AdviceCellValue::Assigned(val);
 
-        Ok(circuit::Value::known(unsafe { &*val_ref.as_ptr() }))
+        circuit::Value::known(unsafe { &*val_ref.as_ptr() })
     }
 
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>) {
@@ -1081,7 +1081,7 @@ impl<F: FieldExt> MockProver<F> {
                                 &|scalar| Value::Real(scalar),
                                 &|_| panic!("virtual selectors are removed during optimization"),
                                 &util::load(n, row, &self.cs.fixed_queries, &self.fixed),
-                                &util::load(n, row, &self.cs.advice_queries, &advice),
+                                &util::load(n, row, &self.cs.advice_queries, advice),
                                 &util::load_instance(
                                     n,
                                     row,
@@ -1113,7 +1113,7 @@ impl<F: FieldExt> MockProver<F> {
                                         gate,
                                         poly,
                                         &util::load(n, row, &self.cs.fixed_queries, &self.fixed),
-                                        &util::load(n, row, &self.cs.advice_queries, &advice),
+                                        &util::load(n, row, &self.cs.advice_queries, advice),
                                         &util::load_instance(
                                             n,
                                             row,
@@ -1443,7 +1443,7 @@ mod tests {
                             /*|| "a",*/ config.a,
                             0,
                             Value::known(Assigned::Trivial(Fp::zero())),
-                        )?;
+                        );
 
                         // BUG: Forget to assign b = 0! This could go unnoticed during
                         // development, because cell values default to zero, which in this
@@ -1541,13 +1541,13 @@ mod tests {
                             config.a,
                             0,
                             Value::known(Assigned::Trivial(Fp::from(2))),
-                        )?;
+                        );
                         region.assign_advice(
                             // || "a = 6",
                             config.a,
                             1,
                             Value::known(Assigned::Trivial(Fp::from(6))),
-                        )?;
+                        );
 
                         Ok(())
                     },
@@ -1566,7 +1566,7 @@ mod tests {
                             config.a,
                             0,
                             Value::known(Assigned::Trivial(Fp::from(4))),
-                        )?;
+                        );
 
                         // BUG: Assign a = 5, which doesn't exist in the table!
                         region.assign_advice(
@@ -1574,7 +1574,7 @@ mod tests {
                             config.a,
                             1,
                             Value::known(Assigned::Trivial(Fp::from(5))),
-                        )?;
+                        );
 
                         Ok(())
                     },

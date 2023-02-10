@@ -408,11 +408,11 @@ impl<G: Group> EvaluationDomain<G> {
     pub fn rotate_omega(&self, value: G::Scalar, rotation: Rotation) -> G::Scalar {
         let mut point = value;
         if rotation.0 >= 0 {
-            point *= &self.get_omega().pow_vartime(&[rotation.0 as u64]);
+            point *= &self.get_omega().pow_vartime([rotation.0 as u64]);
         } else {
             point *= &self
                 .get_omega_inv()
-                .pow_vartime(&[(rotation.0 as i64).unsigned_abs()]);
+                .pow_vartime([(rotation.0 as i64).unsigned_abs()]);
         }
         point
     }

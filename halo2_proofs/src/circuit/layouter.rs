@@ -57,7 +57,7 @@ pub trait RegionLayouter<F: Field>: fmt::Debug {
         column: Column<Advice>,
         offset: usize,
         to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error>;
+    ) -> AssignedCell<&'v Assigned<F>, F>;
 
     /// Assigns a constant value to the column `advice` at `offset` within this region.
     ///
