@@ -1,7 +1,14 @@
+use crate::plonk::{Any, Column};
 use ff::Field;
 use halo2curves::{CurveAffine, FieldExt};
 use num_bigint::BigUint;
 use std::io;
+
+#[derive(Clone, Debug)]
+pub(crate) struct CopyCell {
+    pub column: Column<Any>,
+    pub row: usize,
+}
 
 pub(crate) trait CurveRead: CurveAffine {
     /// Reads a compressed element from the buffer and attempts to parse it

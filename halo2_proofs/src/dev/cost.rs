@@ -70,11 +70,11 @@ impl<F: Field> Assignment<F> for Assembly {
         Ok(())
     }
 
-    fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
+    fn fork(&mut self, _ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
         todo!()
     }
 
-    fn merge(&mut self, sub_cs: Vec<Self>) -> Result<(), Error> {
+    fn merge(&mut self, _sub_cs: Vec<Self>) -> Result<(), Error> {
         todo!()
     }
 

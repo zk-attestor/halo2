@@ -47,15 +47,10 @@ pub use gates::CircuitGates;
 mod graph;
 
 use crate::circuit::Cell;
+use crate::helpers::CopyCell;
 #[cfg(feature = "dev-graph")]
 #[cfg_attr(docsrs, doc(cfg(feature = "dev-graph")))]
 pub use graph::{circuit_dot_graph, layout::CircuitLayout};
-
-#[derive(Clone, Debug)]
-struct CopyCell {
-    pub column: Column<Any>,
-    pub row: usize,
-}
 
 #[derive(Clone, Debug)]
 struct Region {
@@ -396,7 +391,9 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
             range_start = sub_range.end;
             log::debug!(
                 "subCS_{} rw_rows: {}..{}",
-                i, sub_range.start, sub_range.end
+                i,
+                sub_range.start,
+                sub_range.end
             );
         }
 

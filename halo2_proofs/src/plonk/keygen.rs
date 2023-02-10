@@ -1,6 +1,7 @@
 #![allow(clippy::int_plus_one)]
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use ff::Field;
 use group::Curve;
@@ -14,6 +15,7 @@ use super::{
     permutation, Assigned, Challenge, Error, Expression, LagrangeCoeff, Polynomial, ProvingKey,
     VerifyingKey,
 };
+use crate::helpers::CopyCell;
 use crate::{
     arithmetic::{parallelize, CurveAffine},
     circuit::Value,
@@ -47,18 +49,21 @@ where
 
 /// Assembly to be used in circuit synthesis.
 #[derive(Debug)]
-struct Assembly<F: Field> {
+struct Assembly<'a, F: Field> {
     k: u32,
-    fixed: Vec<Polynomial<Assigned<F>, LagrangeCoeff>>,
-    permutation: permutation::keygen::Assembly,
-    selectors: Vec<Vec<bool>>,
-    // A range of available rows for assignment and copies.
+    fixed_vec: Arc<Vec<Polynomial<Assigned<F>, LagrangeCoeff>>>,
+    fixed: Vec<&'a mut [Assigned<F>]>,
+    permutation: Option<permutation::keygen::Assembly>,
+    selectors_vec: Arc<Vec<Vec<bool>>>,
+    selectors: Vec<&'a mut [bool]>,
     rw_rows: Range<usize>,
+    copies: Vec<(CopyCell, CopyCell)>,
+    // A range of available rows for assignment and copies.
     usable_rows: Range<usize>,
     _marker: std::marker::PhantomData<F>,
 }
 
-impl<F: Field> Assignment<F> for Assembly<F> {
+impl<'a, F: Field> Assignment<F> for Assembly<'a, F> {
     fn enter_region<NR, N>(&mut self, _: N)
     where
         NR: Into<String>,
@@ -80,7 +85,11 @@ impl<F: Field> Assignment<F> for Assembly<F> {
             return Err(Error::not_enough_rows_available(self.k));
         }
 
-        self.selectors[selector.0][row] = true;
+        if !self.rw_rows.contains(&row) {
+            return Err(Error::Synthesis);
+        }
+
+        self.selectors[selector.0][row - self.rw_rows.start] = true;
 
         Ok(())
     }
@@ -98,16 +107,69 @@ impl<F: Field> Assignment<F> for Assembly<F> {
             range_start = sub_range.end;
             log::debug!(
                 "subCS_{} rw_rows: {}..{}",
-                i, sub_range.start, sub_range.end
+                i,
+                sub_range.start,
+                sub_range.end
             );
         }
 
-        for (i, sub_range) in ranges.iter().enumerate() {}
-        todo!()
+        let fixed_ptrs = self
+            .fixed
+            .iter_mut()
+            .map(|vec| vec.as_mut_ptr())
+            .collect::<Vec<_>>();
+        let selectors_ptrs = self
+            .selectors
+            .iter_mut()
+            .map(|vec| vec.as_mut_ptr())
+            .collect::<Vec<_>>();
+
+        let mut sub_cs = vec![];
+        for sub_range in ranges {
+            let fixed = fixed_ptrs
+                .iter()
+                .map(|ptr| unsafe {
+                    std::slice::from_raw_parts_mut(
+                        ptr.add(sub_range.start),
+                        sub_range.end - sub_range.start,
+                    )
+                })
+                .collect::<Vec<&mut [Assigned<F>]>>();
+            let selectors = selectors_ptrs
+                .iter()
+                .map(|ptr| unsafe {
+                    std::slice::from_raw_parts_mut(
+                        ptr.add(sub_range.start),
+                        sub_range.end - sub_range.start,
+                    )
+                })
+                .collect::<Vec<&mut [bool]>>();
+
+            sub_cs.push(Self {
+                k: 0,
+                fixed_vec: self.fixed_vec.clone(),
+                fixed,
+                permutation: None,
+                selectors_vec: self.selectors_vec.clone(),
+                selectors,
+                rw_rows: sub_range.clone(),
+                copies: vec![],
+                usable_rows: self.usable_rows.clone(),
+                _marker: Default::default(),
+            });
+        }
+
+        Ok(sub_cs)
     }
 
     fn merge(&mut self, sub_cs: Vec<Self>) -> Result<(), Error> {
-        todo!()
+        for (left, right) in sub_cs.into_iter().flat_map(|cs| cs.copies.into_iter()) {
+            self.permutation
+                .as_mut()
+                .expect("permutation must be Some")
+                .copy(left.column, left.row, right.column, right.row)?;
+        }
+        Ok(())
     }
 
     fn query_instance(&self, _: Column<Instance>, row: usize) -> Result<Value<F>, Error> {
@@ -153,10 +215,14 @@ impl<F: Field> Assignment<F> for Assembly<F> {
             return Err(Error::not_enough_rows_available(self.k));
         }
 
+        if !self.rw_rows.contains(&row) {
+            return Err(Error::Synthesis);
+        }
+
         *self
             .fixed
             .get_mut(column.index())
-            .and_then(|v| v.get_mut(row))
+            .and_then(|v| v.get_mut(row - self.rw_rows.start))
             .ok_or(Error::BoundsFailure)? = to().into_field().assign()?;
 
         Ok(())
@@ -173,8 +239,22 @@ impl<F: Field> Assignment<F> for Assembly<F> {
             return Err(Error::not_enough_rows_available(self.k));
         }
 
-        self.permutation
-            .copy(left_column, left_row, right_column, right_row)
+        match self.permutation.as_mut() {
+            None => {
+                self.copies.push((
+                    CopyCell {
+                        column: left_column,
+                        row: left_row,
+                    },
+                    CopyCell {
+                        column: right_column,
+                        row: right_row,
+                    },
+                ));
+                Ok(())
+            }
+            Some(permutation) => permutation.copy(left_column, left_row, right_column, right_row),
+        }
     }
 
     fn fill_from_row(
@@ -233,11 +313,38 @@ where
         return Err(Error::not_enough_rows_available(params.k()));
     }
 
+    let fixed_vec = Arc::new(vec![domain.empty_lagrange_assigned(); cs.num_fixed_columns]);
+    let fixed = unsafe {
+        let fixed_vec_clone = fixed_vec.clone();
+        let ptr = Arc::as_ptr(&fixed_vec_clone) as *mut Vec<Polynomial<Assigned<_>, LagrangeCoeff>>;
+        let mut_ref = &mut (*ptr);
+        mut_ref
+            .iter_mut()
+            .map(|poly| poly.values.as_mut_slice())
+            .collect::<Vec<_>>()
+    };
+
+    let selectors_vec = Arc::new(vec![vec![false; params.n() as usize]; cs.num_selectors]);
+    let selectors = unsafe {
+        let selectors_vec_clone = selectors_vec.clone();
+        let ptr = Arc::as_ptr(&selectors_vec_clone) as *mut Vec<Vec<bool>>;
+        let mut_ref = &mut (*ptr);
+        mut_ref
+            .iter_mut()
+            .map(|vec| vec.as_mut_slice())
+            .collect::<Vec<_>>()
+    };
     let mut assembly: Assembly<C::Scalar> = Assembly {
         k: params.k(),
-        fixed: vec![domain.empty_lagrange_assigned(); cs.num_fixed_columns],
-        permutation: permutation::keygen::Assembly::new(params.n() as usize, &cs.permutation),
-        selectors: vec![vec![false; params.n() as usize]; cs.num_selectors],
+        fixed_vec,
+        fixed,
+        permutation: Some(permutation::keygen::Assembly::new(
+            params.n() as usize,
+            &cs.permutation,
+        )),
+        selectors_vec,
+        selectors,
+        copies: vec![],
         rw_rows: 0..params.n() as usize - (cs.blinding_factors() + 1),
         usable_rows: 0..params.n() as usize - (cs.blinding_factors() + 1),
         _marker: std::marker::PhantomData,
@@ -251,8 +358,13 @@ where
         cs.constants.clone(),
     )?;
 
-    let mut fixed = batch_invert_assigned(assembly.fixed);
-    let (cs, selector_polys) = cs.compress_selectors(assembly.selectors);
+    debug_assert_eq!(Arc::strong_count(&assembly.fixed_vec), 1);
+    debug_assert_eq!(Arc::strong_count(&assembly.selectors_vec), 1);
+    let mut fixed =
+        batch_invert_assigned(Arc::try_unwrap(assembly.fixed_vec).expect("only one Arc for fixed"));
+    let (cs, selector_polys) = cs.compress_selectors(
+        Arc::try_unwrap(assembly.selectors_vec).expect("only one Arc for selectors"),
+    );
     fixed.extend(
         selector_polys
             .into_iter()
@@ -261,6 +373,8 @@ where
 
     let permutation_vk = assembly
         .permutation
+        .take()
+        .expect("permutation must be Some")
         .build_vk(params, &domain, &cs.permutation);
 
     let fixed_commitments = fixed
@@ -320,11 +434,38 @@ where
         return Err(Error::not_enough_rows_available(params.k()));
     }
 
+    let fixed_vec = Arc::new(vec![domain.empty_lagrange_assigned(); cs.num_fixed_columns]);
+    let fixed = unsafe {
+        let fixed_vec_clone = fixed_vec.clone();
+        let ptr = Arc::as_ptr(&fixed_vec_clone) as *mut Vec<Polynomial<Assigned<_>, LagrangeCoeff>>;
+        let mut_ref = &mut (*ptr);
+        mut_ref
+            .iter_mut()
+            .map(|poly| poly.values.as_mut_slice())
+            .collect::<Vec<_>>()
+    };
+
+    let selectors_vec = Arc::new(vec![vec![false; params.n() as usize]; cs.num_selectors]);
+    let selectors = unsafe {
+        let selectors_vec_clone = selectors_vec.clone();
+        let ptr = Arc::as_ptr(&selectors_vec_clone) as *mut Vec<Vec<bool>>;
+        let mut_ref = &mut (*ptr);
+        mut_ref
+            .iter_mut()
+            .map(|vec| vec.as_mut_slice())
+            .collect::<Vec<_>>()
+    };
     let mut assembly: Assembly<C::Scalar> = Assembly {
         k: params.k(),
-        fixed: vec![domain.empty_lagrange_assigned(); cs.num_fixed_columns],
-        permutation: permutation::keygen::Assembly::new(params.n() as usize, &cs.permutation),
-        selectors: vec![vec![false; params.n() as usize]; cs.num_selectors],
+        fixed_vec,
+        fixed,
+        permutation: Some(permutation::keygen::Assembly::new(
+            params.n() as usize,
+            &cs.permutation,
+        )),
+        selectors_vec,
+        selectors,
+        copies: vec![],
         rw_rows: 0..params.n() as usize - (cs.blinding_factors() + 1),
         usable_rows: 0..params.n() as usize - (cs.blinding_factors() + 1),
         _marker: std::marker::PhantomData,
@@ -338,8 +479,13 @@ where
         cs.constants.clone(),
     )?;
 
-    let mut fixed = batch_invert_assigned(assembly.fixed);
-    let (cs, selector_polys) = cs.compress_selectors(assembly.selectors);
+    debug_assert_eq!(Arc::strong_count(&assembly.fixed_vec), 1);
+    debug_assert_eq!(Arc::strong_count(&assembly.selectors_vec), 1);
+    let mut fixed =
+        batch_invert_assigned(Arc::try_unwrap(assembly.fixed_vec).expect("only one Arc for fixed"));
+    let (cs, selector_polys) = cs.compress_selectors(
+        Arc::try_unwrap(assembly.selectors_vec).expect("only one Arc for selectors"),
+    );
     fixed.extend(
         selector_polys
             .into_iter()
@@ -347,11 +493,12 @@ where
     );
 
     let vk = vk.unwrap_or_else(|| {
-        let permutation_vk =
-            assembly
-                .permutation
-                .clone()
-                .build_vk(params, &domain, &cs.permutation);
+        let permutation_vk = assembly
+            .permutation
+            .as_ref()
+            .expect("permutation must be Some")
+            .clone()
+            .build_vk(params, &domain, &cs.permutation);
 
         let fixed_commitments = fixed
             .iter()
@@ -373,6 +520,8 @@ where
 
     let permutation_pk = assembly
         .permutation
+        .take()
+        .expect("permutation must be Some")
         .build_pk(params, &vk.domain, &cs.permutation);
 
     // Compute l_0(X)
