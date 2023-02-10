@@ -1,3 +1,5 @@
+#[cfg(feature = "profile")]
+use ark_std::{end_timer, start_timer};
 use ff::Field;
 use group::Curve;
 use halo2curves::CurveExt;
@@ -373,6 +375,8 @@ pub fn create_proof<
         challenge_indices[phase.to_u8() as usize].push(index);
     }
 
+    #[cfg(feature = "profile")]
+    let phase1_time = start_timer!(|| "Phase 1: Witness assignment and MSM commitments");
     let (advice, challenges) = {
         let mut advice = Vec::with_capacity(instances.len());
         let mut challenges = HashMap::<usize, Scheme::Scalar>::with_capacity(meta.num_challenges);
@@ -442,7 +446,11 @@ pub fn create_proof<
 
         (advice, challenges)
     };
+    #[cfg(feature = "profile")]
+    end_timer!(phase1_time);
 
+    #[cfg(feature = "profile")]
+    let phase2_time = start_timer!(|| "Phase 2: Lookup commit permuted");
     // Sample theta challenge for keeping lookup columns linearly independent
     let theta: ChallengeTheta<_> = transcript.squeeze_challenge_scalar();
 
@@ -472,6 +480,11 @@ pub fn create_proof<
                 .collect()
         })
         .collect::<Result<Vec<_>, _>>()?;
+    #[cfg(feature = "profile")]
+    end_timer!(phase2_time);
+
+    #[cfg(feature = "profile")]
+    let phase3a_time = start_timer!(|| "Phase 3a: Commit to permutations");
 
     // Sample beta challenge
     let beta: ChallengeBeta<_> = transcript.squeeze_challenge_scalar();
@@ -484,37 +497,58 @@ pub fn create_proof<
         .iter()
         .zip(advice.iter())
         .map(|(instance, advice)| {
-            pk.vk.cs.permutation.commit(
-                params,
-                pk,
-                &pk.permutation,
-                &advice.advice_polys,
-                &pk.fixed_values,
-                &instance.instance_values,
-                beta,
-                gamma,
-                &mut rng,
-                transcript,
-            )
+            pk.vk
+                .cs
+                .permutation
+                .commit(
+                    params,
+                    pk,
+                    &pk.permutation,
+                    &advice.advice_polys,
+                    &pk.fixed_values,
+                    &instance.instance_values,
+                    beta,
+                    gamma,
+                    &mut rng,
+                    transcript,
+                )
+                .unwrap()
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Vec<_>>();
+    #[cfg(feature = "profile")]
+    end_timer!(phase3a_time);
 
+    #[cfg(feature = "profile")]
+    let phase3b_time = start_timer!(|| "Phase 3b: Lookup commit product");
     let lookups: Vec<Vec<lookup::prover::Committed<Scheme::Curve>>> = lookups
         .into_iter()
-        .map(|lookups| -> Result<Vec<_>, _> {
+        .map(|lookups| -> Vec<_> {
             // Construct and commit to products for each lookup
             lookups
                 .into_iter()
-                .map(|lookup| lookup.commit_product(pk, params, beta, gamma, &mut rng, transcript))
-                .collect::<Result<Vec<_>, _>>()
+                .map(|lookup| {
+                    lookup
+                        .commit_product(pk, params, beta, gamma, &mut rng, transcript)
+                        .unwrap()
+                })
+                .collect()
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect();
+    #[cfg(feature = "profile")]
+    end_timer!(phase3b_time);
 
+    #[cfg(feature = "profile")]
+    let vanishing_time = start_timer!(|| "Commit to vanishing argument's random poly");
     // Commit to the vanishing argument's random polynomial for blinding h(x_3)
     let vanishing = vanishing::Argument::commit(params, domain, &mut rng, transcript)?;
 
     // Obtain challenge for keeping all separate gates linearly independent
     let y: ChallengeY<_> = transcript.squeeze_challenge_scalar();
+
+    #[cfg(feature = "profile")]
+    end_timer!(vanishing_time);
+    #[cfg(feature = "profile")]
+    let fft_time = start_timer!(|| "Calculate advice polys (fft)");
 
     // Calculate the advice polys
     let advice: Vec<AdviceSingle<Scheme::Curve, Coeff>> = advice
@@ -534,7 +568,11 @@ pub fn create_proof<
             },
         )
         .collect();
+    #[cfg(feature = "profile")]
+    end_timer!(fft_time);
 
+    #[cfg(feature = "profile")]
+    let phase4_time = start_timer!(|| "Phase 4: Evaluate h(X)");
     // Evaluate the h(X) polynomial
     let h_poly = pk.ev.evaluate_h(
         pk,
@@ -554,9 +592,17 @@ pub fn create_proof<
         &lookups,
         &permutations,
     );
+    #[cfg(feature = "profile")]
+    end_timer!(phase4_time);
 
+    #[cfg(feature = "profile")]
+    let timer = start_timer!(|| "Commit to vanishing argument's h(X) commitments");
     // Construct the vanishing argument's h(X) commitments
     let vanishing = vanishing.construct(params, domain, h_poly, &mut rng, transcript)?;
+    #[cfg(feature = "profile")]
+    end_timer!(timer);
+    #[cfg(feature = "profile")]
+    let eval_time = start_timer!(|| "Commit to vanishing argument's h(X) commitments");
 
     let x: ChallengeX<_> = transcript.squeeze_challenge_scalar();
     let xn = x.pow(&[params.n(), 0, 0, 0]);
@@ -638,6 +684,8 @@ pub fn create_proof<
                 .collect::<Result<Vec<_>, _>>()
         })
         .collect::<Result<Vec<_>, _>>()?;
+    #[cfg(feature = "profile")]
+    end_timer!(eval_time);
 
     let instances = instance
         .iter()
@@ -687,8 +735,13 @@ pub fn create_proof<
         // We query the h(X) polynomial at x
         .chain(vanishing.open(x));
 
+    #[cfg(feature = "profile")]
+    let multiopen_time = start_timer!(|| "Phase 5: multiopen");
     let prover = P::new(params);
-    prover
+    let multiopen_res = prover
         .create_proof(&mut rng, transcript, instances)
-        .map_err(|_| Error::ConstraintSystemFailure)
+        .map_err(|_| Error::ConstraintSystemFailure);
+    #[cfg(feature = "profile")]
+    end_timer!(multiopen_time);
+    multiopen_res
 }
