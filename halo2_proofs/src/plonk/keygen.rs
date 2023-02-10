@@ -96,7 +96,7 @@ impl<F: Field> Assignment<F> for Assembly<F> {
                 return Err(Error::Synthesis);
             }
             range_start = sub_range.end;
-            println!(
+            log::debug!(
                 "subCS_{} rw_rows: {}..{}",
                 i, sub_range.start, sub_range.end
             );

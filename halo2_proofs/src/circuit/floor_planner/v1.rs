@@ -186,8 +186,8 @@ impl<'p, 'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for V1Pass<'p, 'a, F,
 
     fn assign_regions<A, AR, N, NR>(
         &mut self,
-        name: N,
-        assignments: Vec<A>,
+        _name: N,
+        _assignments: Vec<A>,
     ) -> Result<Vec<AR>, Error>
     where
         A: FnMut(Region<'_, F>) -> Result<AR, Error>,
