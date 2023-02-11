@@ -411,9 +411,9 @@ pub fn parallelize_count<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(
     f: F,
 ) {
     let n = v.len();
-    let mut chunk = (n as usize) / num_threads;
+    let mut chunk = n / num_threads;
     if chunk < num_threads {
-        chunk = n as usize;
+        chunk = n;
     }
 
     multicore::scope(|scope| {

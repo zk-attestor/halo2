@@ -39,10 +39,7 @@ pub fn get_stages(size: usize, radixes: Vec<usize>) -> Vec<FFTStage> {
     // Use the specified radices
     for &radix in &radixes {
         n /= radix;
-        stages.push(FFTStage {
-            radix,
-            length: n,
-        });
+        stages.push(FFTStage { radix, length: n });
     }
 
     // Fill in the rest of the tree if needed

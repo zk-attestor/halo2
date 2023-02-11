@@ -20,6 +20,7 @@ use crate::poly::{
 };
 use crate::transcript::{ChallengeScalar, EncodedChallenge, Transcript};
 use crate::SerdeFormat;
+#[cfg(feature = "profile")]
 use ark_std::perf_trace::{AtomicUsize, Ordering};
 
 mod assigned;
@@ -60,6 +61,7 @@ pub struct MeasurementInfo {
 }
 
 /// TEMP
+#[cfg(feature = "profile")]
 pub static NUM_INDENT: AtomicUsize = AtomicUsize::new(0);
 
 /// Temp
@@ -88,6 +90,7 @@ pub fn log_measurement(indent: Option<usize>, msg: String, duration: usize) {
 }
 
 /// Temp
+#[cfg(feature = "profile")]
 pub fn start_measure<S: AsRef<str>>(msg: S, always: bool) -> MeasurementInfo {
     let measure: u32 = var("MEASURE")
         .unwrap_or_else(|_| "0".to_string())
@@ -114,8 +117,11 @@ pub fn start_measure<S: AsRef<str>>(msg: S, always: bool) -> MeasurementInfo {
         }
     }
 }
+#[cfg(not(feature = "profile"))]
+pub fn start_measure<S: AsRef<str>>(_: S, _: bool) {}
 
 /// Temp
+#[cfg(feature = "profile")]
 pub fn stop_measure(info: MeasurementInfo) -> usize {
     NUM_INDENT.fetch_sub(1, Ordering::Relaxed);
     let duration = get_duration(info.time);
@@ -124,6 +130,8 @@ pub fn stop_measure(info: MeasurementInfo) -> usize {
     }
     duration
 }
+#[cfg(not(feature = "profile"))]
+pub fn stop_measure(_: ()) {}
 
 /// Get env variable
 pub fn env_value(key: &str, default: usize) -> usize {
