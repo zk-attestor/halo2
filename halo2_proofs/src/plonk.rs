@@ -161,8 +161,6 @@ pub struct VerifyingKey<C: CurveAffine> {
     /// The representative of this `VerifyingKey` in transcripts.
     transcript_repr: C::Scalar,
     selectors: Vec<Vec<bool>>,
-    /// Is ZK turned on?
-    zk: bool,
 }
 
 impl<C: SerdeCurveAffine> VerifyingKey<C>
@@ -179,7 +177,7 @@ where
     /// Writes a field element into raw bytes in its internal Montgomery representation,
     /// WITHOUT performing the expensive Montgomery reduction.
     pub fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
-        writer.write_all(&[self.zk as u8]).unwrap();
+        // writer.write_all(&[self.zk as u8]).unwrap();
         writer.write_all(&self.domain.k().to_be_bytes()).unwrap();
         writer
             .write_all(&(self.fixed_commitments.len() as u32).to_be_bytes())
@@ -209,21 +207,17 @@ where
     /// Checks that field elements are less than modulus, and then checks that the point is on the curve.
     /// - `RawBytesUnchecked`: Reads an uncompressed curve element with coordinates in Montgomery form;
     /// does not perform any checks
-    pub fn read<R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
+    pub fn read<R: io::Read, ConcreteCircuit: Circuit<C::Scalar>, const ZK: bool>(
         reader: &mut R,
         format: SerdeFormat,
     ) -> io::Result<Self> {
-        let mut zk = [0u8; 1];
-        reader.read_exact(&mut zk)?;
-        let zk = zk[0] == 1;
+        // let mut zk = [0u8; 1];
+        // reader.read_exact(&mut zk)?;
+        // let zk = zk[0] == 1;
         let mut k = [0u8; 4];
         reader.read_exact(&mut k)?;
         let k = u32::from_be_bytes(k);
-        let (domain, cs, _) = if zk {
-            keygen::create_domain::<C, ConcreteCircuit, true>(k)
-        } else {
-            keygen::create_domain::<C, ConcreteCircuit, false>(k)
-        };
+        let (domain, cs, _) = keygen::create_domain::<C, ConcreteCircuit, ZK>(k);
         let mut num_fixed_columns = [0u8; 4];
         reader.read_exact(&mut num_fixed_columns).unwrap();
         let num_fixed_columns = u32::from_be_bytes(num_fixed_columns);
@@ -246,17 +240,15 @@ where
                 selector
             })
             .collect();
-        let (cs, _) = if zk {
-            cs.compress_selectors::<true>(selectors.clone())
-        } else {
-            cs.compress_selectors::<false>(selectors.clone())
-        };
+        let (cs, _) = cs.compress_selectors::<ZK>(selectors.clone());
 
-        Ok(if zk {
-            Self::from_parts::<true>(domain, fixed_commitments, permutation, cs, selectors)
-        } else {
-            Self::from_parts::<false>(domain, fixed_commitments, permutation, cs, selectors)
-        })
+        Ok(Self::from_parts::<ZK>(
+            domain,
+            fixed_commitments,
+            permutation,
+            cs,
+            selectors,
+        ))
     }
 
     /// Writes a verifying key to a vector of bytes using [`Self::write`].
@@ -267,11 +259,11 @@ where
     }
 
     /// Reads a verification key from a slice of bytes using [`Self::read`].
-    pub fn from_bytes<ConcreteCircuit: Circuit<C::Scalar>>(
+    pub fn from_bytes<ConcreteCircuit: Circuit<C::Scalar>, const ZK: bool>(
         mut bytes: &[u8],
         format: SerdeFormat,
     ) -> io::Result<Self> {
-        Self::read::<_, ConcreteCircuit>(&mut bytes, format)
+        Self::read::<_, ConcreteCircuit, ZK>(&mut bytes, format)
     }
 }
 
@@ -306,7 +298,6 @@ impl<C: CurveAffine> VerifyingKey<C> {
             // Temporary, this is not pinned.
             transcript_repr: C::Scalar::zero(),
             selectors,
-            zk: ZK,
         };
 
         let mut hasher = Blake2bParams::new()
@@ -447,11 +438,11 @@ where
     /// Checks that field elements are less than modulus, and then checks that the point is on the curve.
     /// - `RawBytesUnchecked`: Reads an uncompressed curve element with coordinates in Montgomery form;
     /// does not perform any checks
-    pub fn read<R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
+    pub fn read<R: io::Read, ConcreteCircuit: Circuit<C::Scalar>, const ZK: bool>(
         reader: &mut R,
         format: SerdeFormat,
     ) -> io::Result<Self> {
-        let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(reader, format).unwrap();
+        let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit, ZK>(reader, format).unwrap();
         let l0 = Polynomial::read(reader, format);
         let l_last = Polynomial::read(reader, format);
         let l_active_row = Polynomial::read(reader, format);
@@ -481,11 +472,11 @@ where
     }
 
     /// Reads a proving key from a slice of bytes using [`Self::read`].
-    pub fn from_bytes<ConcreteCircuit: Circuit<C::Scalar>>(
+    pub fn from_bytes<ConcreteCircuit: Circuit<C::Scalar>, const ZK: bool>(
         mut bytes: &[u8],
         format: SerdeFormat,
     ) -> io::Result<Self> {
-        Self::read::<_, ConcreteCircuit>(&mut bytes, format)
+        Self::read::<_, ConcreteCircuit, ZK>(&mut bytes, format)
     }
 }
 

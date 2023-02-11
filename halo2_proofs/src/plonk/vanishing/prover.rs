@@ -23,13 +23,13 @@ pub(in crate::plonk) struct Committed<C: CurveAffine> {
 
 pub(in crate::plonk) struct Constructed<C: CurveAffine> {
     h_pieces: Vec<Polynomial<C::Scalar, Coeff>>,
-    h_blinds: Vec<Blind<C::Scalar>>,
+    // h_blinds: Vec<Blind<C::Scalar>>,
     committed: Committed<C>,
 }
 
 pub(in crate::plonk) struct Evaluated<C: CurveAffine> {
     h_poly: Polynomial<C::Scalar, Coeff>,
-    h_blind: Blind<C::Scalar>,
+    // h_blind: Blind<C::Scalar>,
     committed: Committed<C>,
 }
 
@@ -78,7 +78,7 @@ impl<C: CurveAffine> Committed<C> {
         params: &P,
         domain: &EvaluationDomain<C::Scalar>,
         h_poly: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
-        mut rng: R,
+        _rng: R,
         transcript: &mut T,
     ) -> Result<Constructed<C>, Error> {
         // Divide by t(X) = X^{params.n} - 1.
@@ -93,16 +93,18 @@ impl<C: CurveAffine> Committed<C> {
             .map(|v| domain.coeff_from_vec(v.to_vec()))
             .collect::<Vec<_>>();
         drop(h_poly);
+        /*
         let h_blinds: Vec<_> = h_pieces
             .iter()
             .map(|_| Blind(C::Scalar::random(&mut rng)))
             .collect();
+        */
 
         // Compute commitments to each h(X) piece
         let h_commitments_projective: Vec<_> = h_pieces
             .iter()
-            .zip(h_blinds.iter())
-            .map(|(h_piece, blind)| params.commit(h_piece))
+            //.zip(h_blinds.iter())
+            .map(|h_piece| params.commit(h_piece))
             .collect();
         let mut h_commitments = vec![C::identity(); h_commitments_projective.len()];
         C::Curve::batch_normalize(&h_commitments_projective, &mut h_commitments);
@@ -115,7 +117,7 @@ impl<C: CurveAffine> Committed<C> {
 
         Ok(Constructed {
             h_pieces,
-            h_blinds,
+            // h_blinds,
             committed: self,
         })
     }
@@ -139,13 +141,15 @@ impl<C: CurveAffine> Constructed<C> {
             .rev()
             .fold(domain.empty_coeff(), |acc, eval| acc * xn + eval);
 
+        /*
         let h_blind = self
-            .h_blinds
-            .iter()
-            .rev()
-            .fold(Blind(C::Scalar::zero()), |acc, eval| {
-                acc * Blind(xn) + *eval
-            });
+        .h_blinds
+        .iter()
+        .rev()
+        .fold(Blind(C::Scalar::zero()), |acc, eval| {
+            acc * Blind(xn) + *eval
+        });
+        */
 
         if ZK {
             let random_eval = eval_polynomial(&self.committed.random_poly, *x);
@@ -154,7 +158,7 @@ impl<C: CurveAffine> Constructed<C> {
 
         Ok(Evaluated {
             h_poly,
-            h_blind,
+            // h_blind,
             committed: self.committed,
         })
     }

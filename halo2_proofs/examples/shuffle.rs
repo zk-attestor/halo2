@@ -306,7 +306,7 @@ fn test_prover<const W: usize, const H: usize, const ZK: bool>(
             &[&[]],
             &mut transcript,
         )
-        .map(|strategy| VerificationStrategy::<_, VerifierSHPLONK<_>>::finalize(strategy))
+        .map(VerificationStrategy::<_, VerifierSHPLONK<_>>::finalize)
         .unwrap_or_default()
     };
 

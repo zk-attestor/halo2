@@ -127,7 +127,7 @@ impl Circuit<Fr> for StandardPlonk {
 }
 
 fn main() {
-    const ZK: bool = false;
+    const ZK: bool = true;
     let k = 4;
     let circuit = StandardPlonk(Fr::random(OsRng));
     let params = ParamsKZG::<Bn256>::setup(k, OsRng);
@@ -141,8 +141,9 @@ fn main() {
 
     let f = File::open("serialization-test.pk").unwrap();
     let mut reader = BufReader::new(f);
-    let pk = ProvingKey::<G1Affine>::read::<_, StandardPlonk>(&mut reader, SerdeFormat::RawBytes)
-        .unwrap();
+    let pk =
+        ProvingKey::<G1Affine>::read::<_, StandardPlonk, ZK>(&mut reader, SerdeFormat::RawBytes)
+            .unwrap();
 
     std::fs::remove_file("serialization-test.pk").unwrap();
 

@@ -21,7 +21,7 @@ use crate::{
 pub(crate) struct CommittedSet<C: CurveAffine> {
     pub(crate) permutation_product_poly: Polynomial<C::Scalar, Coeff>,
     pub(crate) permutation_product_coset: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
-    permutation_product_blind: Blind<C::Scalar>,
+    // permutation_product_blind: Blind<C::Scalar>,
 }
 
 pub(crate) struct Committed<C: CurveAffine> {
@@ -30,7 +30,7 @@ pub(crate) struct Committed<C: CurveAffine> {
 
 pub struct ConstructedSet<C: CurveAffine> {
     permutation_product_poly: Polynomial<C::Scalar, Coeff>,
-    permutation_product_blind: Blind<C::Scalar>,
+    // permutation_product_blind: Blind<C::Scalar>,
 }
 
 pub(crate) struct Constructed<C: CurveAffine> {
@@ -175,10 +175,10 @@ impl Argument {
                 last_z = *z.last().unwrap() * modified_values.last().unwrap();
             }
 
-            let blind = Blind(C::Scalar::random(&mut rng));
+            // let blind = Blind(C::Scalar::random(&mut rng));
 
             let permutation_product_commitment_projective = params.commit_lagrange(&z);
-            let permutation_product_blind = blind;
+            // let permutation_product_blind = blind;
             let z = domain.lagrange_to_coeff(z);
             let permutation_product_poly = z.clone();
 
@@ -193,7 +193,7 @@ impl Argument {
             sets.push(CommittedSet {
                 permutation_product_poly,
                 permutation_product_coset,
-                permutation_product_blind,
+                // permutation_product_blind,
             });
         }
 
@@ -209,7 +209,7 @@ impl<C: CurveAffine> Committed<C> {
                 .iter()
                 .map(|set| ConstructedSet {
                     permutation_product_poly: set.permutation_product_poly.clone(),
-                    permutation_product_blind: set.permutation_product_blind,
+                    // permutation_product_blind: set.permutation_product_blind,
                 })
                 .collect(),
         }
