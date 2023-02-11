@@ -15,6 +15,7 @@ use crate::{
     },
     transcript::{EncodedChallenge, TranscriptWrite},
 };
+use rayon::prelude::*;
 
 pub(in crate::plonk) struct Committed<C: CurveAffine> {
     random_poly: Polynomial<C::Scalar, Coeff>,
@@ -38,19 +39,19 @@ impl<C: CurveAffine> Argument<C> {
         'params,
         P: ParamsProver<'params, C>,
         E: EncodedChallenge<C>,
-        R: RngCore,
+        R: RngCore + Sync + Clone,
         T: TranscriptWrite<C, E>,
     >(
         params: &P,
         domain: &EvaluationDomain<C::Scalar>,
-        mut rng: R,
+        rng: R,
         transcript: &mut T,
     ) -> Result<Committed<C>, Error> {
         // Sample a random polynomial of degree n - 1
         let mut random_poly = domain.empty_coeff();
-        for coeff in random_poly.iter_mut() {
-            *coeff = C::Scalar::random(&mut rng);
-        }
+        random_poly.par_iter_mut().for_each(|coeff| {
+            *coeff = C::Scalar::random(rng.clone());
+        });
         // Sample a random blinding factor
         let random_blind = Blind(C::Scalar::random(rng));
 

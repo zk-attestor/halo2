@@ -465,7 +465,7 @@ fn plonk_api() {
         Scheme: CommitmentScheme,
         P: Prover<'params, Scheme>,
         E: EncodedChallenge<Scheme::Curve>,
-        R: RngCore,
+        R: RngCore + Sync + Clone,
         T: TranscriptWriterBuffer<Vec<u8>, Scheme::Curve, E>,
     >(
         rng: R,
