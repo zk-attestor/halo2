@@ -69,6 +69,7 @@ impl<F: FieldExt> Argument<F> {
         E: EncodedChallenge<C>,
         R: RngCore,
         T: TranscriptWrite<C, E>,
+        const ZK: bool,
     >(
         &self,
         pk: &ProvingKey<C>,
@@ -114,20 +115,21 @@ impl<F: FieldExt> Argument<F> {
         let compressed_table_expression = compress_expressions(&self.table_expressions);
 
         // Permute compressed (InputExpression, TableExpression) pair
-        let (permuted_input_expression, permuted_table_expression) = permute_expression_pair(
-            pk,
-            params,
-            domain,
-            &mut rng,
-            &compressed_input_expression,
-            &compressed_table_expression,
-        )?;
+        let (permuted_input_expression, permuted_table_expression) =
+            permute_expression_pair::<_, _, _, ZK>(
+                pk,
+                params,
+                domain,
+                &mut rng,
+                &compressed_input_expression,
+                &compressed_table_expression,
+            )?;
 
         // Closure to construct commitment to vector of values
         let mut commit_values = |values: &Polynomial<C::Scalar, LagrangeCoeff>| {
             let poly = pk.vk.domain.lagrange_to_coeff(values.clone());
             let blind = Blind(C::Scalar::random(&mut rng));
-            let commitment = params.commit_lagrange(values, blind).to_affine();
+            let commitment = params.commit_lagrange(values).to_affine();
             (poly, blind, commitment)
         };
 
@@ -170,6 +172,7 @@ impl<C: CurveAffine> Permuted<C> {
         E: EncodedChallenge<C>,
         R: RngCore,
         T: TranscriptWrite<C, E>,
+        const ZK: bool,
     >(
         self,
         pk: &ProvingKey<C>,
@@ -179,7 +182,7 @@ impl<C: CurveAffine> Permuted<C> {
         mut rng: R,
         transcript: &mut T,
     ) -> Result<Committed<C>, Error> {
-        let blinding_factors = pk.vk.cs.blinding_factors();
+        let blinding_factors = pk.vk.cs.blinding_factors::<ZK>();
         // Goal is to compute the products of fractions
         //
         // Numerator: (\theta^{m-1} a_0(\omega^i) + \theta^{m-2} a_1(\omega^i) + ... + \theta a_{m-2}(\omega^i) + a_{m-1}(\omega^i) + \beta)
@@ -254,7 +257,7 @@ impl<C: CurveAffine> Permuted<C> {
         // It can be used for debugging purposes.
         {
             // While in Lagrange basis, check that product is correctly constructed
-            let u = (params.n() as usize) - (blinding_factors + 1);
+            let u = pk.vk.cs.usable_rows::<ZK>(params.n() as usize).end;
 
             // l_0(X) * (1 - z(X)) = 0
             assert_eq!(z[0], C::Scalar::one());
@@ -262,7 +265,7 @@ impl<C: CurveAffine> Permuted<C> {
             // z(\omega X) (a'(X) + \beta) (s'(X) + \gamma)
             // - z(X) (\theta^{m-1} a_0(X) + ... + a_{m-1}(X) + \beta) (\theta^{m-1} s_0(X) + ... + s_{m-1}(X) + \gamma)
             for i in 0..u {
-                let mut left = z[i + 1];
+                let mut left = z[(i + 1) % params.n() as usize];
                 let permuted_input_value = &self.permuted_input_expression[i];
 
                 let permuted_table_value = &self.permuted_table_expression[i];
@@ -284,17 +287,17 @@ impl<C: CurveAffine> Permuted<C> {
             // l_last(X) * (z(X)^2 - z(X)) = 0
             // Assertion will fail only when soundness is broken, in which
             // case this z[u] value will be zero. (bad!)
-            assert_eq!(z[u], C::Scalar::one());
+            assert_eq!(z[u % params.n() as usize], C::Scalar::one());
         }
 
         let product_blind = Blind(C::Scalar::random(rng));
-        let product_commitment = params.commit_lagrange(&z, product_blind).to_affine();
+        let product_commitment = params.commit_lagrange(&z).to_affine();
         let z = pk.vk.domain.lagrange_to_coeff(z);
 
         // Hash product commitment
         transcript.write_point(product_commitment)?;
 
-        Ok(Committed::<C> {
+        Ok(Committed {
             permuted_input_poly: self.permuted_input_poly,
             permuted_input_blind: self.permuted_input_blind,
             permuted_table_poly: self.permuted_table_poly,
@@ -351,31 +354,31 @@ impl<C: CurveAffine> Evaluated<C> {
             .chain(Some(ProverQuery {
                 point: *x,
                 poly: &self.constructed.product_poly,
-                blind: self.constructed.product_blind,
+                // blind: self.constructed.product_blind,
             }))
             // Open lookup input commitments at x
             .chain(Some(ProverQuery {
                 point: *x,
                 poly: &self.constructed.permuted_input_poly,
-                blind: self.constructed.permuted_input_blind,
+                // blind: self.constructed.permuted_input_blind,
             }))
             // Open lookup table commitments at x
             .chain(Some(ProverQuery {
                 point: *x,
                 poly: &self.constructed.permuted_table_poly,
-                blind: self.constructed.permuted_table_blind,
+                // blind: self.constructed.permuted_table_blind,
             }))
             // Open lookup input commitments at x_inv
             .chain(Some(ProverQuery {
                 point: x_inv,
                 poly: &self.constructed.permuted_input_poly,
-                blind: self.constructed.permuted_input_blind,
+                // blind: self.constructed.permuted_input_blind,
             }))
             // Open lookup product commitments at x_next
             .chain(Some(ProverQuery {
                 point: x_next,
                 poly: &self.constructed.product_poly,
-                blind: self.constructed.product_blind,
+                // blind: self.constructed.product_blind,
             }))
     }
 }
@@ -388,7 +391,13 @@ type ExpressionPair<F> = (Polynomial<F, LagrangeCoeff>, Polynomial<F, LagrangeCo
 /// - the first row in a sequence of like values in A' is the row
 ///   that has the corresponding value in S'.
 /// This method returns (A', S') if no errors are encountered.
-fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: RngCore>(
+fn permute_expression_pair<
+    'params,
+    C: CurveAffine,
+    P: Params<'params, C>,
+    R: RngCore,
+    const ZK: bool,
+>(
     pk: &ProvingKey<C>,
     params: &P,
     domain: &EvaluationDomain<C::Scalar>,
@@ -396,8 +405,7 @@ fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: Rn
     input_expression: &Polynomial<C::Scalar, LagrangeCoeff>,
     table_expression: &Polynomial<C::Scalar, LagrangeCoeff>,
 ) -> Result<ExpressionPair<C::Scalar>, Error> {
-    let blinding_factors = pk.vk.cs.blinding_factors();
-    let usable_rows = params.n() as usize - (blinding_factors + 1);
+    let usable_rows = pk.vk.cs.usable_rows::<ZK>(params.n() as usize).end;
 
     let mut permuted_input_expression: Vec<C::Scalar> = input_expression.to_vec();
     permuted_input_expression.truncate(usable_rows);
@@ -448,8 +456,9 @@ fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: Rn
     assert!(repeated_input_rows.is_empty());
 
     permuted_input_expression
-        .extend((0..(blinding_factors + 1)).map(|_| C::Scalar::random(&mut rng)));
-    permuted_table_coeffs.extend((0..(blinding_factors + 1)).map(|_| C::Scalar::random(&mut rng)));
+        .extend((usable_rows..params.n() as usize).map(|_| C::Scalar::random(&mut rng)));
+    permuted_table_coeffs
+        .extend((usable_rows..params.n() as usize).map(|_| C::Scalar::random(&mut rng)));
     assert_eq!(permuted_input_expression.len(), params.n() as usize);
     assert_eq!(permuted_table_coeffs.len(), params.n() as usize);
 

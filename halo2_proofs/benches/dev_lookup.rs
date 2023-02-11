@@ -12,6 +12,8 @@ use std::marker::PhantomData;
 
 use criterion::{BenchmarkId, Criterion};
 
+const ZK: bool = true;
+
 fn criterion_benchmark(c: &mut Criterion) {
     #[derive(Clone, Default)]
     struct MyCircuit<F: FieldExt> {
@@ -94,7 +96,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         let circuit = MyCircuit::<pallas::Base> {
             _marker: PhantomData,
         };
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+
+        let prover = MockProver::run::<_, ZK>(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()))
     }
 

@@ -154,11 +154,7 @@ impl Assembly {
         let mut commitments = Vec::with_capacity(p.columns.len());
         for permutation in &permutations {
             // Compute commitment to permutation polynomial
-            commitments.push(
-                params
-                    .commit_lagrange(permutation, Blind::default())
-                    .to_affine(),
-            );
+            commitments.push(params.commit_lagrange(permutation).to_affine());
         }
 
         VerifyingKey { commitments }

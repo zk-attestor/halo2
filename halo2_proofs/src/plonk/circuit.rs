@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::env::var;
 use std::{
     convert::TryFrom,
-    ops::{Neg, Sub},
+    ops::{Neg, Range, Sub},
 };
 
 use super::{lookup, permutation, Assigned, Error};
@@ -1723,7 +1723,10 @@ impl<F: Field> ConstraintSystem<F> {
     /// find which fixed column corresponds with a given `Selector`.
     ///
     /// Do not call this twice. Yes, this should be a builder pattern instead.
-    pub(crate) fn compress_selectors(mut self, selectors: Vec<Vec<bool>>) -> (Self, Vec<Vec<F>>) {
+    pub(crate) fn compress_selectors<const ZK: bool>(
+        mut self,
+        selectors: Vec<Vec<bool>>,
+    ) -> (Self, Vec<Vec<F>>) {
         // The number of provided selector assignments must be the number we
         // counted for this constraint system.
         assert_eq!(selectors.len(), self.num_selectors);
@@ -1741,7 +1744,7 @@ impl<F: Field> ConstraintSystem<F> {
 
         // We will not increase the degree of the constraint system, so we limit
         // ourselves to the largest existing degree constraint.
-        let max_degree = self.degree();
+        let max_degree = self.degree::<ZK>();
 
         let mut new_columns = vec![];
         let (polys, selector_assignment) = compress_selectors::process(
@@ -1974,7 +1977,7 @@ impl<F: Field> ConstraintSystem<F> {
 
     /// Compute the degree of the constraint system (the maximum degree of all
     /// constraints).
-    pub fn degree(&self) -> usize {
+    pub fn degree<const ZK: bool>(&self) -> usize {
         // The permutation argument will serve alongside the gates, so must be
         // accounted for.
         let mut degree = self.permutation.required_degree();
@@ -1985,7 +1988,7 @@ impl<F: Field> ConstraintSystem<F> {
             degree,
             self.lookups
                 .iter()
-                .map(|l| l.required_degree())
+                .map(|l| l.required_degree::<ZK>())
                 .max()
                 .unwrap_or(1),
         );
@@ -2014,7 +2017,11 @@ impl<F: Field> ConstraintSystem<F> {
 
     /// Compute the number of blinding factors necessary to perfectly blind
     /// each of the prover's witness polynomials.
-    pub fn blinding_factors(&self) -> usize {
+    pub fn blinding_factors<const ZK: bool>(&self) -> usize {
+        if !ZK {
+            return 0;
+        }
+
         // All of the prover's advice columns are evaluated at no more than
         let factors = *self.num_advice_queries.iter().max().unwrap_or(&1);
         // distinct points during gate checks.
@@ -2041,16 +2048,29 @@ impl<F: Field> ConstraintSystem<F> {
         factors + 1
     }
 
+    /// Returns usable rows of circuit.
+    pub fn usable_rows<const ZK: bool>(&self, n: usize) -> Range<usize> {
+        if ZK {
+            0..n - (self.blinding_factors::<ZK>() + 1)
+        } else {
+            0..n
+        }
+    }
+
     /// Returns the minimum necessary rows that need to exist in order to
     /// account for e.g. blinding factors.
-    pub fn minimum_rows(&self) -> usize {
-        self.blinding_factors() // m blinding factors
-            + 1 // for l_{-(m + 1)} (l_last)
-            + 1 // for l_0 (just for extra breathing room for the permutation
-                // argument, to essentially force a separation in the
-                // permutation polynomial between the roles of l_last, l_0
-                // and the interstitial values.)
-            + 1 // for at least one row
+    pub fn minimum_rows<const ZK: bool>(&self) -> usize {
+        if !ZK {
+            return 1; // for at least one row
+        }
+
+        self.blinding_factors::<ZK>() // m blinding factors
+        + 1 // for l_{-(m + 1)} (l_last)
+        + 1 // for l_0 (just for extra breathing room for the permutation
+            // argument, to essentially force a separation in the
+            // permutation polynomial between the roles of l_last, l_0
+            // and the interstitial values.)
+        + 1 // for at least one row
     }
 
     /// Returns number of fixed columns

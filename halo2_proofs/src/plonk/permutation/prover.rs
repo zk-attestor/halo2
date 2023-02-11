@@ -49,6 +49,7 @@ impl Argument {
         E: EncodedChallenge<C>,
         R: RngCore,
         T: TranscriptWrite<C, E>,
+        const ZK: bool,
     >(
         &self,
         params: &P,
@@ -69,8 +70,12 @@ impl Argument {
         // will never underflow because of the requirement of at least a degree
         // 3 circuit for the permutation argument.
         assert!(pk.vk.cs_degree >= 3);
-        let chunk_len = pk.vk.cs_degree - 2;
-        let blinding_factors = pk.vk.cs.blinding_factors();
+        let chunk_len = if ZK || self.columns.len() >= pk.vk.cs_degree {
+            pk.vk.cs_degree - 2
+        } else {
+            pk.vk.cs_degree - 1
+        };
+        let blinding_factors = pk.vk.cs.blinding_factors::<ZK>();
 
         // Each column gets its own delta power.
         let mut deltaomega = C::Scalar::one();
@@ -158,16 +163,21 @@ impl Argument {
                 z.push(tmp);
             }
             let mut z = domain.lagrange_from_vec(z);
-            // Set blinding factors
-            for z in &mut z[params.n() as usize - blinding_factors..] {
-                *z = C::Scalar::random(&mut rng);
+            if ZK {
+                // Set blinding factors
+                for z in &mut z[params.n() as usize - blinding_factors..] {
+                    *z = C::Scalar::random(&mut rng);
+                }
+                // Set new last_z
+                last_z = z[params.n() as usize - (blinding_factors + 1)];
+            } else {
+                // Set new last_z
+                last_z = *z.last().unwrap() * modified_values.last().unwrap();
             }
-            // Set new last_z
-            last_z = z[params.n() as usize - (blinding_factors + 1)];
 
             let blind = Blind(C::Scalar::random(&mut rng));
 
-            let permutation_product_commitment_projective = params.commit_lagrange(&z, blind);
+            let permutation_product_commitment_projective = params.commit_lagrange(&z);
             let permutation_product_blind = blind;
             let z = domain.lagrange_to_coeff(z);
             let permutation_product_poly = z.clone();
@@ -214,7 +224,7 @@ impl<C: CurveAffine> super::ProvingKey<C> {
         self.polys.iter().map(move |poly| ProverQuery {
             point: *x,
             poly,
-            blind: Blind::default(),
+            // blind: Blind::default(),
         })
     }
 
@@ -233,14 +243,18 @@ impl<C: CurveAffine> super::ProvingKey<C> {
 }
 
 impl<C: CurveAffine> Constructed<C> {
-    pub(in crate::plonk) fn evaluate<E: EncodedChallenge<C>, T: TranscriptWrite<C, E>>(
+    pub(in crate::plonk) fn evaluate<
+        E: EncodedChallenge<C>,
+        T: TranscriptWrite<C, E>,
+        const ZK: bool,
+    >(
         self,
         pk: &plonk::ProvingKey<C>,
         x: ChallengeX<C>,
         transcript: &mut T,
     ) -> Result<Evaluated<C>, Error> {
         let domain = &pk.vk.domain;
-        let blinding_factors = pk.vk.cs.blinding_factors();
+        let blinding_factors = pk.vk.cs.blinding_factors::<ZK>();
 
         {
             let mut sets = self.sets.iter();
@@ -261,16 +275,18 @@ impl<C: CurveAffine> Constructed<C> {
                     transcript.write_scalar(*eval)?;
                 }
 
-                // If we have any remaining sets to process, evaluate this set at omega^u
-                // so we can constrain the last value of its running product to equal the
-                // first value of the next set's running product, chaining them together.
-                if sets.len() > 0 {
-                    let permutation_product_last_eval = eval_polynomial(
-                        &set.permutation_product_poly,
-                        domain.rotate_omega(*x, Rotation(-((blinding_factors + 1) as i32))),
-                    );
+                if ZK {
+                    // If we have any remaining sets to process, evaluate this set at omega^u
+                    // so we can constrain the last value of its running product to equal the
+                    // first value of the next set's running product, chaining them together.
+                    if sets.len() > 0 {
+                        let permutation_product_last_eval = eval_polynomial(
+                            &set.permutation_product_poly,
+                            domain.rotate_omega(*x, Rotation(-((blinding_factors + 1) as i32))),
+                        );
 
-                    transcript.write_scalar(permutation_product_last_eval)?;
+                        transcript.write_scalar(permutation_product_last_eval)?;
+                    }
                 }
             }
         }
@@ -280,12 +296,12 @@ impl<C: CurveAffine> Constructed<C> {
 }
 
 impl<C: CurveAffine> Evaluated<C> {
-    pub(in crate::plonk) fn open<'a>(
+    pub(in crate::plonk) fn open<'a, const ZK: bool>(
         &'a self,
         pk: &'a plonk::ProvingKey<C>,
         x: ChallengeX<C>,
     ) -> impl Iterator<Item = ProverQuery<'a, C>> + Clone {
-        let blinding_factors = pk.vk.cs.blinding_factors();
+        let blinding_factors = pk.vk.cs.blinding_factors::<ZK>();
         let x_next = pk.vk.domain.rotate_omega(*x, Rotation::next());
         let x_last = pk
             .vk
@@ -299,18 +315,18 @@ impl<C: CurveAffine> Evaluated<C> {
                     .chain(Some(ProverQuery {
                         point: *x,
                         poly: &set.permutation_product_poly,
-                        blind: set.permutation_product_blind,
+                        // blind: set.permutation_product_blind,
                     }))
                     .chain(Some(ProverQuery {
                         point: x_next,
                         poly: &set.permutation_product_poly,
-                        blind: set.permutation_product_blind,
+                        // blind: set.permutation_product_blind,
                     }))
             }))
             // Open it at \omega^{last} x for all but the last set. This rotation is only
             // sensical for the first row, but we only use this rotation in a constraint
             // that is gated on l_0.
-            .chain(
+            .chain(if ZK {
                 self.constructed
                     .sets
                     .iter()
@@ -320,9 +336,12 @@ impl<C: CurveAffine> Evaluated<C> {
                         Some(ProverQuery {
                             point: x_last,
                             poly: &set.permutation_product_poly,
-                            blind: set.permutation_product_blind,
+                            // blind: set.permutation_product_blind,
                         })
-                    }),
-            )
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            })
     }
 }

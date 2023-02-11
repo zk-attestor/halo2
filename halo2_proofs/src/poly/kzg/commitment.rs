@@ -269,11 +269,7 @@ where
         MSMKZG::new()
     }
 
-    fn commit_lagrange(
-        &self,
-        poly: &Polynomial<E::Scalar, LagrangeCoeff>,
-        _: Blind<E::Scalar>,
-    ) -> E::G1 {
+    fn commit_lagrange(&self, poly: &Polynomial<E::Scalar, LagrangeCoeff>) -> E::G1 {
         let size = poly.len();
         assert!(self.n() >= size as u64);
         best_multiexp(poly, &self.g_lagrange[0..size])
@@ -313,7 +309,7 @@ where
         Self::setup(k, OsRng)
     }
 
-    fn commit(&self, poly: &Polynomial<E::Scalar, Coeff>, _: Blind<E::Scalar>) -> E::G1 {
+    fn commit(&self, poly: &Polynomial<E::Scalar, Coeff>) -> E::G1 {
         let size = poly.len();
         assert!(self.n() >= size as u64);
         best_multiexp(poly, &self.g[0..size])
@@ -364,9 +360,7 @@ mod test {
 
         let b = domain.lagrange_to_coeff(a.clone());
 
-        let alpha = Blind(Fr::random(OsRng));
-
-        assert_eq!(params.commit(&b, alpha), params.commit_lagrange(&a, alpha));
+        assert_eq!(params.commit(&b), params.commit_lagrange(&a));
     }
 
     #[test]

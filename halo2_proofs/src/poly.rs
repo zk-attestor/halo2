@@ -22,7 +22,7 @@ mod query;
 mod strategy;
 
 /// Inner product argument commitment scheme
-pub mod ipa;
+// pub mod ipa;
 
 /// KZG commitment scheme
 pub mod kzg;

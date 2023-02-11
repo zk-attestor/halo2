@@ -205,7 +205,7 @@ where
             .reduce(|acc, poly| acc + &poly)
             .unwrap();
 
-        let h = self.params.commit(&h_x, Blind::default()).to_affine();
+        let h = self.params.commit(&h_x).to_affine();
         transcript.write_point(h)?;
         let u: ChallengeU<_> = transcript.squeeze_challenge_scalar();
 
@@ -280,7 +280,7 @@ where
             _marker: PhantomData,
         };
 
-        let h = self.params.commit(&h_x, Blind::default()).to_affine();
+        let h = self.params.commit(&h_x).to_affine();
         transcript.write_point(h)?;
 
         Ok(())

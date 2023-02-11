@@ -64,7 +64,7 @@ pub trait Params<'params, C: CurveAffine>: Sized + Clone {
     fn commit_lagrange(
         &self,
         poly: &Polynomial<C::ScalarExt, LagrangeCoeff>,
-        r: Blind<C::ScalarExt>,
+        // r: Blind<C::ScalarExt>,
     ) -> C::CurveExt;
 
     /// Writes params to a buffer.
@@ -85,8 +85,11 @@ pub trait ParamsProver<'params, C: CurveAffine>: Params<'params, C> {
     /// This computes a commitment to a polynomial described by the provided
     /// slice of coefficients. The commitment may be blinded by the blinding
     /// factor `r`.
-    fn commit(&self, poly: &Polynomial<C::ScalarExt, Coeff>, r: Blind<C::ScalarExt>)
-        -> C::CurveExt;
+    // blind does nothing in KZG, regardless of whether ZK is turned on
+    fn commit(
+        &self,
+        poly: &Polynomial<C::ScalarExt, Coeff>, /*, r: Blind<C::ScalarExt>*/
+    ) -> C::CurveExt;
 
     /// Getter for g generators
     fn get_g(&self) -> &[C];

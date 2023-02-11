@@ -92,13 +92,15 @@ impl<'params, C: CurveAffine> Params<'params, C> for ParamsIPA<C> {
     fn commit_lagrange(
         &self,
         poly: &Polynomial<C::Scalar, LagrangeCoeff>,
-        r: Blind<C::Scalar>,
+        // r: Blind<C::Scalar>,
     ) -> C::Curve {
         let mut tmp_scalars = Vec::with_capacity(poly.len() + 1);
         let mut tmp_bases = Vec::with_capacity(poly.len() + 1);
 
         tmp_scalars.extend(poly.iter());
-        tmp_scalars.push(r.0);
+        // PLACEHOLDER
+        tmp_scalars.push(C::Scalar::one());
+        // tmp_scalars.push(r.0);
 
         tmp_bases.extend(self.g_lagrange.iter());
         tmp_bases.push(self.w);

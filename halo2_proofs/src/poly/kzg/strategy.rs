@@ -10,7 +10,7 @@ use crate::{
     plonk::Error,
     poly::{
         commitment::{Verifier, MSM},
-        ipa::msm::MSMIPA,
+        // ipa::msm::MSMIPA,
         strategy::{Guard, VerificationStrategy},
     },
     transcript::{EncodedChallenge, TranscriptRead},

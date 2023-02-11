@@ -24,15 +24,16 @@ pub struct ProverQuery<'com, C: CurveAffine> {
     pub(crate) point: C::Scalar,
     /// coefficients of polynomial
     pub(crate) poly: &'com Polynomial<C::Scalar, Coeff>,
-    /// blinding factor of polynomial
-    pub(crate) blind: Blind<C::Scalar>,
+    // blinding factor of polynomial
+    // not used in KZG
+    // pub(crate) blind: Blind<C::Scalar>,
 }
 
 #[doc(hidden)]
 #[derive(Copy, Clone)]
 pub struct PolynomialPointer<'com, C: CurveAffine> {
     pub(crate) poly: &'com Polynomial<C::Scalar, Coeff>,
-    pub(crate) blind: Blind<C::Scalar>,
+    // pub(crate) blind: Blind<C::Scalar>,
 }
 
 impl<'com, C: CurveAffine> PartialEq for PolynomialPointer<'com, C> {
@@ -54,7 +55,7 @@ impl<'com, C: CurveAffine> Query<C::Scalar> for ProverQuery<'com, C> {
     fn get_commitment(&self) -> Self::Commitment {
         PolynomialPointer {
             poly: self.poly,
-            blind: self.blind,
+            // blind: self.blind,
         }
     }
 }

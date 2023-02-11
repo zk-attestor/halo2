@@ -64,9 +64,10 @@ impl<'params, C: CurveAffine> Prover<'params, IPACommitmentScheme<C>> for Prover
 
             for commitment_data in poly_map.into_iter() {
                 accumulate(
-                    commitment_data.set_index,        // set_idx,
-                    commitment_data.commitment.poly,  // poly,
-                    commitment_data.commitment.blind, // blind,
+                    commitment_data.set_index,       // set_idx,
+                    commitment_data.commitment.poly, // poly,
+                    // PLACEHOLDER, not supporting IPA for now
+                    Blind::default(), // commitment_data.commitment.blind, // blind,
                 );
             }
         }

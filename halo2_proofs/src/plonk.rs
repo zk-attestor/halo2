@@ -161,6 +161,8 @@ pub struct VerifyingKey<C: CurveAffine> {
     /// The representative of this `VerifyingKey` in transcripts.
     transcript_repr: C::Scalar,
     selectors: Vec<Vec<bool>>,
+    /// Is ZK turned on?
+    zk: bool,
 }
 
 impl<C: SerdeCurveAffine> VerifyingKey<C>
@@ -177,6 +179,7 @@ where
     /// Writes a field element into raw bytes in its internal Montgomery representation,
     /// WITHOUT performing the expensive Montgomery reduction.
     pub fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
+        writer.write_all(&[self.zk as u8]).unwrap();
         writer.write_all(&self.domain.k().to_be_bytes()).unwrap();
         writer
             .write_all(&(self.fixed_commitments.len() as u32).to_be_bytes())
@@ -210,10 +213,17 @@ where
         reader: &mut R,
         format: SerdeFormat,
     ) -> io::Result<Self> {
+        let mut zk = [0u8; 1];
+        reader.read_exact(&mut zk)?;
+        let zk = zk[0] == 1;
         let mut k = [0u8; 4];
         reader.read_exact(&mut k)?;
         let k = u32::from_be_bytes(k);
-        let (domain, cs, _) = keygen::create_domain::<C, ConcreteCircuit>(k);
+        let (domain, cs, _) = if zk {
+            keygen::create_domain::<C, ConcreteCircuit, true>(k)
+        } else {
+            keygen::create_domain::<C, ConcreteCircuit, false>(k)
+        };
         let mut num_fixed_columns = [0u8; 4];
         reader.read_exact(&mut num_fixed_columns).unwrap();
         let num_fixed_columns = u32::from_be_bytes(num_fixed_columns);
@@ -236,15 +246,17 @@ where
                 selector
             })
             .collect();
-        let (cs, _) = cs.compress_selectors(selectors.clone());
+        let (cs, _) = if zk {
+            cs.compress_selectors::<true>(selectors.clone())
+        } else {
+            cs.compress_selectors::<false>(selectors.clone())
+        };
 
-        Ok(Self::from_parts(
-            domain,
-            fixed_commitments,
-            permutation,
-            cs,
-            selectors,
-        ))
+        Ok(if zk {
+            Self::from_parts::<true>(domain, fixed_commitments, permutation, cs, selectors)
+        } else {
+            Self::from_parts::<false>(domain, fixed_commitments, permutation, cs, selectors)
+        })
     }
 
     /// Writes a verifying key to a vector of bytes using [`Self::write`].
@@ -275,7 +287,7 @@ impl<C: CurveAffine> VerifyingKey<C> {
                     .unwrap_or(0))
     }
 
-    fn from_parts(
+    fn from_parts<const ZK: bool>(
         domain: EvaluationDomain<C::Scalar>,
         fixed_commitments: Vec<C>,
         permutation: permutation::VerifyingKey<C>,
@@ -283,7 +295,7 @@ impl<C: CurveAffine> VerifyingKey<C> {
         selectors: Vec<Vec<bool>>,
     ) -> Self {
         // Compute cached values.
-        let cs_degree = cs.degree();
+        let cs_degree = cs.degree::<ZK>();
 
         let mut vk = Self {
             domain,
@@ -294,6 +306,7 @@ impl<C: CurveAffine> VerifyingKey<C> {
             // Temporary, this is not pinned.
             transcript_repr: C::Scalar::zero(),
             selectors,
+            zk: ZK,
         };
 
         let mut hasher = Blake2bParams::new()

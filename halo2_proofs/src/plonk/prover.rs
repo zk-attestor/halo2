@@ -57,6 +57,7 @@ pub fn create_proof<
     R: RngCore + 'a,
     T: TranscriptWrite<Scheme::Curve, E>,
     ConcreteCircuit: Circuit<Scheme::Scalar>,
+    const ZK: bool,
 >(
     params: &'params Scheme::ParamsProver,
     pk: &ProvingKey<Scheme::Curve>,
@@ -102,8 +103,8 @@ pub fn create_proof<
                 .map(|values| {
                     let mut poly = domain.empty_lagrange();
                     assert_eq!(poly.len(), params.n() as usize);
-                    if values.len() > (poly.len() - (meta.blinding_factors() + 1)) {
-                        panic!("Error::InstanceTooLarge");
+                    if ZK && values.len() > meta.usable_rows::<ZK>(params.n() as usize).end {
+                        panic!("{:?}", Error::InstanceTooLarge);
                     }
                     for (poly, value) in poly.iter_mut().zip(values.iter()) {
                         *poly = *value;
@@ -131,7 +132,8 @@ pub fn create_proof<
     #[derive(Clone)]
     struct AdviceSingle<C: CurveAffine, B: Basis> {
         pub advice_polys: Vec<Polynomial<C::Scalar, B>>,
-        pub advice_blinds: Vec<Blind<C::Scalar>>,
+        // advice_blinds are not used in KZG
+        // pub advice_blinds: Vec<Blind<C::Scalar>>,
     }
 
     struct WitnessCollection<'params, 'a, 'b, Scheme, P, C, E, R, T>
@@ -156,6 +158,7 @@ pub fn create_proof<
         column_indices: [Vec<usize>; 3],
         challenge_indices: [Vec<usize>; 3],
         unusable_rows_start: usize,
+        zk: bool,
         _marker: PhantomData<(P, E)>,
     }
 
@@ -305,7 +308,7 @@ pub fn create_proof<
                         .instance_single
                         .instance_values
                         .iter()
-                        .map(|poly| self.params.commit_lagrange(poly, Blind::default()))
+                        .map(|poly| self.params.commit_lagrange(poly))
                         .collect();
                     let mut instance_commitments =
                         vec![C::identity(); instance_commitments_projective.len()];
@@ -332,21 +335,19 @@ pub fn create_proof<
                     .map(|column_index| &self.advice[*column_index])
                     .collect(),
             );
-            // Add blinding factors to advice columns
-            for advice_values in &mut advice_values {
-                for cell in &mut advice_values[self.unusable_rows_start..] {
-                    *cell = F::random(&mut self.rng);
+            // Add blinding factors to advice columns if ZK is enabled
+            if self.zk {
+                for advice_values in &mut advice_values {
+                    for cell in &mut advice_values[self.unusable_rows_start..] {
+                        *cell = F::random(&mut self.rng);
+                    }
                 }
             }
             // Compute commitments to advice column polynomials
-            let blinds: Vec<_> = advice_values
-                .iter()
-                .map(|_| Blind(F::random(&mut self.rng)))
-                .collect();
+            // `blind` is not used in commit_lagrange in KZG version
             let advice_commitments_projective: Vec<_> = advice_values
                 .iter()
-                .zip(blinds.iter())
-                .map(|(poly, blind)| self.params.commit_lagrange(poly, *blind))
+                .map(|poly| self.params.commit_lagrange(poly))
                 .collect();
             let mut advice_commitments = vec![C::identity(); advice_commitments_projective.len()];
             C::CurveExt::batch_normalize(&advice_commitments_projective, &mut advice_commitments);
@@ -358,13 +359,9 @@ pub fn create_proof<
                     .write_point(*commitment)
                     .expect("Absorbing advice commitment to transcript failed");
             }
-            for ((column_index, advice_poly), blind) in self.column_indices[phase]
-                .iter()
-                .zip(advice_values)
-                .zip(blinds)
+            for (column_index, advice_poly) in self.column_indices[phase].iter().zip(advice_values)
             {
                 self.advice_single.advice_polys[*column_index] = advice_poly;
-                self.advice_single.advice_blinds[*column_index] = blind;
             }
             for challenge_index in self.challenge_indices[phase].iter() {
                 let existing = self.challenges.insert(
@@ -392,18 +389,14 @@ pub fn create_proof<
         let mut advice = Vec::with_capacity(instances.len());
         let mut challenges = HashMap::<usize, Scheme::Scalar>::with_capacity(meta.num_challenges);
 
-        let unusable_rows_start = params.n() as usize - (meta.blinding_factors() + 1);
+        let unusable_rows_start = meta.usable_rows::<ZK>(params.n() as usize).end;
         let phases = pk.vk.cs.phases().collect::<Vec<_>>();
         let num_phases = phases.len();
         // WARNING: this will currently not work if `circuits` has more than 1 circuit
         // because the original API squeezes the challenges for a phase after running all circuits
         // once in that phase.
-        if num_phases > 1 {
-            assert_eq!(
-                circuits.len(),
-                1,
-                "New challenge API doesn't work with multiple circuits yet"
-            );
+        if num_phases > 1 && circuits.len() > 1 {
+            eprintln!("WARNING: Proving multiple circuits with multiple phases will lead to DIFFERENT behavior than the original PSE API due to how challenge values are calculated.");
         }
         for ((circuit, instances), instance_single) in
             circuits.iter().zip(instances).zip(instance.iter())
@@ -421,7 +414,6 @@ pub fn create_proof<
                 usable_rows: ..unusable_rows_start,
                 advice_single: AdviceSingle::<Scheme::Curve, LagrangeCoeff> {
                     advice_polys: vec![domain.empty_lagrange(); meta.num_advice_columns],
-                    advice_blinds: vec![Blind::default(); meta.num_advice_columns],
                 },
                 instance_single,
                 rng: &mut rng,
@@ -429,6 +421,7 @@ pub fn create_proof<
                 column_indices: column_indices.clone(),
                 challenge_indices: challenge_indices.clone(),
                 unusable_rows_start,
+                zk: ZK,
                 _marker: PhantomData,
             };
 
@@ -476,7 +469,7 @@ pub fn create_proof<
                 .lookups
                 .iter()
                 .map(|lookup| {
-                    lookup.commit_permuted(
+                    lookup.commit_permuted::<_, _, _, _, _, ZK>(
                         pk,
                         params,
                         domain,
@@ -513,7 +506,7 @@ pub fn create_proof<
             pk.vk
                 .cs
                 .permutation
-                .commit(
+                .commit::<_, _, _, _, _, ZK>(
                     params,
                     pk,
                     &pk.permutation,
@@ -541,7 +534,9 @@ pub fn create_proof<
                 .into_iter()
                 .map(|lookup| {
                     lookup
-                        .commit_product(pk, params, beta, gamma, &mut rng, transcript)
+                        .commit_product::<_, _, _, _, ZK>(
+                            pk, params, beta, gamma, &mut rng, transcript,
+                        )
                         .unwrap()
                 })
                 .collect()
@@ -553,7 +548,8 @@ pub fn create_proof<
     #[cfg(feature = "profile")]
     let vanishing_time = start_timer!(|| "Commit to vanishing argument's random poly");
     // Commit to the vanishing argument's random polynomial for blinding h(x_3)
-    let vanishing = vanishing::Argument::commit(params, domain, &mut rng, transcript)?;
+    let vanishing =
+        vanishing::Argument::commit::<_, _, _, _, ZK>(params, domain, &mut rng, transcript)?;
 
     // Obtain challenge for keeping all separate gates linearly independent
     let y: ChallengeY<_> = transcript.squeeze_challenge_scalar();
@@ -567,20 +563,12 @@ pub fn create_proof<
     let start = start_measure("advice_polys", false);
     let advice: Vec<AdviceSingle<Scheme::Curve, Coeff>> = advice
         .into_iter()
-        .map(
-            |AdviceSingle {
-                 advice_polys,
-                 advice_blinds,
-             }| {
-                AdviceSingle {
-                    advice_polys: advice_polys
-                        .into_iter()
-                        .map(|poly| domain.lagrange_to_coeff(poly))
-                        .collect::<Vec<_>>(),
-                    advice_blinds,
-                }
-            },
-        )
+        .map(|AdviceSingle { advice_polys }| AdviceSingle {
+            advice_polys: advice_polys
+                .into_iter()
+                .map(|poly| domain.lagrange_to_coeff(poly))
+                .collect::<Vec<_>>(),
+        })
         .collect();
     #[cfg(feature = "profile")]
     end_timer!(fft_time);
@@ -588,8 +576,7 @@ pub fn create_proof<
     #[cfg(feature = "profile")]
     let phase4_time = start_timer!(|| "Phase 4: Evaluate h(X)");
     // Evaluate the h(X) polynomial
-    let start = start_measure("evaluate_h", false);
-    let h_poly = pk.ev.evaluate_h(
+    let h_poly = pk.ev.evaluate_h::<ZK>(
         pk,
         &advice
             .iter()
@@ -684,7 +671,7 @@ pub fn create_proof<
         transcript.write_scalar(*eval)?;
     }
 
-    let vanishing = vanishing.evaluate(x, xn, domain, transcript)?;
+    let vanishing = vanishing.evaluate::<_, _, ZK>(x, xn, domain, transcript)?;
 
     // Evaluate common permutation data
     pk.permutation.evaluate(x, transcript)?;
@@ -692,7 +679,11 @@ pub fn create_proof<
     // Evaluate the permutations, if any, at omega^i x.
     let permutations: Vec<permutation::prover::Evaluated<Scheme::Curve>> = permutations
         .into_iter()
-        .map(|permutation| -> Result<_, _> { permutation.construct().evaluate(pk, x, transcript) })
+        .map(|permutation| -> Result<_, _> {
+            permutation
+                .construct()
+                .evaluate::<_, _, ZK>(pk, x, transcript)
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     // Evaluate the lookups, if any, at omega^i x.
@@ -722,7 +713,6 @@ pub fn create_proof<
                             ProverQuery {
                                 point: domain.rotate_omega(*x, at),
                                 poly: &instance.instance_polys[column.index()],
-                                blind: Blind::default(),
                             }
                         }))
                         .into_iter()
@@ -736,10 +726,9 @@ pub fn create_proof<
                         .map(move |&(column, at)| ProverQuery {
                             point: domain.rotate_omega(*x, at),
                             poly: &advice.advice_polys[column.index()],
-                            blind: advice.advice_blinds[column.index()],
                         }),
                 )
-                .chain(permutation.open(pk, x))
+                .chain(permutation.open::<ZK>(pk, x))
                 .chain(lookups.iter().flat_map(move |p| p.open(pk, x)).into_iter())
         })
         .chain(
@@ -750,12 +739,11 @@ pub fn create_proof<
                 .map(|&(column, at)| ProverQuery {
                     point: domain.rotate_omega(*x, at),
                     poly: &pk.fixed_polys[column.index()],
-                    blind: Blind::default(),
                 }),
         )
         .chain(pk.permutation.open(x))
         // We query the h(X) polynomial at x
-        .chain(vanishing.open(x));
+        .chain(vanishing.open::<ZK>(x));
 
     #[cfg(feature = "profile")]
     let multiopen_time = start_timer!(|| "Phase 5: multiopen");

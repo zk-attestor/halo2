@@ -90,7 +90,7 @@ impl<C: CurveAffine> Committed<C> {
 }
 
 impl<C: CurveAffine> Evaluated<C> {
-    pub(in crate::plonk) fn expressions<'a>(
+    pub(in crate::plonk) fn expressions<'a, const ZK: bool>(
         &'a self,
         l_0: C::Scalar,
         l_last: C::Scalar,
@@ -136,35 +136,58 @@ impl<C: CurveAffine> Evaluated<C> {
                 * &(compress_expressions(&argument.input_expressions) + &*beta)
                 * &(compress_expressions(&argument.table_expressions) + &*gamma);
 
-            (left - &right) * &active_rows
+            if ZK {
+                (left - &right) * &active_rows
+            } else {
+                left - &right
+            }
         };
 
         std::iter::empty()
-            .chain(
-                // l_0(X) * (1 - z'(X)) = 0
-                Some(l_0 * &(C::Scalar::one() - &self.product_eval)),
-            )
-            .chain(
-                // l_last(X) * (z(X)^2 - z(X)) = 0
-                Some(l_last * &(self.product_eval.square() - &self.product_eval)),
-            )
-            .chain(
-                // (1 - (l_last(X) + l_blind(X))) * (
-                //   z(\omega X) (a'(X) + \beta) (s'(X) + \gamma)
-                //   - z(X) (\theta^{m-1} a_0(X) + ... + a_{m-1}(X) + \beta) (\theta^{m-1} s_0(X) + ... + s_{m-1}(X) + \gamma)
-                // ) = 0
-                Some(product_expression()),
-            )
-            .chain(Some(
-                // l_0(X) * (a'(X) - s'(X)) = 0
-                l_0 * &(self.permuted_input_eval - &self.permuted_table_eval),
-            ))
-            .chain(Some(
-                // (1 - (l_last(X) + l_blind(X))) * (a′(X) − s′(X))⋅(a′(X) − a′(\omega^{-1} X)) = 0
-                (self.permuted_input_eval - &self.permuted_table_eval)
-                    * &(self.permuted_input_eval - &self.permuted_input_inv_eval)
-                    * &active_rows,
-            ))
+            // l_0(X) * (1 - z'(X)) = 0
+            .chain(Some(l_0 * &(C::Scalar::one() - &self.product_eval)))
+            // ZK:
+            // l_last(X) * (z(X)^2 - z(X)) = 0
+            .chain(if ZK {
+                Some(l_last * &(self.product_eval.square() - &self.product_eval))
+            } else {
+                None
+            })
+            // ZK:
+            // (1 - (l_last(X) + l_blind(X))) * (
+            //   z(\omega X) (a'(X) + \beta) (s'(X) + \gamma)
+            //   - z(X) (\theta^{m-1} a_0(X) + ... + a_{m-1}(X) + \beta) (\theta^{m-1} s_0(X) + ... + s_{m-1}(X) + \gamma)
+            // ) = 0
+            //
+            // Non-ZK:
+            // z(\omega X) (a'(X) + \beta) (s'(X) + \gamma)
+            // - z(X) (\theta^{m-1} a_0(X) + ... + a_{m-1}(X) + \beta) (\theta^{m-1} s_0(X) + ... + s_{m-1}(X) + \gamma)
+            // = 0
+            .chain(Some(product_expression()))
+            // ZK:
+            // l_0(X) * (a'(X) - s'(X)) = 0
+            .chain(if ZK {
+                Some(l_0 * &(self.permuted_input_eval - &self.permuted_table_eval))
+            } else {
+                None
+            })
+            // ZK:
+            // (1 - (l_last(X) + l_blind(X))) * (a′(X) − s′(X))⋅(a′(X) − a′(\omega^{-1} X)) = 0
+            //
+            // Non-ZK:
+            // (a′(X) − s′(X))⋅(a′(X) − a′(\omega^{-1} X)) = 0
+            .chain(if ZK {
+                Some(
+                    (self.permuted_input_eval - &self.permuted_table_eval)
+                        * &(self.permuted_input_eval - &self.permuted_input_inv_eval)
+                        * &active_rows,
+                )
+            } else {
+                Some(
+                    (self.permuted_input_eval - &self.permuted_table_eval)
+                        * &(self.permuted_input_eval - &self.permuted_input_inv_eval),
+                )
+            })
     }
 
     pub(in crate::plonk) fn queries<'r, M: MSM<C> + 'r>(

@@ -266,8 +266,8 @@ impl<F: Group + Field> Mul<F> for Value<F> {
 ///
 /// // This circuit has no public inputs.
 /// let instance = vec![];
-///
-/// let prover = MockProver::<Fp>::run(K, &circuit, instance).unwrap();
+/// const ZK :bool = true;
+/// let prover = MockProver::<Fp>::run::<_, ZK>(K, &circuit, instance).unwrap();
 /// assert_eq!(
 ///     prover.verify(),
 ///     Err(vec![VerifyFailure::ConstraintNotSatisfied {
@@ -286,7 +286,7 @@ impl<F: Group + Field> Mul<F> for Value<F> {
 ///
 /// // If we provide a too-small K, we get an error.
 /// assert!(matches!(
-///     MockProver::<Fp>::run(2, &circuit, vec![]).unwrap_err(),
+///     MockProver::<Fp>::run::<_, ZK>(2, &circuit, vec![]).unwrap_err(),
 ///     Error::NotEnoughRowsAvailable {
 ///         current_k,
 ///     } if current_k == 2,
@@ -543,7 +543,7 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
 impl<F: FieldExt> MockProver<F> {
     /// Runs a synthetic keygen-and-prove operation on the given circuit, collecting data
     /// about the constraints and their assignments.
-    pub fn run<ConcreteCircuit: Circuit<F>>(
+    pub fn run<ConcreteCircuit: Circuit<F>, const ZK: bool>(
         k: u32,
         circuit: &ConcreteCircuit,
         instance: Vec<Vec<F>>,
@@ -554,7 +554,7 @@ impl<F: FieldExt> MockProver<F> {
         let config = ConcreteCircuit::configure(&mut cs);
         let cs = cs;
 
-        if n < cs.minimum_rows() {
+        if n < cs.minimum_rows::<ZK>() {
             return Err(Error::not_enough_rows_available(k));
         }
 
@@ -565,7 +565,7 @@ impl<F: FieldExt> MockProver<F> {
         let instance = instance
             .into_iter()
             .map(|mut instance| {
-                if instance.len() > n - (cs.blinding_factors() + 1) {
+                if instance.len() > cs.usable_rows::<ZK>(n).end {
                     return Err(Error::InstanceTooLarge);
                 }
 
@@ -578,8 +578,7 @@ impl<F: FieldExt> MockProver<F> {
         let fixed = vec![vec![CellValue::Unassigned; n]; cs.num_fixed_columns];
         let selectors = vec![vec![false; n]; cs.num_selectors];
         // Advice columns contain blinding factors.
-        let blinding_factors = cs.blinding_factors();
-        let usable_rows = n - (blinding_factors + 1);
+        let usable_rows = cs.usable_rows::<ZK>(n).end;
         let advice = vec![
             {
                 // let mut column = vec![AdviceCellValue::Unassigned; n];
@@ -634,7 +633,7 @@ impl<F: FieldExt> MockProver<F> {
             )?;
         }
 
-        let (cs, selector_polys) = prover.cs.compress_selectors(prover.selectors.clone());
+        let (cs, selector_polys) = prover.cs.compress_selectors::<ZK>(prover.selectors.clone());
         prover.cs = cs;
         prover.fixed.extend(selector_polys.into_iter().map(|poly| {
             let mut v = vec![CellValue::Unassigned; n];
@@ -749,8 +748,7 @@ impl<F: FieldExt> MockProver<F> {
                 .iter()
                 .enumerate()
                 .flat_map(|(gate_index, gate)| {
-                    let blinding_rows =
-                        (self.n as usize - (self.cs.blinding_factors() + 1))..(self.n as usize);
+                    let blinding_rows = self.usable_rows.end..self.n as usize;
                     (gate_row_ids
                         .clone()
                         .into_iter()
@@ -1137,8 +1135,7 @@ impl<F: FieldExt> MockProver<F> {
             .iter()
             .enumerate()
             .flat_map(|(gate_index, gate)| {
-                let blinding_rows =
-                    (self.n as usize - (self.cs.blinding_factors() + 1))..(self.n as usize);
+                let blinding_rows = self.usable_rows.end..self.n as usize;
                 (gate_row_ids
                     .clone()
                     .into_par_iter()
@@ -1499,6 +1496,7 @@ mod tests {
 
     #[test]
     fn unassigned_cell() {
+        const ZK: bool = true;
         const K: u32 = 4;
 
         #[derive(Clone)]
@@ -1567,8 +1565,7 @@ mod tests {
                 )
             }
         }
-
-        let prover = MockProver::run(K, &FaultyCircuit {}, vec![]).unwrap();
+        let prover = MockProver::run::<_, ZK>(K, &FaultyCircuit {}, vec![]).unwrap();
         assert_eq!(
             prover.verify(),
             Err(vec![VerifyFailure::CellNotAssigned {
@@ -1588,6 +1585,7 @@ mod tests {
 
     #[test]
     fn bad_lookup_any() {
+        const ZK: bool = true;
         const K: u32 = 4;
 
         #[derive(Clone)]
@@ -1711,7 +1709,7 @@ mod tests {
             }
         }
 
-        let prover = MockProver::run(
+        let prover = MockProver::run::<_, ZK>(
             K,
             &FaultyCircuit {},
             // This is our "lookup table".
@@ -1738,6 +1736,7 @@ mod tests {
 
     #[test]
     fn bad_fixed_lookup() {
+        const ZK: bool = true;
         const K: u32 = 4;
 
         #[derive(Clone)]
@@ -1854,7 +1853,7 @@ mod tests {
             }
         }
 
-        let prover = MockProver::run(K, &FaultyCircuit {}, vec![]).unwrap();
+        let prover = MockProver::run::<_, ZK>(K, &FaultyCircuit {}, vec![]).unwrap();
         assert_eq!(
             prover.verify(),
             Err(vec![VerifyFailure::Lookup {
@@ -1870,6 +1869,7 @@ mod tests {
 
     #[test]
     fn contraint_unsatisfied() {
+        const ZK: bool = true;
         const K: u32 = 4;
 
         #[derive(Clone)]
@@ -1971,7 +1971,7 @@ mod tests {
             }
         }
 
-        let prover = MockProver::run(K, &FaultyCircuit {}, vec![]).unwrap();
+        let prover = MockProver::run::<_, ZK>(K, &FaultyCircuit {}, vec![]).unwrap();
         assert_eq!(
             prover.verify(),
             Err(vec![VerifyFailure::ConstraintNotSatisfied {

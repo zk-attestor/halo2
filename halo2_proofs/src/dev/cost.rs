@@ -147,7 +147,7 @@ impl<G: PrimeGroup, ConcreteCircuit: Circuit<G::Scalar>> CircuitCost<G, Concrete
     /// Measures a circuit with parameter constant `k`.
     ///
     /// Panics if `k` is not large enough for the circuit.
-    pub fn measure(k: usize, circuit: &ConcreteCircuit) -> Self {
+    pub fn measure<const ZK: bool>(k: usize, circuit: &ConcreteCircuit) -> Self {
         // Collect the layout details.
         let mut cs = ConstraintSystem::default();
         let config = ConcreteCircuit::configure(&mut cs);
@@ -161,9 +161,9 @@ impl<G: PrimeGroup, ConcreteCircuit: Circuit<G::Scalar>> CircuitCost<G, Concrete
             cs.constants.clone(),
         )
         .unwrap();
-        let (cs, _) = cs.compress_selectors(assembly.selectors);
+        let (cs, _) = cs.compress_selectors::<ZK>(assembly.selectors);
 
-        assert!((1 << k) >= cs.minimum_rows());
+        assert!((1 << k) >= cs.minimum_rows::<ZK>());
 
         // Figure out how many point sets we have due to queried cells.
         let mut column_queries: HashMap<Column<Any>, HashSet<i32>> = HashMap::new();
@@ -199,11 +199,11 @@ impl<G: PrimeGroup, ConcreteCircuit: Circuit<G::Scalar>> CircuitCost<G, Concrete
 
         // Include permutation polynomials in point sets.
         point_sets.insert(vec![0, 1]); // permutation_product_poly
-        let max_deg = cs.degree();
+        let max_deg = cs.degree::<ZK>();
         let permutation_cols = cs.permutation.get_columns().len();
         if permutation_cols > max_deg - 2 {
             // permutation_product_poly for chaining chunks.
-            point_sets.insert(vec![-((cs.blinding_factors() + 1) as i32), 0, 1]);
+            point_sets.insert(vec![-((cs.blinding_factors::<ZK>() + 1) as i32), 0, 1]);
         }
 
         CircuitCost {

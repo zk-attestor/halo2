@@ -80,10 +80,7 @@ where
                 values: kate_division(&poly_batch.values, z),
                 _marker: PhantomData,
             };
-            let w = self
-                .params
-                .commit(&witness_poly, Blind::default())
-                .to_affine();
+            let w = self.params.commit(&witness_poly).to_affine();
 
             transcript.write_point(w)?;
         }

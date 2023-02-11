@@ -18,7 +18,7 @@ use crate::{
 
 pub(in crate::plonk) struct Committed<C: CurveAffine> {
     random_poly: Polynomial<C::Scalar, Coeff>,
-    random_blind: Blind<C::Scalar>,
+    // random_blind: Blind<C::Scalar>,
 }
 
 pub(in crate::plonk) struct Constructed<C: CurveAffine> {
@@ -40,28 +40,29 @@ impl<C: CurveAffine> Argument<C> {
         E: EncodedChallenge<C>,
         R: RngCore,
         T: TranscriptWrite<C, E>,
+        const ZK: bool,
     >(
         params: &P,
         domain: &EvaluationDomain<C::Scalar>,
         mut rng: R,
         transcript: &mut T,
     ) -> Result<Committed<C>, Error> {
-        // Sample a random polynomial of degree n - 1
         let mut random_poly = domain.empty_coeff();
-        for coeff in random_poly.iter_mut() {
-            *coeff = C::Scalar::random(&mut rng);
+
+        if ZK {
+            // Sample a random polynomial of degree n - 1
+            for coeff in random_poly.iter_mut() {
+                *coeff = C::Scalar::random(&mut rng);
+            }
         }
-        // Sample a random blinding factor
-        let random_blind = Blind(C::Scalar::random(rng));
 
         // Commit
-        let c = params.commit(&random_poly, random_blind).to_affine();
-        transcript.write_point(c)?;
+        if ZK {
+            let c = params.commit(&random_poly).to_affine();
+            transcript.write_point(c)?;
+        }
 
-        Ok(Committed {
-            random_poly,
-            random_blind,
-        })
+        Ok(Committed { random_poly })
     }
 }
 
@@ -101,7 +102,7 @@ impl<C: CurveAffine> Committed<C> {
         let h_commitments_projective: Vec<_> = h_pieces
             .iter()
             .zip(h_blinds.iter())
-            .map(|(h_piece, blind)| params.commit(h_piece, *blind))
+            .map(|(h_piece, blind)| params.commit(h_piece))
             .collect();
         let mut h_commitments = vec![C::identity(); h_commitments_projective.len()];
         C::Curve::batch_normalize(&h_commitments_projective, &mut h_commitments);
@@ -121,7 +122,11 @@ impl<C: CurveAffine> Committed<C> {
 }
 
 impl<C: CurveAffine> Constructed<C> {
-    pub(in crate::plonk) fn evaluate<E: EncodedChallenge<C>, T: TranscriptWrite<C, E>>(
+    pub(in crate::plonk) fn evaluate<
+        E: EncodedChallenge<C>,
+        T: TranscriptWrite<C, E>,
+        const ZK: bool,
+    >(
         self,
         x: ChallengeX<C>,
         xn: C::Scalar,
@@ -142,8 +147,10 @@ impl<C: CurveAffine> Constructed<C> {
                 acc * Blind(xn) + *eval
             });
 
-        let random_eval = eval_polynomial(&self.committed.random_poly, *x);
-        transcript.write_scalar(random_eval)?;
+        if ZK {
+            let random_eval = eval_polynomial(&self.committed.random_poly, *x);
+            transcript.write_scalar(random_eval)?;
+        }
 
         Ok(Evaluated {
             h_poly,
@@ -154,7 +161,7 @@ impl<C: CurveAffine> Constructed<C> {
 }
 
 impl<C: CurveAffine> Evaluated<C> {
-    pub(in crate::plonk) fn open(
+    pub(in crate::plonk) fn open<const ZK: bool>(
         &self,
         x: ChallengeX<C>,
     ) -> impl Iterator<Item = ProverQuery<'_, C>> + Clone {
@@ -162,12 +169,16 @@ impl<C: CurveAffine> Evaluated<C> {
             .chain(Some(ProverQuery {
                 point: *x,
                 poly: &self.h_poly,
-                blind: self.h_blind,
+                // blind: self.h_blind,
             }))
-            .chain(Some(ProverQuery {
-                point: *x,
-                poly: &self.committed.random_poly,
-                blind: self.committed.random_blind,
-            }))
+            .chain(if ZK {
+                Some(ProverQuery {
+                    point: *x,
+                    poly: &self.committed.random_poly,
+                    // blind: self.committed.random_blind,
+                })
+            } else {
+                None
+            })
     }
 }

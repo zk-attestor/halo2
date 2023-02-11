@@ -23,6 +23,7 @@ mod test {
     use rand_core::{OsRng, RngCore};
     use std::io::{Read, Write};
 
+    /*
     #[test]
     fn test_roundtrip_ipa() {
         use crate::poly::ipa::commitment::{IPACommitmentScheme, ParamsIPA};
@@ -96,6 +97,7 @@ mod test {
             AccumulatorStrategy<_>,
         >(verifier_params, &proof[..], true);
     }
+    */
 
     #[test]
     fn test_roundtrip_gwc() {
@@ -259,10 +261,9 @@ mod test {
 
         let mut transcript = T::init(vec![]);
 
-        let blind = Blind::new(&mut OsRng);
-        let a = params.commit(&ax, blind).to_affine();
-        let b = params.commit(&bx, blind).to_affine();
-        let c = params.commit(&cx, blind).to_affine();
+        let a = params.commit(&ax).to_affine();
+        let b = params.commit(&bx).to_affine();
+        let c = params.commit(&cx).to_affine();
 
         transcript.write_point(a).unwrap();
         transcript.write_point(b).unwrap();
@@ -283,17 +284,17 @@ mod test {
             ProverQuery {
                 point: x.get_scalar(),
                 poly: &ax,
-                blind,
+                // blind,
             },
             ProverQuery {
                 point: x.get_scalar(),
                 poly: &bx,
-                blind,
+                // blind,
             },
             ProverQuery {
                 point: y.get_scalar(),
                 poly: &cx,
-                blind,
+                // blind,
             },
         ]
         .to_vec();
