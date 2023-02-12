@@ -6,7 +6,7 @@ use rand_core::RngCore;
 
 use super::Argument;
 use crate::{
-    arithmetic::{eval_polynomial, CurveAffine, FieldExt},
+    arithmetic::{eval_polynomial, parallelize, CurveAffine, FieldExt},
     plonk::{ChallengeX, ChallengeY, Error},
     poly::{
         self,
@@ -38,7 +38,7 @@ impl<C: CurveAffine> Argument<C> {
         'params,
         P: ParamsProver<'params, C>,
         E: EncodedChallenge<C>,
-        R: RngCore,
+        R: RngCore + Sync + Clone,
         T: TranscriptWrite<C, E>,
         const ZK: bool,
     >(
@@ -51,9 +51,11 @@ impl<C: CurveAffine> Argument<C> {
 
         if ZK {
             // Sample a random polynomial of degree n - 1
-            for coeff in random_poly.iter_mut() {
-                *coeff = C::Scalar::random(&mut rng);
-            }
+            parallelize(&mut random_poly, |random_poly, _| {
+                for coeff in random_poly.iter_mut() {
+                    *coeff = C::Scalar::random(rng.clone());
+                }
+            });
         }
 
         // Commit

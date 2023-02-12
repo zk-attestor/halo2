@@ -54,7 +54,7 @@ pub fn create_proof<
     Scheme: CommitmentScheme,
     P: Prover<'params, Scheme>,
     E: EncodedChallenge<Scheme::Curve>,
-    R: RngCore + 'a,
+    R: RngCore + Sync + Clone + 'a,
     T: TranscriptWrite<Scheme::Curve, E>,
     ConcreteCircuit: Circuit<Scheme::Scalar>,
     const ZK: bool,
@@ -94,10 +94,9 @@ pub fn create_proof<
         pub instance_polys: Vec<Polynomial<C::Scalar, Coeff>>,
     }
 
-    let start = start_measure("instances", false);
     let instance: Vec<InstanceSingle<Scheme::Curve>> = instances
         .iter()
-        .map(|instance| -> Result<InstanceSingle<Scheme::Curve>, Error> {
+        .map(|instance| -> InstanceSingle<Scheme::Curve> {
             let instance_values = instance
                 .iter()
                 .map(|values| {
@@ -121,13 +120,12 @@ pub fn create_proof<
                 })
                 .collect();
 
-            Ok(InstanceSingle {
+            InstanceSingle {
                 instance_values,
                 instance_polys,
-            })
+            }
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    stop_measure(start);
+        .collect();
 
     #[derive(Clone)]
     struct AdviceSingle<C: CurveAffine, B: Basis> {
@@ -462,29 +460,31 @@ pub fn create_proof<
     let lookups: Vec<Vec<lookup::prover::Permuted<Scheme::Curve>>> = instance
         .iter()
         .zip(advice.iter())
-        .map(|(instance, advice)| -> Result<Vec<_>, Error> {
+        .map(|(instance, advice)| -> Vec<_> {
             // Construct and commit to permuted values for each lookup
             pk.vk
                 .cs
                 .lookups
                 .iter()
                 .map(|lookup| {
-                    lookup.commit_permuted::<_, _, _, _, _, ZK>(
-                        pk,
-                        params,
-                        domain,
-                        theta,
-                        &advice.advice_polys,
-                        &pk.fixed_values,
-                        &instance.instance_values,
-                        &challenges,
-                        &mut rng,
-                        transcript,
-                    )
+                    lookup
+                        .commit_permuted::<_, _, _, _, _, ZK>(
+                            pk,
+                            params,
+                            domain,
+                            theta,
+                            &advice.advice_polys,
+                            &pk.fixed_values,
+                            &instance.instance_values,
+                            &challenges,
+                            &mut rng,
+                            transcript,
+                        )
+                        .unwrap()
                 })
                 .collect()
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect();
     #[cfg(feature = "profile")]
     end_timer!(phase2_time);
 
@@ -549,7 +549,7 @@ pub fn create_proof<
     let vanishing_time = start_timer!(|| "Commit to vanishing argument's random poly");
     // Commit to the vanishing argument's random polynomial for blinding h(x_3)
     let vanishing =
-        vanishing::Argument::commit::<_, _, _, _, ZK>(params, domain, &mut rng, transcript)?;
+        vanishing::Argument::commit::<_, _, _, _, ZK>(params, domain, rng.clone(), transcript)?;
 
     // Obtain challenge for keeping all separate gates linearly independent
     let y: ChallengeY<_> = transcript.squeeze_challenge_scalar();
@@ -609,7 +609,6 @@ pub fn create_proof<
     let x: ChallengeX<_> = transcript.squeeze_challenge_scalar();
     let xn = x.pow(&[params.n(), 0, 0, 0]);
 
-    let start = start_measure("instance eval_polynomial", false);
     if P::QUERY_INSTANCE {
         // Compute and hash instance evals for each circuit instance
         for instance in instance.iter() {
@@ -631,7 +630,6 @@ pub fn create_proof<
             }
         }
     }
-    stop_measure(start);
 
     // Compute and hash advice evals for each circuit instance
     let start = start_measure("advice eval_polynomial", false);
@@ -679,24 +677,25 @@ pub fn create_proof<
     // Evaluate the permutations, if any, at omega^i x.
     let permutations: Vec<permutation::prover::Evaluated<Scheme::Curve>> = permutations
         .into_iter()
-        .map(|permutation| -> Result<_, _> {
+        .map(|permutation| {
             permutation
                 .construct()
                 .evaluate::<_, _, ZK>(pk, x, transcript)
+                .unwrap()
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect();
 
     // Evaluate the lookups, if any, at omega^i x.
     let start = start_measure("lookup evaluate", false);
     let lookups: Vec<Vec<lookup::prover::Evaluated<Scheme::Curve>>> = lookups
         .into_iter()
-        .map(|lookups| -> Result<Vec<_>, _> {
+        .map(|lookups| -> Vec<_> {
             lookups
                 .into_iter()
-                .map(|p| p.evaluate(pk, x, transcript))
-                .collect::<Result<Vec<_>, _>>()
+                .map(|p| p.evaluate(pk, x, transcript).unwrap())
+                .collect()
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect();
     #[cfg(feature = "profile")]
     end_timer!(eval_time);
 

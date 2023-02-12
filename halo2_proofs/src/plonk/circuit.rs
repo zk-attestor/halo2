@@ -2012,6 +2012,7 @@ impl<F: Field> ConstraintSystem<F> {
                 .expect("Cannot parse MAX_DEGREE env var as usize")
         }
         degree = std::cmp::min(degree, get_max_degree());
+        dbg!(degree);
 
         std::cmp::max(degree, self.minimum_degree.unwrap_or(1))
     }
