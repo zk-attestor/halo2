@@ -40,7 +40,7 @@ impl Argument {
         vk: &plonk::VerifyingKey<C>,
         transcript: &mut T,
     ) -> Result<Committed<C>, Error> {
-        let chunk_len = if ZK || self.columns.len() >= vk.cs_degree {
+        let chunk_len = if ZK {
             vk.cs_degree - 2
         } else {
             vk.cs_degree - 1
@@ -82,21 +82,45 @@ impl<C: CurveAffine> Committed<C> {
 
         let mut iter = self.permutation_product_commitments.into_iter();
 
-        while let Some(permutation_product_commitment) = iter.next() {
-            let permutation_product_eval = transcript.read_scalar()?;
-            let permutation_product_next_eval = transcript.read_scalar()?;
-            let permutation_product_last_eval = if ZK && iter.len() > 0 {
-                Some(transcript.read_scalar()?)
-            } else {
-                None
-            };
+        if ZK {
+            while let Some(permutation_product_commitment) = iter.next() {
+                let permutation_product_eval = transcript.read_scalar()?;
+                let permutation_product_next_eval = transcript.read_scalar()?;
+                let permutation_product_last_eval = if ZK && iter.len() > 0 {
+                    Some(transcript.read_scalar()?)
+                } else {
+                    None
+                };
 
-            sets.push(EvaluatedSet {
-                permutation_product_commitment,
-                permutation_product_eval,
-                permutation_product_next_eval,
-                permutation_product_last_eval,
-            });
+                sets.push(EvaluatedSet {
+                    permutation_product_commitment,
+                    permutation_product_eval,
+                    permutation_product_next_eval,
+                    permutation_product_last_eval,
+                });
+            }
+        } else {
+            if let Some(permutation_product_commitment) = iter.next() {
+                let permutation_product_eval = transcript.read_scalar()?;
+                let permutation_product_next_eval = transcript.read_scalar()?;
+
+                sets.push(EvaluatedSet {
+                    permutation_product_commitment,
+                    permutation_product_eval,
+                    permutation_product_next_eval,
+                    permutation_product_last_eval: None,
+                });
+            }
+            for permutation_product_commitment in iter {
+                let permutation_product_eval = transcript.read_scalar()?;
+
+                sets.push(EvaluatedSet {
+                    permutation_product_commitment,
+                    permutation_product_eval,
+                    permutation_product_next_eval: C::Scalar::zero(),
+                    permutation_product_last_eval: None,
+                });
+            }
         }
 
         Ok(Evaluated { sets })
@@ -119,7 +143,7 @@ impl<C: CurveAffine> Evaluated<C> {
         gamma: ChallengeGamma<C>,
         x: ChallengeX<C>,
     ) -> impl Iterator<Item = C::Scalar> + 'a {
-        let chunk_len = if ZK || p.columns.len() >= vk.cs_degree {
+        let chunk_len = if ZK {
             vk.cs_degree - 2
         } else {
             vk.cs_degree - 1
@@ -187,11 +211,12 @@ impl<C: CurveAffine> Evaluated<C> {
                     .enumerate()
                     .map(
                         move |(chunk_index, (((set, next_set), columns), permutation_evals))| {
-                            let mut left = if ZK || self.sets.len() == 1 {
+                            let mut left = if ZK {
                                 set.permutation_product_next_eval
+                            } else if chunk_index == self.sets.len() - 1 {
+                                next_set.permutation_product_next_eval
                             } else {
-                                (C::Scalar::one() - l_last) * set.permutation_product_next_eval
-                                    + l_last * next_set.permutation_product_next_eval
+                                next_set.permutation_product_eval
                             };
                             for (eval, permutation_eval) in columns
                                 .iter()
@@ -256,7 +281,7 @@ impl<C: CurveAffine> Evaluated<C> {
             .rotate_omega(*x, Rotation(-((blinding_factors + 1) as i32)));
 
         iter::empty()
-            .chain(self.sets.iter().flat_map(move |set| {
+            .chain(self.sets.iter().enumerate().flat_map(move |(idx, set)| {
                 iter::empty()
                     // Open permutation product commitments at x and \omega^{-1} x
                     // Open permutation product commitments at x and \omega x
@@ -265,7 +290,7 @@ impl<C: CurveAffine> Evaluated<C> {
                         *x,
                         set.permutation_product_eval,
                     )))
-                    .chain(Some(VerifierQuery::new_commitment(
+                    .chain((ZK || idx == 0).then_some(VerifierQuery::new_commitment(
                         &set.permutation_product_commitment,
                         x_next,
                         set.permutation_product_next_eval,

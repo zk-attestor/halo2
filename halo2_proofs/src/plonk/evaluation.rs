@@ -371,7 +371,7 @@ impl<C: CurveAffine> Evaluator<C> {
             if !sets.is_empty() {
                 let blinding_factors = pk.vk.cs.blinding_factors::<ZK>();
                 let last_rotation = Rotation(-((blinding_factors + 1) as i32));
-                let chunk_len = if ZK || pk.vk.permutation.commitments().len() >= pk.vk.cs_degree {
+                let chunk_len = if ZK {
                     pk.vk.cs_degree - 2
                 } else {
                     pk.vk.cs_degree - 1
@@ -422,19 +422,19 @@ impl<C: CurveAffine> Evaluator<C> {
                         // - z_i(X) \prod_j (p(X) + \delta^j \beta X + \gamma)
                         // )
                         let mut current_delta = delta_start * beta_term;
-                        for (((set, next_set), columns), cosets) in sets
+                        for (idx, (((set, next_set), columns), cosets)) in sets
                             .iter()
                             .zip(sets.iter().cycle().skip(1))
                             .zip(p.columns.chunks(chunk_len))
                             .zip(pk.permutation.cosets.chunks(chunk_len))
+                            .enumerate()
                         {
-                            let mut left = if ZK || sets.len() == 1 {
+                            let mut left = if ZK {
                                 set.permutation_product_coset[r_next]
+                            } else if idx == sets.len() - 1 {
+                                next_set.permutation_product_coset[r_next]
                             } else {
-                                set.permutation_product_coset[r_next]
-                                    + l_last[idx]
-                                        * (next_set.permutation_product_coset[r_next]
-                                            - set.permutation_product_coset[r_next])
+                                next_set.permutation_product_coset[idx]
                             };
                             for (values, permutation) in columns
                                 .iter()

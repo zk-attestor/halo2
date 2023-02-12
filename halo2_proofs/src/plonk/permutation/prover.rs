@@ -69,12 +69,13 @@ impl Argument {
         // We need to multiply by z(X) and (1 - (l_last(X) + l_blind(X))). This
         // will never underflow because of the requirement of at least a degree
         // 3 circuit for the permutation argument.
-        assert!(pk.vk.cs_degree >= 3);
-        let chunk_len = if ZK || self.columns.len() >= pk.vk.cs_degree {
+        assert!(pk.vk.cs_degree >= 2 + ZK as usize);
+        let chunk_len = if ZK {
             pk.vk.cs_degree - 2
         } else {
             pk.vk.cs_degree - 1
         };
+        let num_chunks = pkey.permutations.chunks(chunk_len).count();
         let blinding_factors = pk.vk.cs.blinding_factors::<ZK>();
 
         // Each column gets its own delta power.
@@ -83,8 +84,8 @@ impl Argument {
         // Track the "last" value from the previous column set
         let mut last_z = C::Scalar::one();
 
-        let mut sets = vec![];
-
+        let mut zs = vec![];
+        let mut products = Vec::with_capacity(num_chunks);
         for (columns, permutations) in self
             .columns
             .chunks(chunk_len)
@@ -155,47 +156,74 @@ impl Argument {
 
             // Compute the evaluations of the permutation product polynomial
             // over our domain, starting with z[0] = 1
-            let mut z = vec![last_z];
-            for row in 1..(params.n() as usize) {
-                let mut tmp = z[row - 1];
-
-                tmp *= &modified_values[row - 1];
-                z.push(tmp);
-            }
-            let mut z = domain.lagrange_from_vec(z);
             if ZK {
+                let mut z = vec![last_z];
+                for row in 1..(params.n() as usize) {
+                    let mut tmp = z[row - 1];
+
+                    tmp *= &modified_values[row - 1];
+                    z.push(tmp);
+                }
+                let mut z = domain.lagrange_from_vec(z);
+
                 // Set blinding factors
                 for z in &mut z[params.n() as usize - blinding_factors..] {
                     *z = C::Scalar::random(&mut rng);
                 }
                 // Set new last_z
                 last_z = z[params.n() as usize - (blinding_factors + 1)];
+
+                zs.push(z);
             } else {
-                // Set new last_z
-                last_z = *z.last().unwrap() * modified_values.last().unwrap();
+                products.push(modified_values);
             }
-
-            // let blind = Blind(C::Scalar::random(&mut rng));
-
-            let permutation_product_commitment_projective = params.commit_lagrange(&z);
-            // let permutation_product_blind = blind;
-            let z = domain.lagrange_to_coeff(z);
-            let permutation_product_poly = z.clone();
-
-            let permutation_product_coset = domain.coeff_to_extended(&z);
-
-            let permutation_product_commitment =
-                permutation_product_commitment_projective.to_affine();
-
-            // Hash the permutation product commitment
-            transcript.write_point(permutation_product_commitment)?;
-
-            sets.push(CommittedSet {
-                permutation_product_poly,
-                permutation_product_coset,
-                // permutation_product_blind,
-            });
         }
+
+        if !ZK && !products.is_empty() {
+            zs = vec![domain.empty_lagrange(); products.len()];
+            zs[0][0] = C::Scalar::one();
+            let last_column = zs.len() - 1;
+            let last_row = params.n() as usize - 1;
+            for idx in 0..last_row {
+                for col in 0..last_column {
+                    zs[col + 1][idx] = zs[col][idx] * products[col][idx];
+                }
+                zs[0][idx + 1] = zs[last_column][idx] * products[last_column][idx];
+            }
+            for col in 0..last_column {
+                zs[col + 1][last_row] = zs[col][last_row] * products[col][last_row];
+            }
+            assert_eq!(
+                zs[0][0],
+                zs[last_column][last_row] * products[last_column][last_row]
+            );
+        }
+
+        let sets = zs
+            .into_iter()
+            .map(|z| {
+                // let blind = Blind(C::Scalar::random(&mut rng));
+
+                let permutation_product_commitment_projective = params.commit_lagrange(&z);
+                // let permutation_product_blind = blind;
+                let z = domain.lagrange_to_coeff(z);
+                let permutation_product_poly = z.clone();
+
+                let permutation_product_coset = domain.coeff_to_extended(&z);
+
+                let permutation_product_commitment =
+                    permutation_product_commitment_projective.to_affine();
+
+                // Hash the permutation product commitment
+                transcript.write_point(permutation_product_commitment)?;
+
+                Ok(CommittedSet {
+                    permutation_product_poly,
+                    permutation_product_coset,
+                    // permutation_product_blind,
+                })
+            })
+            .collect::<Result<_, Error>>()?;
 
         Ok(Committed { sets })
     }
@@ -259,23 +287,24 @@ impl<C: CurveAffine> Constructed<C> {
         {
             let mut sets = self.sets.iter();
 
-            while let Some(set) = sets.next() {
-                let permutation_product_eval = eval_polynomial(&set.permutation_product_poly, *x);
+            if ZK {
+                while let Some(set) = sets.next() {
+                    let permutation_product_eval =
+                        eval_polynomial(&set.permutation_product_poly, *x);
 
-                let permutation_product_next_eval = eval_polynomial(
-                    &set.permutation_product_poly,
-                    domain.rotate_omega(*x, Rotation::next()),
-                );
+                    let permutation_product_next_eval = eval_polynomial(
+                        &set.permutation_product_poly,
+                        domain.rotate_omega(*x, Rotation::next()),
+                    );
 
-                // Hash permutation product evals
-                for eval in iter::empty()
-                    .chain(Some(&permutation_product_eval))
-                    .chain(Some(&permutation_product_next_eval))
-                {
-                    transcript.write_scalar(*eval)?;
-                }
+                    // Hash permutation product evals
+                    for eval in iter::empty()
+                        .chain(Some(&permutation_product_eval))
+                        .chain(Some(&permutation_product_next_eval))
+                    {
+                        transcript.write_scalar(*eval)?;
+                    }
 
-                if ZK {
                     // If we have any remaining sets to process, evaluate this set at omega^u
                     // so we can constrain the last value of its running product to equal the
                     // first value of the next set's running product, chaining them together.
@@ -287,6 +316,29 @@ impl<C: CurveAffine> Constructed<C> {
 
                         transcript.write_scalar(permutation_product_last_eval)?;
                     }
+                }
+            } else {
+                if let Some(set) = sets.next() {
+                    let permutation_product_eval =
+                        eval_polynomial(&set.permutation_product_poly, *x);
+
+                    let permutation_product_next_eval = eval_polynomial(
+                        &set.permutation_product_poly,
+                        domain.rotate_omega(*x, Rotation::next()),
+                    );
+
+                    // Hash permutation product evals
+                    for eval in iter::empty()
+                        .chain(Some(&permutation_product_eval))
+                        .chain(Some(&permutation_product_next_eval))
+                    {
+                        transcript.write_scalar(*eval)?;
+                    }
+                }
+                for set in sets {
+                    let permutation_product_eval =
+                        eval_polynomial(&set.permutation_product_poly, *x);
+                    transcript.write_scalar(permutation_product_eval)?;
                 }
             }
         }
@@ -309,20 +361,26 @@ impl<C: CurveAffine> Evaluated<C> {
             .rotate_omega(*x, Rotation(-((blinding_factors + 1) as i32)));
 
         iter::empty()
-            .chain(self.constructed.sets.iter().flat_map(move |set| {
-                iter::empty()
-                    // Open permutation product commitments at x and \omega x
-                    .chain(Some(ProverQuery {
-                        point: *x,
-                        poly: &set.permutation_product_poly,
-                        // blind: set.permutation_product_blind,
-                    }))
-                    .chain(Some(ProverQuery {
-                        point: x_next,
-                        poly: &set.permutation_product_poly,
-                        // blind: set.permutation_product_blind,
-                    }))
-            }))
+            .chain(
+                self.constructed
+                    .sets
+                    .iter()
+                    .enumerate()
+                    .flat_map(move |(idx, set)| {
+                        iter::empty()
+                            // Open permutation product commitments at x and \omega x
+                            .chain(Some(ProverQuery {
+                                point: *x,
+                                poly: &set.permutation_product_poly,
+                                // blind: set.permutation_product_blind,
+                            }))
+                            .chain((ZK || idx == 0).then_some(ProverQuery {
+                                point: x_next,
+                                poly: &set.permutation_product_poly,
+                                // blind: set.permutation_product_blind,
+                            }))
+                    }),
+            )
             // Open it at \omega^{last} x for all but the last set. This rotation is only
             // sensical for the first row, but we only use this rotation in a constraint
             // that is gated on l_0.
