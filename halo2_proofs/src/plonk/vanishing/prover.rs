@@ -6,7 +6,7 @@ use rand_core::RngCore;
 
 use super::Argument;
 use crate::{
-    arithmetic::{eval_polynomial, CurveAffine, FieldExt},
+    arithmetic::{eval_polynomial, parallelize, CurveAffine, FieldExt},
     plonk::{ChallengeX, ChallengeY, Error},
     poly::{
         self,
@@ -38,19 +38,21 @@ impl<C: CurveAffine> Argument<C> {
         'params,
         P: ParamsProver<'params, C>,
         E: EncodedChallenge<C>,
-        R: RngCore,
+        R: RngCore + Sync + Clone,
         T: TranscriptWrite<C, E>,
     >(
         params: &P,
         domain: &EvaluationDomain<C::Scalar>,
-        mut rng: R,
+        rng: R,
         transcript: &mut T,
     ) -> Result<Committed<C>, Error> {
         // Sample a random polynomial of degree n - 1
         let mut random_poly = domain.empty_coeff();
-        for coeff in random_poly.iter_mut() {
-            *coeff = C::Scalar::random(&mut rng);
-        }
+        parallelize(&mut random_poly, |random_poly, _| {
+            for coeff in random_poly.iter_mut() {
+                *coeff = C::Scalar::random(rng.clone());
+            }
+        });
         // Sample a random blinding factor
         let random_blind = Blind(C::Scalar::random(rng));
 
