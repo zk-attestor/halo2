@@ -470,16 +470,19 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
     }
 
     fn merge(&mut self, sub_cs: Vec<Self>) -> Result<(), Error> {
-        for (left, right) in self
-            .regions
+        for (left, right) in sub_cs
             .iter()
-            .skip(self.regions.len() - sub_cs.len())
+            .flat_map(|cs| cs.regions.iter())
             .flat_map(|region| region.copies.iter())
         {
             self.permutation
                 .as_mut()
                 .expect("root cs permutation should be Some")
                 .copy(left.column, left.row, right.column, right.row)?;
+        }
+
+        for region in sub_cs.into_iter().map(|cs| cs.regions) {
+            self.regions.extend_from_slice(&region[..])
         }
 
         Ok(())
@@ -858,7 +861,9 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
             usable_rows: 0..usable_rows,
             current_phase: ThirdPhase.to_sealed(),
         };
+        let syn_time = Instant::now();
         ConcreteCircuit::FloorPlanner::synthesize(&mut prover, circuit, config, constants)?;
+        log::info!("MockProver synthesize took {:?}", syn_time.elapsed());
 
         let (cs, selector_polys) = prover
             .cs
