@@ -873,6 +873,17 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
                 }
                 v
             }));
+        // update prover.fixed as prover.fixed_vec is updated
+        prover.fixed = unsafe {
+            let clone = prover.fixed_vec.clone();
+            let ptr = Arc::as_ptr(&clone) as *mut Vec<Vec<CellValue<F>>>;
+            let mut_ref = &mut (*ptr);
+            mut_ref
+                .iter_mut()
+                .map(|vec| vec.as_mut_slice())
+                .collect::<Vec<_>>()
+        };
+        debug_assert_eq!(Arc::strong_count(&prover.fixed_vec), 1);
 
         Ok(prover)
     }
