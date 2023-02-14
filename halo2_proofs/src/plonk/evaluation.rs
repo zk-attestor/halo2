@@ -383,7 +383,7 @@ impl<C: CurveAffine> Evaluator<C> {
 
                 // Permutation constraints
                 parallelize(&mut values, |values, start| {
-                    let mut beta_term = extended_omega.pow_vartime([start as u64, 0, 0, 0]);
+                    let mut beta_term = extended_omega.pow_vartime([start as u64]);
                     for (i, value) in values.iter_mut().enumerate() {
                         let idx = start + i;
                         let r_next = get_rotation_idx(idx, 1, rot_scale, isize);
@@ -417,6 +417,7 @@ impl<C: CurveAffine> Evaluator<C> {
                         }
 
                         // And for all the sets we enforce:
+                        // If ZK:
                         // (1 - (l_last(X) + l_blind(X))) * (
                         //   z_i(\omega X) \prod_j (p(X) + \beta s_j(X) + \gamma)
                         // - z_i(X) \prod_j (p(X) + \delta^j \beta X + \gamma)
