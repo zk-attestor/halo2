@@ -3,6 +3,9 @@ use group::{
     Curve,
 };
 use rand_core::RngCore;
+use rayon::prelude::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
+};
 use std::iter::{self, ExactSizeIterator};
 
 use super::super::{circuit::Any, ChallengeBeta, ChallengeGamma, ChallengeX};
@@ -189,22 +192,83 @@ impl Argument {
         }
 
         if !ZK && !products.is_empty() {
-            zs = vec![domain.empty_lagrange(); products.len()];
-            zs[0][0] = C::Scalar::one();
-            let last_column = zs.len() - 1;
-            let last_row = params.n() as usize - 1;
-            for idx in 0..last_row {
-                for col in 0..last_column {
-                    zs[col + 1][idx] = zs[col][idx] * products[col][idx];
-                }
-                zs[0][idx + 1] = zs[last_column][idx] * products[last_column][idx];
-            }
-            for col in 0..last_column {
-                zs[col + 1][last_row] = zs[col][last_row] * products[col][last_row];
-            }
+            #[cfg(feature = "profile")]
+            let start = std::time::Instant::now();
+            let num_columns = products.len();
+            let last_column = products.len() - 1;
+            let num_threads = rayon::current_num_threads();
+            let n = params.n() as usize;
+            let row_chunk_size = (n + num_threads - 1) / num_threads;
+            let zs_chunks = crossbeam::scope(|s| {
+                let products = &products;
+                #[allow(clippy::needless_collect)]
+                let handles = (0..n)
+                    .step_by(row_chunk_size)
+                    .map(|first_row| {
+                        let last_row = n.min(first_row + row_chunk_size) - 1;
+                        s.spawn(move |_| {
+                            let mut zs = vec![Vec::with_capacity(row_chunk_size); num_columns];
+                            zs[0].push(if first_row == 0 {
+                                C::Scalar::one()
+                            } else {
+                                products[last_column][first_row - 1]
+                            });
+                            for idx in first_row..last_row {
+                                // last().unwrap() is idx - first_row
+                                for col in 0..last_column {
+                                    let tmp = products[col][idx] * zs[col].last().unwrap();
+                                    zs[col + 1].push(tmp);
+                                }
+                                // zs[0][idx + 1 - first_row]
+                                let tmp =
+                                    products[last_column][idx] * zs[last_column].last().unwrap();
+                                zs[0].push(tmp);
+                            }
+                            for col in 0..last_column {
+                                // zs[col + 1][last_row - first_row]
+                                let tmp = products[col][last_row] * zs[col].last().unwrap();
+                                zs[col + 1].push(tmp);
+                            }
+                            zs
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                handles
+                    .into_iter()
+                    .map(|h| h.join().unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+
+            let zs_new = zs_chunks
+                .into_par_iter()
+                .reduce_with(|mut zs1, mut zs2| {
+                    let multiplier = zs1.last().unwrap().last().unwrap();
+                    zs2.par_iter_mut()
+                        .flat_map(|z2| z2.par_iter_mut())
+                        .for_each(|z2| {
+                            *z2 *= multiplier;
+                        });
+                    zs1.par_iter_mut()
+                        .zip(zs2.par_iter_mut())
+                        .for_each(|(z1, z2)| {
+                            z1.append(z2);
+                        });
+                    zs1
+                })
+                .unwrap();
+            zs = zs_new
+                .into_iter()
+                .map(|z| domain.lagrange_from_vec(z))
+                .collect();
             assert_eq!(
                 zs[0][0],
-                zs[last_column][last_row] * products[last_column][last_row]
+                zs[last_column][n - 1] * products[last_column][n - 1]
+            );
+            #[cfg(feature = "profile")]
+            println!(
+                "Compute permutation polys for non-zk zig-zag (cpu): {:?}",
+                start.elapsed()
             );
         }
 

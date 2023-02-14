@@ -6,6 +6,7 @@ use halo2curves::CurveExt;
 use rand_core::RngCore;
 use std::collections::BTreeSet;
 use std::env::var;
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::RangeTo;
 use std::rc::Rc;
@@ -65,7 +66,10 @@ pub fn create_proof<
     instances: &[&[&'a [Scheme::Scalar]]],
     mut rng: R,
     mut transcript: &'a mut T,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+    Scheme::Scalar: Hash,
+{
     #[allow(unsafe_code)]
     unsafe {
         FFT_TOTAL_TIME = 0;
@@ -477,7 +481,7 @@ pub fn create_proof<
                             &pk.fixed_values,
                             &instance.instance_values,
                             &challenges,
-                            &mut rng,
+                            rng.clone(),
                             transcript,
                         )
                         .unwrap()

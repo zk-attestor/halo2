@@ -44,7 +44,7 @@ impl<C: CurveAffine> Argument<C> {
     >(
         params: &P,
         domain: &EvaluationDomain<C::Scalar>,
-        mut rng: R,
+        rng: R,
         transcript: &mut T,
     ) -> Result<Committed<C>, Error> {
         let mut random_poly = domain.empty_coeff();
