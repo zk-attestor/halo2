@@ -423,7 +423,7 @@ impl<C: CurveAffine> Evaluator<C> {
                         // - z_i(X) \prod_j (p(X) + \delta^j \beta X + \gamma)
                         // )
                         let mut current_delta = delta_start * beta_term;
-                        for (idx, (((set, next_set), columns), cosets)) in sets
+                        for (set_id, (((set, next_set), columns), cosets)) in sets
                             .iter()
                             .zip(sets.iter().cycle().skip(1))
                             .zip(p.columns.chunks(chunk_len))
@@ -432,7 +432,7 @@ impl<C: CurveAffine> Evaluator<C> {
                         {
                             let mut left = if ZK {
                                 set.permutation_product_coset[r_next]
-                            } else if idx == sets.len() - 1 {
+                            } else if set_id == sets.len() - 1 {
                                 next_set.permutation_product_coset[r_next]
                             } else {
                                 next_set.permutation_product_coset[idx]

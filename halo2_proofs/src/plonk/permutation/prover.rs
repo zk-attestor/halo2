@@ -84,7 +84,7 @@ impl Argument {
         // Track the "last" value from the previous column set
         let mut last_z = C::Scalar::one();
 
-        let mut zs = vec![];
+        let mut zs = Vec::with_capacity(num_chunks);
         let mut products = Vec::with_capacity(num_chunks);
         for (columns, permutations) in self
             .columns
@@ -157,11 +157,10 @@ impl Argument {
             // Compute the evaluations of the permutation product polynomial
             // over our domain, starting with z[0] = 1
             if ZK {
-                let mut z = vec![last_z];
+                let mut z = Vec::with_capacity(params.n() as usize);
+                z.push(last_z);
                 for row in 1..(params.n() as usize) {
-                    let mut tmp = z[row - 1];
-
-                    tmp *= &modified_values[row - 1];
+                    let tmp = modified_values[row - 1] * z.last().unwrap();
                     z.push(tmp);
                 }
                 let mut z = domain.lagrange_from_vec(z);
@@ -199,7 +198,7 @@ impl Argument {
             );
         }
 
-        let sets = zs
+        let sets: Vec<_> = zs
             .into_iter()
             .map(|z| {
                 // let blind = Blind(C::Scalar::random(&mut rng));
@@ -215,15 +214,17 @@ impl Argument {
                     permutation_product_commitment_projective.to_affine();
 
                 // Hash the permutation product commitment
-                transcript.write_point(permutation_product_commitment)?;
+                transcript
+                    .write_point(permutation_product_commitment)
+                    .unwrap();
 
-                Ok(CommittedSet {
+                CommittedSet {
                     permutation_product_poly,
                     permutation_product_coset,
                     // permutation_product_blind,
-                })
+                }
             })
-            .collect::<Result<_, Error>>()?;
+            .collect();
 
         Ok(Committed { sets })
     }
