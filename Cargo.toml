@@ -17,5 +17,4 @@ overflow-checks = false
 lto = true
 incremental = false
 panic = "abort"
-# codegen-units = 1 is not optimal on my machine; always profile locally to determine best preferences
-# codegen-units = 1
+codegen-units = 1

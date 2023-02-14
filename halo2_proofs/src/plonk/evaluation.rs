@@ -371,7 +371,7 @@ impl<C: CurveAffine> Evaluator<C> {
             if !sets.is_empty() {
                 let blinding_factors = pk.vk.cs.blinding_factors::<ZK>();
                 let last_rotation = Rotation(-((blinding_factors + 1) as i32));
-                let chunk_len = if ZK || pk.vk.permutation.commitments().len() >= pk.vk.cs_degree {
+                let chunk_len = if ZK {
                     pk.vk.cs_degree - 2
                 } else {
                     pk.vk.cs_degree - 1
@@ -383,7 +383,7 @@ impl<C: CurveAffine> Evaluator<C> {
 
                 // Permutation constraints
                 parallelize(&mut values, |values, start| {
-                    let mut beta_term = extended_omega.pow_vartime([start as u64, 0, 0, 0]);
+                    let mut beta_term = extended_omega.pow_vartime([start as u64]);
                     for (i, value) in values.iter_mut().enumerate() {
                         let idx = start + i;
                         let r_next = get_rotation_idx(idx, 1, rot_scale, isize);
@@ -417,24 +417,25 @@ impl<C: CurveAffine> Evaluator<C> {
                         }
 
                         // And for all the sets we enforce:
+                        // If ZK:
                         // (1 - (l_last(X) + l_blind(X))) * (
                         //   z_i(\omega X) \prod_j (p(X) + \beta s_j(X) + \gamma)
                         // - z_i(X) \prod_j (p(X) + \delta^j \beta X + \gamma)
                         // )
                         let mut current_delta = delta_start * beta_term;
-                        for (((set, next_set), columns), cosets) in sets
+                        for (set_id, (((set, next_set), columns), cosets)) in sets
                             .iter()
                             .zip(sets.iter().cycle().skip(1))
                             .zip(p.columns.chunks(chunk_len))
                             .zip(pk.permutation.cosets.chunks(chunk_len))
+                            .enumerate()
                         {
-                            let mut left = if ZK || sets.len() == 1 {
+                            let mut left = if ZK {
                                 set.permutation_product_coset[r_next]
+                            } else if set_id == sets.len() - 1 {
+                                next_set.permutation_product_coset[r_next]
                             } else {
-                                set.permutation_product_coset[r_next]
-                                    + l_last[idx]
-                                        * (next_set.permutation_product_coset[r_next]
-                                            - set.permutation_product_coset[r_next])
+                                next_set.permutation_product_coset[idx]
                             };
                             for (values, permutation) in columns
                                 .iter()
