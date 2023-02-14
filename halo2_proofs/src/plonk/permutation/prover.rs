@@ -99,10 +99,16 @@ impl Argument {
             // where p_j(X) is the jth column in this permutation,
             // and i is the ith row of the column.
 
-            let mut modified_values = vec![C::Scalar::one(); params.n() as usize];
+            let mut modified_values = Vec::with_capacity(params.n() as usize);
+            #[allow(clippy::uninit_vec)]
+            unsafe {
+                modified_values.set_len(params.n() as usize);
+            }
 
             // Iterate over each column of the permutation
-            for (&column, permuted_column_values) in columns.iter().zip(permutations.iter()) {
+            for (col_idx, (&column, permuted_column_values)) in
+                columns.iter().zip(permutations.iter()).enumerate()
+            {
                 let values = match column.column_type() {
                     Any::Advice(_) => advice,
                     Any::Fixed => fixed,
@@ -114,7 +120,11 @@ impl Argument {
                         .zip(values[column.index()][start..].iter())
                         .zip(permuted_column_values[start..].iter())
                     {
-                        *modified_values *= &(*beta * permuted_value + &*gamma + value);
+                        if col_idx == 0 {
+                            *modified_values = *beta * permuted_value + &*gamma + value;
+                        } else {
+                            *modified_values *= *beta * permuted_value + &*gamma + value;
+                        }
                     }
                 });
             }
