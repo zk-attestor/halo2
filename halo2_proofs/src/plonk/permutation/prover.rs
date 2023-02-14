@@ -3,6 +3,9 @@ use group::{
     Curve,
 };
 use rand_core::RngCore;
+use rayon::prelude::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
+};
 use std::iter::{self, ExactSizeIterator};
 
 use super::super::{circuit::Any, ChallengeBeta, ChallengeGamma, ChallengeX};
