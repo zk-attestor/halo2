@@ -73,7 +73,7 @@ impl<F: FieldExt> Argument<F> {
         C,
         P: Params<'params, C>,
         E: EncodedChallenge<C>,
-        R: RngCore + Sync + Clone,
+        R: RngCore + Sync,
         T: TranscriptWrite<C, E>,
     >(
         &self,
@@ -85,7 +85,7 @@ impl<F: FieldExt> Argument<F> {
         fixed_values: &'a [Polynomial<C::Scalar, LagrangeCoeff>],
         instance_values: &'a [Polynomial<C::Scalar, LagrangeCoeff>],
         challenges: &'a [C::Scalar],
-        rng: R,
+        mut rng: R,
         transcript: &mut T,
     ) -> Result<Permuted<C>, Error>
     where
@@ -125,7 +125,7 @@ impl<F: FieldExt> Argument<F> {
             pk,
             params,
             domain,
-            rng.clone(),
+            &mut rng,
             &compressed_input_expression,
             &compressed_table_expression,
         )?;
@@ -395,16 +395,11 @@ type ExpressionPair<F> = (Polynomial<F, LagrangeCoeff>, Polynomial<F, LagrangeCo
 /// - the first row in a sequence of like values in A' is the row
 ///   that has the corresponding value in S'.
 /// This method returns (A', S') if no errors are encountered.
-fn permute_expression_pair<
-    'params,
-    C: CurveAffine,
-    P: Params<'params, C>,
-    R: RngCore + Sync + Clone,
->(
+fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: RngCore + Sync>(
     pk: &ProvingKey<C>,
     params: &P,
     domain: &EvaluationDomain<C::Scalar>,
-    rng: R,
+    mut rng: R,
     input_expression: &Polynomial<C::Scalar, LagrangeCoeff>,
     table_expression: &Polynomial<C::Scalar, LagrangeCoeff>,
 ) -> Result<ExpressionPair<C::Scalar>, Error>
@@ -504,29 +499,23 @@ where
     #[cfg(feature = "profile")]
     end_timer!(timer);
 
-    let (permuted_input_expression, permuted_table_coeffs): (Vec<_>, Vec<_>) = input_unique_ranges
-        .into_par_iter()
-        .enumerate()
-        .flat_map(|(i, (coeff, range))| {
-            // subtract off the number of rows in table rows that correspond to input uniques
-            let leftover_range_start = range.start - i;
-            let leftover_range_end = range.end - i - 1;
-            [(coeff, coeff)].into_par_iter().chain(
-                leftover_table_coeffs[leftover_range_start..leftover_range_end]
-                    .par_iter()
-                    .map(move |leftover_table_coeff| (coeff, *leftover_table_coeff)),
-            )
-        })
-        .chain((usable_rows..params.n() as usize).into_par_iter().map(|_| {
-            (
-                C::Scalar::random(rng.clone()),
-                C::Scalar::random(rng.clone()),
-            )
-        }))
-        .unzip();
-
-    assert_eq!(permuted_input_expression.len(), params.n() as usize);
-    assert_eq!(permuted_table_coeffs.len(), params.n() as usize);
+    let (mut permuted_input_expression, mut permuted_table_coeffs): (Vec<_>, Vec<_>) =
+        input_unique_ranges
+            .into_par_iter()
+            .enumerate()
+            .flat_map(|(i, (coeff, range))| {
+                // subtract off the number of rows in table rows that correspond to input uniques
+                let leftover_range_start = range.start - i;
+                let leftover_range_end = range.end - i - 1;
+                [(coeff, coeff)].into_par_iter().chain(
+                    leftover_table_coeffs[leftover_range_start..leftover_range_end]
+                        .par_iter()
+                        .map(move |leftover_table_coeff| (coeff, *leftover_table_coeff)),
+                )
+            })
+            .unzip();
+    permuted_input_expression.resize_with(params.n() as usize, || C::Scalar::random(&mut rng));
+    permuted_table_coeffs.resize_with(params.n() as usize, || C::Scalar::random(&mut rng));
 
     Ok((
         domain.lagrange_from_vec(permuted_input_expression),

@@ -38,21 +38,27 @@ impl<C: CurveAffine> Argument<C> {
         'params,
         P: ParamsProver<'params, C>,
         E: EncodedChallenge<C>,
-        R: RngCore + Sync + Clone,
+        R: RngCore, // + Sync + Clone,
         T: TranscriptWrite<C, E>,
     >(
         params: &P,
         domain: &EvaluationDomain<C::Scalar>,
-        rng: R,
+        mut rng: R,
         transcript: &mut T,
     ) -> Result<Committed<C>, Error> {
         // Sample a random polynomial of degree n - 1
         let mut random_poly = domain.empty_coeff();
+        /*
         parallelize(&mut random_poly, |random_poly, _| {
             for coeff in random_poly.iter_mut() {
                 *coeff = C::Scalar::random(rng.clone());
             }
         });
+        */
+        // single threaded is slow but we don't need to impose R: Clone for compatibility
+        for coeff in random_poly.iter_mut() {
+            *coeff = C::Scalar::random(&mut rng);
+        }
         // Sample a random blinding factor
         let random_blind = Blind(C::Scalar::random(rng));
 

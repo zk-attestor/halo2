@@ -55,7 +55,7 @@ pub fn create_proof<
     Scheme: CommitmentScheme,
     P: Prover<'params, Scheme>,
     E: EncodedChallenge<Scheme::Curve>,
-    R: RngCore + Sync + Clone + 'a,
+    R: RngCore + Sync + 'a,
     T: TranscriptWrite<Scheme::Curve, E>,
     ConcreteCircuit: Circuit<Scheme::Scalar>,
 >(
@@ -488,7 +488,7 @@ where
                             &pk.fixed_values,
                             &instance.instance_values,
                             &challenges,
-                            rng.clone(),
+                            &mut rng,
                             transcript,
                         )
                         .unwrap()
@@ -557,7 +557,7 @@ where
     #[cfg(feature = "profile")]
     let vanishing_time = start_timer!(|| "Commit to vanishing argument's random poly");
     // Commit to the vanishing argument's random polynomial for blinding h(x_3)
-    let vanishing = vanishing::Argument::commit(params, domain, rng.clone(), transcript).unwrap();
+    let vanishing = vanishing::Argument::commit(params, domain, &mut rng, transcript).unwrap();
 
     // Obtain challenge for keeping all separate gates linearly independent
     let y: ChallengeY<_> = transcript.squeeze_challenge_scalar();
