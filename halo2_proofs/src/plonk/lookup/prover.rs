@@ -73,7 +73,7 @@ impl<F: FieldExt> Argument<F> {
         C,
         P: Params<'params, C>,
         E: EncodedChallenge<C>,
-        R: RngCore + Sync,
+        R: RngCore,
         T: TranscriptWrite<C, E>,
     >(
         &self,
@@ -395,7 +395,7 @@ type ExpressionPair<F> = (Polynomial<F, LagrangeCoeff>, Polynomial<F, LagrangeCo
 /// - the first row in a sequence of like values in A' is the row
 ///   that has the corresponding value in S'.
 /// This method returns (A', S') if no errors are encountered.
-fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: RngCore + Sync>(
+fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: RngCore>(
     pk: &ProvingKey<C>,
     params: &P,
     domain: &EvaluationDomain<C::Scalar>,
