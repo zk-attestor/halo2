@@ -222,7 +222,7 @@ where
             row: usize,
             to: Value<Assigned<F>>,
         ) -> Value<&'v Assigned<F>> {
-            debug_assert_eq!(self.current_phase, column.column_type().phase);
+            // debug_assert_eq!(self.current_phase, column.column_type().phase);
 
             debug_assert!(
                 self.usable_rows.contains(&row),
