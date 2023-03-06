@@ -1,8 +1,9 @@
 use std::iter;
 
-use ff::Field;
+use ff::{Field, PrimeField};
 use group::Curve;
-use rand_core::RngCore;
+use rand_core::{RngCore, SeedableRng};
+use rayon::{current_num_threads, prelude::*};
 
 use super::Argument;
 use crate::{

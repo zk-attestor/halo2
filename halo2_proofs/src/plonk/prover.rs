@@ -467,7 +467,6 @@ where
     // Sample theta challenge for keeping lookup columns linearly independent
     let theta: ChallengeTheta<_> = transcript.squeeze_challenge_scalar();
 
-    let start = start_measure("lookups", false);
     let lookups: Vec<Vec<lookup::prover::Permuted<Scheme::Curve>>> = instance
         .iter()
         .zip(advice.iter())
@@ -509,7 +508,6 @@ where
     let gamma: ChallengeGamma<_> = transcript.squeeze_challenge_scalar();
 
     // Commit to permutations.
-    let start = start_measure("permutation.commit", false);
     let permutations: Vec<permutation::prover::Committed<Scheme::Curve>> = instance
         .iter()
         .zip(advice.iter())
@@ -568,7 +566,6 @@ where
     let fft_time = start_timer!(|| "Calculate advice polys (fft)");
 
     // Calculate the advice polys
-    let start = start_measure("advice_polys", false);
     let advice: Vec<AdviceSingle<Scheme::Curve, Coeff>> = advice
         .into_iter()
         .map(
@@ -592,7 +589,6 @@ where
     #[cfg(feature = "profile")]
     let phase4_time = start_timer!(|| "Phase 4: Evaluate h(X)");
     // Evaluate the h(X) polynomial
-    let start = start_measure("evaluate_h", false);
     let h_poly = pk.ev.evaluate_h(
         pk,
         &advice
@@ -649,7 +645,6 @@ where
     }
 
     // Compute and hash advice evals for each circuit instance
-    let start = start_measure("advice eval_polynomial", false);
     for advice in advice.iter() {
         // Evaluate polynomials at omega^i x
         let advice_evals: Vec<_> = meta
@@ -668,10 +663,8 @@ where
             transcript.write_scalar(*eval)?;
         }
     }
-    stop_measure(start);
 
     // Compute and hash fixed evals (shared across all circuit instances)
-    let start = start_measure("fixed eval_polynomial", false);
     let fixed_evals: Vec<_> = meta
         .fixed_queries
         .iter()
@@ -679,7 +672,6 @@ where
             eval_polynomial(&pk.fixed_polys[column.index()], domain.rotate_omega(*x, at))
         })
         .collect();
-    stop_measure(start);
 
     // Hash each fixed column evaluation
     for eval in fixed_evals.iter() {
@@ -698,7 +690,6 @@ where
         .collect();
 
     // Evaluate the lookups, if any, at omega^i x.
-    let start = start_measure("lookup evaluate", false);
     let lookups: Vec<Vec<lookup::prover::Evaluated<Scheme::Curve>>> = lookups
         .into_iter()
         .map(|lookups| -> Vec<_> {
