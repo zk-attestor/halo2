@@ -28,6 +28,7 @@ use crate::{
         commitment::{Blind, CommitmentScheme, Params, Prover},
         Basis, Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, ProverQuery,
     },
+    two_dim_vec_to_vec_of_slice,
 };
 use crate::{
     poly::batch_invert_assigned,
@@ -368,16 +369,7 @@ pub fn create_proof<
                     domain.empty_lagrange_assigned();
                     meta.num_advice_columns
                 ]);
-                let advice_slice = unsafe {
-                    let advice_vec_clone = advice_vec.clone();
-                    let ptr =
-                        Arc::as_ptr(&advice_vec_clone) as *mut Vec<Polynomial<_, LagrangeCoeff>>;
-                    let mut_ref = &mut (*ptr);
-                    mut_ref
-                        .iter_mut()
-                        .map(|poly| poly.values.as_mut_slice())
-                        .collect()
-                };
+                let advice_slice = two_dim_vec_to_vec_of_slice!(advice_vec);
                 let mut witness = WitnessCollection {
                     k: params.k(),
                     current_phase,

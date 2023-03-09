@@ -420,6 +420,7 @@ pub trait Layouter<F: Field> {
         N: Fn() -> NR,
         NR: Into<String>;
 
+    #[cfg(feature = "parallel_syn")]
     fn assign_regions<A, AR, N, NR>(
         &mut self,
         name: N,

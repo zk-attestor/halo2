@@ -23,7 +23,7 @@ use std::time::Instant;
 
 #[test]
 fn plonk_api() {
-    const K: u32 = 16;
+    const K: u32 = 17;
 
     /// This represents an advice column at a certain row in the ConstraintSystem
     #[derive(Copy, Clone, Debug)]
@@ -380,35 +380,68 @@ fn plonk_api() {
 
             let a: Value<Assigned<_>> = self.a.into();
             let parallel_regions_time = Instant::now();
+            #[cfg(feature = "parallel_syn")]
             layouter.assign_regions(
                 || "regions",
-                (0..8).into_iter()
+                (0..8)
+                    .into_iter()
                     .zip(is_first_pass_vec.chunks_mut(1).into_iter())
                     .map(|(_, is_first_pass)| {
                         |mut region: Region<'_, F>| -> Result<(), Error> {
-                            let n = 1 << 12;
+                            let n = 1 << 13;
                             for i in 0..n {
                                 // skip the assign of rows except the last row in the first pass
-                                if is_first_pass[0] && i < n-1 {
-                                    continue
+                                if is_first_pass[0] && i < n - 1 {
+                                    continue;
                                 }
-                                let a0 = region.assign_advice(|| "config.a", cs.config.a, i, || a)?;
-                                let a1 = region.assign_advice(|| "config.b", cs.config.b, i, || a)?;
-                                region.assign_advice(|| "config.c", cs.config.c, i, || a.double())?;
+                                let a0 =
+                                    region.assign_advice(|| "config.a", cs.config.a, i, || a)?;
+                                let a1 =
+                                    region.assign_advice(|| "config.b", cs.config.b, i, || a)?;
+                                region.assign_advice(
+                                    || "config.c",
+                                    cs.config.c,
+                                    i,
+                                    || a.double(),
+                                )?;
 
-                                region.assign_fixed(|| "a", cs.config.sa, i, || Value::known(F::one()))?;
-                                region.assign_fixed(|| "b", cs.config.sb, i, || Value::known(F::one()))?;
-                                region.assign_fixed(|| "c", cs.config.sc, i, || Value::known(F::one()))?;
-                                region.assign_fixed(|| "a * b", cs.config.sm, i, || Value::known(F::zero()))?;
+                                region.assign_fixed(
+                                    || "a",
+                                    cs.config.sa,
+                                    i,
+                                    || Value::known(F::one()),
+                                )?;
+                                region.assign_fixed(
+                                    || "b",
+                                    cs.config.sb,
+                                    i,
+                                    || Value::known(F::one()),
+                                )?;
+                                region.assign_fixed(
+                                    || "c",
+                                    cs.config.sc,
+                                    i,
+                                    || Value::known(F::one()),
+                                )?;
+                                region.assign_fixed(
+                                    || "a * b",
+                                    cs.config.sm,
+                                    i,
+                                    || Value::known(F::zero()),
+                                )?;
 
                                 region.constrain_equal(a0.cell(), a1.cell())?;
                             }
                             is_first_pass[0] = false;
                             Ok(())
                         }
-                    }).collect(),
+                    })
+                    .collect(),
             )?;
-            log::info!("parallel_regions assign took {:?}", parallel_regions_time.elapsed());
+            log::info!(
+                "parallel_regions assign took {:?}",
+                parallel_regions_time.elapsed()
+            );
 
             for _ in 0..10 {
                 let a: Value<Assigned<_>> = self.a.into();
@@ -490,8 +523,12 @@ fn plonk_api() {
 
         // Initialize the proving key
         let vk = keygen_vk(params, &empty_circuit).expect("keygen_vk should not fail");
+        log::info!("keygen vk succeed");
 
-        keygen_pk(params, vk, &empty_circuit).expect("keygen_pk should not fail")
+        let pk = keygen_pk(params, vk, &empty_circuit).expect("keygen_pk should not fail");
+        log::info!("keygen pk succeed");
+
+        pk
     }
 
     fn create_proof<
@@ -568,9 +605,6 @@ fn plonk_api() {
         type Scheme = KZGCommitmentScheme<Bn256>;
         // bad_keys!(Scheme);
 
-        let params = ParamsKZG::<Bn256>::new(K);
-        let rng = OsRng;
-
         let (a, instance, lookup_table) = common!(Scheme);
 
         let circuit: MyCircuit<<Scheme as CommitmentScheme>::Scalar> = MyCircuit {
@@ -585,6 +619,9 @@ fn plonk_api() {
         };
         assert_eq!(prover.verify_par(), Ok(()));
         log::info!("mock proving succeed!");
+
+        let params = ParamsKZG::<Bn256>::new(K);
+        let rng = OsRng;
 
         let pk = keygen::<KZGCommitmentScheme<_>>(&params);
 

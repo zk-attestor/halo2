@@ -87,6 +87,7 @@ sanity-checks = []
 batch = ["rand_core/getrandom"]
 shplonk = []
 gwc = []
+parallel_syn = []
 phase-check = []
 profile = ["ark-std/print-trace"]
 

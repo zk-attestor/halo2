@@ -43,6 +43,8 @@ pub use cost::CircuitCost;
 mod gates;
 pub use gates::CircuitGates;
 
+use crate::two_dim_vec_to_vec_of_slice;
+
 #[cfg(feature = "dev-graph")]
 mod graph;
 
@@ -726,27 +728,10 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
 
         // Fixed columns contain no blinding factors.
         let fixed_vec = Arc::new(vec![vec![CellValue::Unassigned; n]; cs.num_fixed_columns]);
-        let fixed = unsafe {
-            // extract an mutable reference to the 2-dimensional vector
-            // we are forced to use unsafe method because vec is
-            // protected by the Arc struct
-            let fixed_vec_clone = fixed_vec.clone();
-            let ptr = Arc::as_ptr(&fixed_vec_clone) as *mut Vec<Vec<CellValue<F>>>;
-            let mut_ref = &mut (*ptr);
-            mut_ref
-                .iter_mut()
-                .map(|fixed| fixed.as_mut_slice())
-                .collect::<Vec<_>>()
-        };
+        let fixed = two_dim_vec_to_vec_of_slice!(fixed_vec);
 
         let selectors_vec = Arc::new(vec![vec![false; n]; cs.num_selectors]);
-        let selectors = unsafe {
-            let selectors_vec_clone = selectors_vec.clone();
-            let ptr = Arc::as_ptr(&selectors_vec_clone) as *mut Vec<Vec<bool>>;
-            let mut_ref = &mut (*ptr);
-
-            mut_ref.iter_mut().map(|item| item.as_mut_slice()).collect()
-        };
+        let selectors = two_dim_vec_to_vec_of_slice!(selectors_vec);
 
         // Advice columns contain blinding factors.
         let blinding_factors = cs.blinding_factors();
@@ -762,13 +747,7 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
             };
             cs.num_advice_columns
         ]);
-        let advice = unsafe {
-            let advice_vec_clone = advice_vec.clone();
-            let ptr = Arc::as_ptr(&advice_vec_clone) as *mut Vec<Vec<CellValue<F>>>;
-            let mut_ref = &mut (*ptr);
-
-            mut_ref.iter_mut().map(|item| item.as_mut_slice()).collect()
-        };
+        let advice = two_dim_vec_to_vec_of_slice!(advice_vec);
 
         let permutation = permutation::keygen::Assembly::new(n, &cs.permutation);
         let constants = cs.constants.clone();

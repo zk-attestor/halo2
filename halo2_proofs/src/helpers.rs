@@ -46,6 +46,19 @@ pub(crate) fn base_to_scalar<C: CurveAffine>(base: &C::Base) -> C::Scalar {
     bn_to_field(&bn)
 }
 
+#[macro_export]
+macro_rules! two_dim_vec_to_vec_of_slice {
+    ($arc_vec:ident) => {
+        unsafe {
+            let arc_vec_clone = $arc_vec.clone();
+            let ptr = Arc::as_ptr(&arc_vec_clone) as *mut Vec<Vec<_>>;
+            let mut_ref = &mut (*ptr);
+
+            mut_ref.iter_mut().map(|item| item.as_mut_slice()).collect()
+        }
+    };
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

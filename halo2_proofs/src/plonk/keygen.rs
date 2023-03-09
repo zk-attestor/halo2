@@ -24,6 +24,7 @@ use crate::{
         commitment::{Blind, Params, MSM},
         EvaluationDomain,
     },
+    two_dim_vec_to_vec_of_slice,
 };
 
 pub(crate) fn create_domain<C, ConcreteCircuit>(
@@ -435,26 +436,11 @@ where
     }
 
     let fixed_vec = Arc::new(vec![domain.empty_lagrange_assigned(); cs.num_fixed_columns]);
-    let fixed = unsafe {
-        let fixed_vec_clone = fixed_vec.clone();
-        let ptr = Arc::as_ptr(&fixed_vec_clone) as *mut Vec<Polynomial<Assigned<_>, LagrangeCoeff>>;
-        let mut_ref = &mut (*ptr);
-        mut_ref
-            .iter_mut()
-            .map(|poly| poly.values.as_mut_slice())
-            .collect::<Vec<_>>()
-    };
+    let fixed = two_dim_vec_to_vec_of_slice!(fixed_vec);
 
     let selectors_vec = Arc::new(vec![vec![false; params.n() as usize]; cs.num_selectors]);
-    let selectors = unsafe {
-        let selectors_vec_clone = selectors_vec.clone();
-        let ptr = Arc::as_ptr(&selectors_vec_clone) as *mut Vec<Vec<bool>>;
-        let mut_ref = &mut (*ptr);
-        mut_ref
-            .iter_mut()
-            .map(|vec| vec.as_mut_slice())
-            .collect::<Vec<_>>()
-    };
+    let selectors = two_dim_vec_to_vec_of_slice!(selectors_vec);
+
     let mut assembly: Assembly<C::Scalar> = Assembly {
         k: params.k(),
         fixed_vec,
