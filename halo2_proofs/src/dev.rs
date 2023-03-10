@@ -418,7 +418,7 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
             .collect::<Vec<_>>();
 
         let mut sub_cs = vec![];
-        for (i, sub_range) in ranges.iter().enumerate() {
+        for (_i, sub_range) in ranges.iter().enumerate() {
             let fixed = fixed_ptrs
                 .iter()
                 .map(|ptr| unsafe {
@@ -767,7 +767,7 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
         #[cfg(feature = "phase-check")]
         let current_phase = FirstPhase.to_sealed();
         #[cfg(not(feature = "phase-check"))]
-        let current_phase = ThirdPhase.to_sealed();
+        let current_phase = sealed::Phase(cs.max_phase());
 
         let mut prover = MockProver {
             k,
@@ -834,9 +834,12 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
             }
         }
 
-        let syn_time = Instant::now();
-        ConcreteCircuit::FloorPlanner::synthesize(&mut prover, circuit, config, constants)?;
-        log::info!("MockProver synthesize took {:?}", syn_time.elapsed());
+        #[cfg(not(feature = "phase-check"))]
+        {
+            let syn_time = Instant::now();
+            ConcreteCircuit::FloorPlanner::synthesize(&mut prover, circuit, config, constants)?;
+            log::info!("MockProver synthesize took {:?}", syn_time.elapsed());
+        }
 
         let (cs, selector_polys) = prover
             .cs

@@ -73,6 +73,7 @@ pub(super) fn format_value<F: Field>(v: F) -> String {
     }
 }
 
+/*
 pub(super) fn load<'a, F: FieldExt, T: ColumnType, Q: Into<AnyQuery> + Copy>(
     n: i32,
     row: i32,
@@ -85,6 +86,7 @@ pub(super) fn load<'a, F: FieldExt, T: ColumnType, Q: Into<AnyQuery> + Copy>(
         cells[column.index()][resolved_row as usize].into()
     }
 }
+*/
 
 pub(super) fn load_slice<'a, F: FieldExt, T: ColumnType, Q: Into<AnyQuery> + Copy>(
     n: i32,
