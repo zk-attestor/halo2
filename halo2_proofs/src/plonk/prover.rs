@@ -210,7 +210,7 @@ pub fn create_proof<
                     advice_vec: self.advice_vec.clone(),
                     advice,
                     challenges: self.challenges,
-                    instances: self.instances.clone(),
+                    instances: self.instances,
                     rw_rows: sub_range.clone(),
                     usable_rows: self.usable_rows.clone(),
                     _marker: Default::default(),

@@ -184,6 +184,7 @@ impl<'p, 'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for V1Pass<'p, 'a, F,
         }
     }
 
+    #[cfg(feature = "parallel_syn")]
     fn assign_regions<A, AR, N, NR>(
         &mut self,
         _name: N,

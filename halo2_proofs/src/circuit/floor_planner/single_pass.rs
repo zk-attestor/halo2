@@ -188,6 +188,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
         Ok(result)
     }
 
+    #[cfg(feature = "parallel_syn")]
     fn assign_regions<A, AR, N, NR>(
         &mut self,
         name: N,

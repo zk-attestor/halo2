@@ -507,6 +507,7 @@ impl<'a, F: Field, L: Layouter<F> + 'a> Layouter<F> for NamespacedLayouter<'a, F
         self.0.assign_region(name, assignment)
     }
 
+    #[cfg(feature = "parallel_syn")]
     fn assign_regions<A, AR, N, NR>(
         &mut self,
         name: N,
