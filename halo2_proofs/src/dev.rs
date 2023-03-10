@@ -558,9 +558,8 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
         if false && self.current_phase.0 > column.column_type().phase.0 {
             // Some circuits assign cells more than one times with different values
             // So this check sometimes can be false alarm
-            if !self.advice_prev.is_empty() {
-                if self.advice_prev[column.index()][row] != assigned {
-                    panic!("not same new {assigned:?} old {:?}, column idx {} row {} cur phase {:?} col phase {:?} region {:?}", 
+            if !self.advice_prev.is_empty() && self.advice_prev[column.index()][row] != assigned {
+                panic!("not same new {assigned:?} old {:?}, column idx {} row {} cur phase {:?} col phase {:?} region {:?}",
                     self.advice_prev[column.index()][row],
                     column.index(),
                     row,
@@ -568,7 +567,6 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
                     column.column_type().phase,
                     self.current_region
                 )
-                }
             }
         }
 
@@ -815,15 +813,15 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
                 if !prover.advice_prev.is_empty() {
                     let mut err = false;
                     for (idx, advice_values) in prover.advice.iter().enumerate() {
-                        if prover.cs.advice_column_phase[idx].0 < current_phase.0 {
-                            if advice_values != &prover.advice_prev[idx] {
-                                log::error!(
-                                    "PHASE ERR column{} not same after phase {:?}",
-                                    idx,
-                                    current_phase
-                                );
-                                err = true;
-                            }
+                        if prover.cs.advice_column_phase[idx].0 < current_phase.0
+                            && advice_values != &prover.advice_prev[idx]
+                        {
+                            log::error!(
+                                "PHASE ERR column{} not same after phase {:?}",
+                                idx,
+                                current_phase
+                            );
+                            err = true;
                         }
                     }
                     if err {

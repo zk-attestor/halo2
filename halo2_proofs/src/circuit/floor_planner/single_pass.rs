@@ -37,7 +37,7 @@ impl FloorPlanner for SimpleFloorPlanner {
         config: C::Config,
         constants: Vec<Column<Fixed>>,
     ) -> Result<(), Error> {
-        let timer = start_timer!(|| format!("SimpleFloorPlanner synthesize"));
+        let timer = start_timer!(|| ("SimpleFloorPlanner synthesize").to_string());
         let layouter = SingleChipLayouter::new(cs, constants)?;
         let result = circuit.synthesize(config, layouter);
         end_timer!(timer);
@@ -293,10 +293,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
         let (results, constants): (Vec<_>, Vec<_>) = ret.into_iter().unzip();
 
         // Check if there are errors in sub-region synthesis
-        let results = results
-            .into_iter()
-            .map(|result| result)
-            .collect::<Result<Vec<_>, Error>>()?;
+        let results = results.into_iter().collect::<Result<Vec<_>, Error>>()?;
 
         // Merge all constants from sub-regions together
         let constants_to_assign = constants

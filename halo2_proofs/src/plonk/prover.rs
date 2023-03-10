@@ -212,7 +212,7 @@ pub fn create_proof<
                     challenges: self.challenges,
                     instances: self.instances,
                     rw_rows: sub_range.clone(),
-                    usable_rows: self.usable_rows.clone(),
+                    usable_rows: self.usable_rows,
                     _marker: Default::default(),
                 });
             }
@@ -397,15 +397,15 @@ pub fn create_proof<
                 #[cfg(feature = "phase-check")]
                 {
                     for (idx, advice_col) in witness.advice_vec.iter().enumerate() {
-                        if pk.vk.cs.advice_column_phase[idx].0 < current_phase.0 {
-                            if advice_assignments[circuit_idx][idx].values != advice_col.values {
-                                log::error!(
-                                    "advice column {}(at {:?}) changed when {:?}",
-                                    idx,
-                                    pk.vk.cs.advice_column_phase[idx],
-                                    current_phase
-                                );
-                            }
+                        if pk.vk.cs.advice_column_phase[idx].0 < current_phase.0
+                            && advice_assignments[circuit_idx][idx].values != advice_col.values
+                        {
+                            log::error!(
+                                "advice column {}(at {:?}) changed when {:?}",
+                                idx,
+                                pk.vk.cs.advice_column_phase[idx],
+                                current_phase
+                            );
                         }
                     }
                 }
