@@ -555,7 +555,8 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
             .ok_or(Error::BoundsFailure)? = assigned;
 
         #[cfg(feature = "phase-check")]
-        if false && self.current_phase.0 > column.column_type().phase.0 {
+        // if false && self.current_phase.0 > column.column_type().phase.0 {
+        if false {
             // Some circuits assign cells more than one times with different values
             // So this check sometimes can be false alarm
             if !self.advice_prev.is_empty() && self.advice_prev[column.index()][row] != assigned {
