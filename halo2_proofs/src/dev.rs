@@ -304,6 +304,7 @@ pub struct MockProver<'a, F: Group + Field> {
     // The advice cells in the circuit, arranged as [column][row].
     pub(crate) advice_vec: Arc<Vec<Vec<CellValue<F>>>>,
     pub(crate) advice: Vec<&'a mut [CellValue<F>]>,
+    // This field is used only if the "phase_check" feature is turned on.
     advice_prev: Vec<Vec<CellValue<F>>>,
     // The instance cells in the circuit, arranged as [column][row].
     instance: Vec<Vec<F>>,
@@ -764,61 +765,9 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
         };
 
         #[cfg(feature = "phase-check")]
-        {
-            // check1: phase1 should not assign expr including phase2 challenges
-            // check2: phase2 assigns same phase1 columns with phase1
-            let mut cur_challenges: Vec<F> = Vec::new();
-            let mut last_advice: Vec<Vec<CellValue<F>>> = Vec::new();
-            for current_phase in cs.phases() {
-                let mut prover = MockProver {
-                    k,
-                    n: n as u32,
-                    cs: cs.clone(),
-                    regions: vec![],
-                    current_region: None,
-                    fixed: fixed.clone(),
-                    advice: advice.clone(),
-                    advice_prev: last_advice.clone(),
-                    instance: instance.clone(),
-                    selectors: selectors.clone(),
-                    challenges: cur_challenges.clone(),
-                    permutation: permutation.clone(),
-                    usable_rows: 0..usable_rows,
-                    current_phase,
-                };
-                ConcreteCircuit::FloorPlanner::synthesize(
-                    &mut prover,
-                    circuit,
-                    config.clone(),
-                    constants.clone(),
-                )?;
-                for (index, phase) in cs.challenge_phase.iter().enumerate() {
-                    if current_phase == *phase {
-                        debug_assert_eq!(cur_challenges.len(), index);
-                        cur_challenges.push(challenges[index].clone());
-                    }
-                }
-                if !last_advice.is_empty() {
-                    let mut err = false;
-                    for (idx, advice_values) in prover.advice.iter().enumerate() {
-                        if cs.advice_column_phase[idx].0 < current_phase.0 {
-                            if advice_values != &last_advice[idx] {
-                                log::error!(
-                                    "PHASE ERR column{} not same after phase {:?}",
-                                    idx,
-                                    current_phase
-                                );
-                                err = true;
-                            }
-                        }
-                    }
-                    if err {
-                        panic!("wrong phase assignment");
-                    }
-                }
-                last_advice = prover.advice;
-            }
-        }
+        let current_phase = FirstPhase.to_sealed();
+        #[cfg(not(feature = "phase-check"))]
+        let current_phase = ThirdPhase.to_sealed();
 
         let mut prover = MockProver {
             k,
@@ -838,8 +787,53 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
             permutation: Some(permutation),
             rw_rows: 0..usable_rows,
             usable_rows: 0..usable_rows,
-            current_phase: ThirdPhase.to_sealed(),
+            current_phase,
         };
+
+        #[cfg(feature = "phase-check")]
+        {
+            // check1: phase1 should not assign expr including phase2 challenges
+            // check2: phase2 assigns same phase1 columns with phase1
+            let mut cur_challenges: Vec<F> = Vec::new();
+            let mut last_advice: Vec<Vec<CellValue<F>>> = Vec::new();
+            for current_phase in prover.cs.phases() {
+                prover.current_phase = current_phase;
+                prover.advice_prev = last_advice;
+                ConcreteCircuit::FloorPlanner::synthesize(
+                    &mut prover,
+                    circuit,
+                    config.clone(),
+                    constants.clone(),
+                )?;
+
+                for (index, phase) in prover.cs.challenge_phase.iter().enumerate() {
+                    if current_phase == *phase {
+                        debug_assert_eq!(cur_challenges.len(), index);
+                        cur_challenges.push(challenges[index].clone());
+                    }
+                }
+                if !prover.advice_prev.is_empty() {
+                    let mut err = false;
+                    for (idx, advice_values) in prover.advice.iter().enumerate() {
+                        if prover.cs.advice_column_phase[idx].0 < current_phase.0 {
+                            if advice_values != &prover.advice_prev[idx] {
+                                log::error!(
+                                    "PHASE ERR column{} not same after phase {:?}",
+                                    idx,
+                                    current_phase
+                                );
+                                err = true;
+                            }
+                        }
+                    }
+                    if err {
+                        panic!("wrong phase assignment");
+                    }
+                }
+                last_advice = prover.advice_vec.as_ref().clone();
+            }
+        }
+
         let syn_time = Instant::now();
         ConcreteCircuit::FloorPlanner::synthesize(&mut prover, circuit, config, constants)?;
         log::info!("MockProver synthesize took {:?}", syn_time.elapsed());

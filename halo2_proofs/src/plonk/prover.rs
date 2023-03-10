@@ -220,7 +220,7 @@ pub fn create_proof<
             Ok(sub_cs)
         }
 
-        fn merge(&mut self, sub_cs: Vec<Self>) -> Result<(), Error> {
+        fn merge(&mut self, _sub_cs: Vec<Self>) -> Result<(), Error> {
             Ok(())
         }
 
@@ -396,7 +396,7 @@ pub fn create_proof<
 
                 #[cfg(feature = "phase-check")]
                 {
-                    for (idx, advice_col) in witness.advice.iter().enumerate() {
+                    for (idx, advice_col) in witness.advice_vec.iter().enumerate() {
                         if pk.vk.cs.advice_column_phase[idx].0 < current_phase.0 {
                             if advice_assignments[circuit_idx][idx].values != advice_col.values {
                                 log::error!(

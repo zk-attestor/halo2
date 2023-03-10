@@ -432,6 +432,14 @@ impl<F: Field> Assignment<F> for Layout {
         Ok(())
     }
 
+    fn fork(&mut self, _ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
+        todo!()
+    }
+
+    fn merge(&mut self, _sub_cs: Vec<Self>) -> Result<(), Error> {
+        todo!()
+    }
+
     fn query_instance(&self, _: Column<Instance>, _: usize) -> Result<Value<F>, Error> {
         Ok(Value::unknown())
     }

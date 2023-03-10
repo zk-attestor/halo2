@@ -54,7 +54,7 @@ macro_rules! two_dim_vec_to_vec_of_slice {
             let ptr = Arc::as_ptr(&arc_vec_clone) as *mut Vec<Vec<_>>;
             let mut_ref = &mut (*ptr);
 
-            mut_ref.iter_mut().map(|item| item.as_mut_slice()).collect()
+            mut_ref.iter_mut().map(|item| item.as_mut_slice()).collect::<Vec<_>>()
         }
     };
 }
