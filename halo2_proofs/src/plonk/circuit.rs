@@ -558,7 +558,7 @@ pub trait Assignment<F: Field>: Sized + Send {
         AR: Into<String>;
 
     /// Fork
-    fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error>;
+    fn fork(&mut self, ranges: &[Range<usize>]) -> Result<Vec<Self>, Error>;
 
     /// Merge
     fn merge(&mut self, sub_cs: Vec<Self>) -> Result<(), Error>;

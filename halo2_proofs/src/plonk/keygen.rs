@@ -95,7 +95,7 @@ impl<'a, F: Field> Assignment<F> for Assembly<'a, F> {
         Ok(())
     }
 
-    fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
+    fn fork(&mut self, ranges: &[Range<usize>]) -> Result<Vec<Self>, Error> {
         let mut range_start = self.rw_rows.start;
         for (i, sub_range) in ranges.iter().enumerate() {
             if sub_range.start < range_start {

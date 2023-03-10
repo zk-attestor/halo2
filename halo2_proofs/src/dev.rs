@@ -380,7 +380,7 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
         Ok(())
     }
 
-    fn fork(&mut self, ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
+    fn fork(&mut self, ranges: &[Range<usize>]) -> Result<Vec<Self>, Error> {
         // check ranges are non-overlapping and monotonically increasing
         let mut range_start = self.rw_rows.start;
         for (i, sub_range) in ranges.iter().enumerate() {
@@ -809,7 +809,7 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
                 for (index, phase) in prover.cs.challenge_phase.iter().enumerate() {
                     if current_phase == *phase {
                         debug_assert_eq!(cur_challenges.len(), index);
-                        cur_challenges.push(challenges[index].clone());
+                        cur_challenges.push(challenges[index]);
                     }
                 }
                 if !prover.advice_prev.is_empty() {

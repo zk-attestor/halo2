@@ -70,7 +70,7 @@ impl<F: Field> Assignment<F> for Assembly {
         Ok(())
     }
 
-    fn fork(&mut self, _ranges: &Vec<Range<usize>>) -> Result<Vec<Self>, Error> {
+    fn fork(&mut self, _ranges: &[Range<usize>]) -> Result<Vec<Self>, Error> {
         todo!()
     }
 

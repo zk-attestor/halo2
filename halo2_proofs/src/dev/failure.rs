@@ -460,7 +460,7 @@ fn render_lookup<F: FieldExt>(
                 n,
                 row,
                 &cs.fixed_queries,
-                &prover.fixed.as_slice(),
+                prover.fixed.as_slice(),
             )),
             &cell_value(&util::load_slice(
                 n,
