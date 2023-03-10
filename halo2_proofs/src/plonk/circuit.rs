@@ -1,6 +1,7 @@
 use core::cmp::max;
 use core::ops::{Add, Mul};
 use ff::Field;
+use std::collections::HashMap;
 use std::ops::Range;
 use std::{
     convert::TryFrom,
@@ -8,6 +9,7 @@ use std::{
 };
 
 use super::{lookup, permutation, Assigned, Error};
+use crate::dev::metadata;
 use crate::{
     circuit::{Layouter, Region, Value},
     poly::Rotation,
@@ -537,6 +539,14 @@ pub trait Assignment<F: Field>: Sized + Send {
         NR: Into<String>,
         N: FnOnce() -> NR;
 
+    /// Allows the developer to include an annotation for an specific column within a `Region`.
+    ///
+    /// This is usually useful for debugging circuit failures.
+    fn annotate_column<A, AR>(&mut self, annotation: A, column: Column<Any>)
+    where
+        A: FnOnce() -> AR,
+        AR: Into<String>;
+
     /// Exits the current region.
     ///
     /// Panics if we are not currently in a region (if `enter_region` was not called).
@@ -944,38 +954,67 @@ impl<F: Field> Expression<F> {
         }
     }
 
+    fn write_identifier<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        match self {
+            Expression::Constant(scalar) => write!(writer, "{:?}", scalar),
+            Expression::Selector(selector) => write!(writer, "selector[{}]", selector.0),
+            Expression::Fixed(query) => {
+                write!(
+                    writer,
+                    "fixed[{}][{}]",
+                    query.column_index, query.rotation.0
+                )
+            }
+            Expression::Advice(query) => {
+                write!(
+                    writer,
+                    "advice[{}][{}]",
+                    query.column_index, query.rotation.0
+                )
+            }
+            Expression::Instance(query) => {
+                write!(
+                    writer,
+                    "instance[{}][{}]",
+                    query.column_index, query.rotation.0
+                )
+            }
+            Expression::Challenge(challenge) => {
+                write!(writer, "challenge[{}]", challenge.index())
+            }
+            Expression::Negated(a) => {
+                writer.write_all(b"(-")?;
+                a.write_identifier(writer)?;
+                writer.write_all(b")")
+            }
+            Expression::Sum(a, b) => {
+                writer.write_all(b"(")?;
+                a.write_identifier(writer)?;
+                writer.write_all(b"+")?;
+                b.write_identifier(writer)?;
+                writer.write_all(b")")
+            }
+            Expression::Product(a, b) => {
+                writer.write_all(b"(")?;
+                a.write_identifier(writer)?;
+                writer.write_all(b"*")?;
+                b.write_identifier(writer)?;
+                writer.write_all(b")")
+            }
+            Expression::Scaled(a, f) => {
+                a.write_identifier(writer)?;
+                write!(writer, "*{:?}", f)
+            }
+        }
+    }
+
     /// Identifier for this expression. Expressions with identical identifiers
     /// do the same calculation (but the expressions don't need to be exactly equal
     /// in how they are composed e.g. `1 + 2` and `2 + 1` can have the same identifier).
     pub fn identifier(&self) -> String {
-        match self {
-            Expression::Constant(scalar) => format!("{:?}", scalar),
-            Expression::Selector(selector) => format!("selector[{}]", selector.0),
-            Expression::Fixed(query) => {
-                format!("fixed[{}][{}]", query.column_index, query.rotation.0)
-            }
-            Expression::Advice(query) => {
-                format!("advice[{}][{}]", query.column_index, query.rotation.0)
-            }
-            Expression::Instance(query) => {
-                format!("instance[{}][{}]", query.column_index, query.rotation.0)
-            }
-            Expression::Challenge(challenge) => {
-                format!("challenge[{}]", challenge.index())
-            }
-            Expression::Negated(a) => {
-                format!("(-{})", a.identifier())
-            }
-            Expression::Sum(a, b) => {
-                format!("({}+{})", a.identifier(), b.identifier())
-            }
-            Expression::Product(a, b) => {
-                format!("({}*{})", a.identifier(), b.identifier())
-            }
-            Expression::Scaled(a, f) => {
-                format!("{}*{:?}", a.identifier(), f)
-            }
-        }
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        self.write_identifier(&mut cursor).unwrap();
+        String::from_utf8(cursor.into_inner()).unwrap()
     }
 
     /// Compute the degree of this polynomial
@@ -1362,6 +1401,9 @@ pub struct ConstraintSystem<F: Field> {
     // input expressions and a sequence of table expressions involved in the lookup.
     pub lookups: Vec<lookup::Argument<F>>,
 
+    // List of indexes of Fixed columns which are associated to a circuit-general Column tied to their annotation.
+    pub(crate) general_column_annotations: HashMap<metadata::Column, String>,
+
     // Vector of fixed columns, which can be used to store constant values
     // that are copied into advice columns.
     pub(crate) constants: Vec<Column<Fixed>>,
@@ -1445,6 +1487,7 @@ impl<F: Field> Default for ConstraintSystem<F> {
             instance_queries: Vec::new(),
             permutation: permutation::Argument::new(),
             lookups: Vec::new(),
+            general_column_annotations: HashMap::new(),
             constants: vec![],
             minimum_degree: None,
         }
@@ -1827,6 +1870,34 @@ impl<F: Field> ConstraintSystem<F> {
         TableColumn {
             inner: self.fixed_column(),
         }
+    }
+
+    /// Annotate a Lookup column.
+    pub fn annotate_lookup_column<A, AR>(&mut self, column: TableColumn, annotation: A)
+    where
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        // We don't care if the table has already an annotation. If it's the case we keep the new one.
+        self.general_column_annotations.insert(
+            metadata::Column::from((Any::Fixed, column.inner().index)),
+            annotation().into(),
+        );
+    }
+
+    /// Annotate an Instance column.
+    pub fn annotate_lookup_any_column<A, AR, T>(&mut self, column: T, annotation: A)
+    where
+        A: Fn() -> AR,
+        AR: Into<String>,
+        T: Into<Column<Any>>,
+    {
+        let col_any = column.into();
+        // We don't care if the table has already an annotation. If it's the case we keep the new one.
+        self.general_column_annotations.insert(
+            metadata::Column::from((col_any.column_type, col_any.index)),
+            annotation().into(),
+        );
     }
 
     /// Allocate a new fixed column

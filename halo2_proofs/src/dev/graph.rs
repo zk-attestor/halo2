@@ -108,6 +108,14 @@ impl<F: Field> Assignment<F> for Graph {
         todo!()
     }
 
+    fn annotate_column<A, AR>(&mut self, _annotation: A, _column: Column<Any>)
+    where
+        A: FnOnce() -> AR,
+        AR: Into<String>,
+    {
+        // Do nothing
+    }
+
     fn query_instance(&self, _: Column<Instance>, _: usize) -> Result<Value<F>, Error> {
         Ok(Value::unknown())
     }

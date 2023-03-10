@@ -117,16 +117,24 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
             assignment(region.into())?;
             end_timer!(timer_1st);
         }
-        log::debug!("region row_count {}: {}", region_name, shape.row_count());
+        let row_count = shape.row_count();
+        let log_region_info = row_count >= 40;
+        if log_region_info {
+            log::debug!(
+                "region row_count \"{}\": {}",
+                region_name,
+                shape.row_count()
+            );
+        }
 
         // Lay out this region. We implement the simplest approach here: position the
         // region starting at the earliest row for which none of the columns are in use.
         let mut region_start = 0;
         for column in &shape.columns {
             let column_start = self.columns.get(column).cloned().unwrap_or(0);
-            if column_start != 0 {
+            if column_start != 0 && log_region_info {
                 log::trace!(
-                    "columns {:?} reused between multi regions. Start: {}. Region: {}",
+                    "columns {:?} reused between multi regions. Start: {}. Region: \"{}\"",
                     column,
                     column_start,
                     region_name
@@ -134,7 +142,14 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
             }
             region_start = cmp::max(region_start, column_start);
         }
-        log::debug!("region{} start: {}", self.regions.len(), region_start);
+        if log_region_info {
+            log::debug!(
+                "region \"{}\", idx {} start {}",
+                region_name,
+                self.regions.len(),
+                region_start
+            );
+        }
         self.regions.push(region_start.into());
 
         // Update column usage information.
@@ -464,6 +479,14 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
             selector,
             *self.layouter.regions[*self.region_index] + offset,
         )
+    }
+
+    fn name_column<'v>(
+        &'v mut self,
+        annotation: &'v (dyn Fn() -> String + 'v),
+        column: Column<Any>,
+    ) {
+        self.layouter.cs.annotate_column(annotation, column);
     }
 
     fn assign_advice<'v>(

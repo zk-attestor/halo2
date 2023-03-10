@@ -14,8 +14,7 @@ use crate::plonk::{Assigned, Error};
 ///   for improved usability.
 #[derive(Clone, Copy, Debug)]
 pub struct Value<V> {
-    /// for adhoc usage...
-    pub inner: Option<V>,
+    inner: Option<V>,
 }
 
 impl<V> Default for Value<V> {
@@ -700,5 +699,12 @@ impl<F: Field> Value<Assigned<F>> {
         Value {
             inner: self.inner.map(|v| v.evaluate()),
         }
+    }
+}
+
+/// Utilities for tests and dev tools.
+pub mod value_dev {
+    pub fn unwrap_value<T>(v: super::Value<T>) -> T {
+        v.inner.unwrap()
     }
 }
