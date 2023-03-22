@@ -181,7 +181,7 @@ impl CircuitLayout {
 
         root.draw(&Rectangle::new(
             [(0, 0), (total_columns, view_bottom)],
-            &BLACK,
+            BLACK,
         ))?;
 
         let draw_region = |root: &DrawingArea<_, _>, top_left, bottom_right| {
@@ -197,7 +197,7 @@ impl CircuitLayout {
                 [top_left, bottom_right],
                 ShapeStyle::from(&GREEN.mix(0.2)).filled(),
             ))?;
-            root.draw(&Rectangle::new([top_left, bottom_right], &BLACK))?;
+            root.draw(&Rectangle::new([top_left, bottom_right], BLACK))?;
             Ok(())
         };
 
@@ -430,6 +430,14 @@ impl<F: Field> Assignment<F> for Layout {
 
         self.update((*selector).into(), row);
         Ok(())
+    }
+
+    fn fork(&mut self, _ranges: &[Range<usize>]) -> Result<Vec<Self>, Error> {
+        todo!()
+    }
+
+    fn merge(&mut self, _sub_cs: Vec<Self>) -> Result<(), Error> {
+        todo!()
     }
 
     fn query_instance(&self, _: Column<Instance>, _: usize) -> Result<Value<F>, Error> {

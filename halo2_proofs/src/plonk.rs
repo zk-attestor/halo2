@@ -79,7 +79,7 @@ where
             commitment.write(writer, format)?;
         }
         self.permutation.write(writer, format)?;
-        /* 
+        /*
         // write self.selectors
         for selector in &self.selectors {
             // since `selector` is filled with `bool`, we pack them 8 at a time into bytes and then write
@@ -119,7 +119,7 @@ where
 
         let permutation = permutation::VerifyingKey::read(reader, &cs.permutation, format)?;
 
-        /* 
+        /*
         // read selectors
         let selectors: Vec<Vec<bool>> = vec![vec![false; 1 << k]; cs.num_selectors]
             .into_iter()
@@ -163,14 +163,14 @@ impl<C: CurveAffine> VerifyingKey<C> {
     fn bytes_length(&self) -> usize {
         8 + (self.fixed_commitments.len() * C::default().to_bytes().as_ref().len())
             + self.permutation.bytes_length()
-            /* 
-            + self.selectors.len()
-                * (self
-                    .selectors
-                    .get(0)
-                    .map(|selector| selector.len() / 8 + 1)
-                    .unwrap_or(0))
-                    */
+        /*
+        + self.selectors.len()
+            * (self
+                .selectors
+                .get(0)
+                .map(|selector| selector.len() / 8 + 1)
+                .unwrap_or(0))
+                */
     }
 
     fn from_parts(

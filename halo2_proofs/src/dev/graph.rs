@@ -1,4 +1,5 @@
 use ff::Field;
+use std::ops::Range;
 use tabbycat::{AttrList, Edge, GraphBuilder, GraphType, Identity, StmtList};
 
 use crate::{
@@ -97,6 +98,14 @@ impl<F: Field> Assignment<F> for Graph {
     {
         // Do nothing; we don't care about cells in this context.
         Ok(())
+    }
+
+    fn fork(&mut self, _ranges: &[Range<usize>]) -> Result<Vec<Self>, Error> {
+        todo!()
+    }
+
+    fn merge(&mut self, _sub_cs: Vec<Self>) -> Result<(), Error> {
+        todo!()
     }
 
     fn annotate_column<A, AR>(&mut self, _annotation: A, _column: Column<Any>)

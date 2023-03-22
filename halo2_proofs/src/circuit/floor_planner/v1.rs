@@ -184,6 +184,20 @@ impl<'p, 'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for V1Pass<'p, 'a, F,
         }
     }
 
+    #[cfg(feature = "parallel_syn")]
+    fn assign_regions<A, AR, N, NR>(
+        &mut self,
+        _name: N,
+        _assignments: Vec<A>,
+    ) -> Result<Vec<AR>, Error>
+    where
+        A: FnMut(Region<'_, F>) -> Result<AR, Error>,
+        N: Fn() -> NR,
+        NR: Into<String>,
+    {
+        todo!()
+    }
+
     fn assign_table<A, N, NR>(&mut self, name: N, assignment: A) -> Result<(), Error>
     where
         A: FnMut(Table<'_, F>) -> Result<(), Error>,

@@ -59,6 +59,7 @@ poseidon = { git = 'https://github.com/privacy-scaling-explorations/poseidon.git
 num-integer = "0.1"
 num-bigint = { version = "0.4", features = ["rand"] }
 
+crossbeam = "0.8.0"
 # Developer tooling dependencies
 plotters = { version = "0.3.0", optional = true }
 tabbycat = { version = "0.1", features = ["attributes"], optional = true }
@@ -66,6 +67,7 @@ log = "0.4.17"
 
 # timer
 ark-std = { version = "0.3.0" }
+env_logger = "0.8.0"
 
 [dev-dependencies]
 assert_matches = "1.5"
@@ -85,6 +87,7 @@ sanity-checks = []
 batch = ["rand_core/getrandom"]
 shplonk = []
 gwc = []
+parallel_syn = []
 phase-check = []
 profile = ["ark-std/print-trace"]
 

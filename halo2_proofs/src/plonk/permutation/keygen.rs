@@ -113,7 +113,7 @@ impl Assembly {
         {
             let omega = domain.get_omega();
             parallelize(&mut omega_powers, |o, start| {
-                let mut cur = omega.pow_vartime(&[start as u64]);
+                let mut cur = omega.pow_vartime([start as u64]);
                 for v in o.iter_mut() {
                     *v = cur;
                     cur *= &omega;
@@ -175,7 +175,7 @@ impl Assembly {
         {
             let omega = domain.get_omega();
             parallelize(&mut omega_powers, |o, start| {
-                let mut cur = omega.pow_vartime(&[start as u64]);
+                let mut cur = omega.pow_vartime([start as u64]);
                 for v in o.iter_mut() {
                     *v = cur;
                     cur *= &omega;

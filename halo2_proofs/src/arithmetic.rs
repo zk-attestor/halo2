@@ -206,7 +206,7 @@ fn serial_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
 
     let mut m = 1;
     for _ in 0..log_n {
-        let w_m = omega.pow_vartime(&[u64::from(n / (2 * m)), 0, 0, 0]);
+        let w_m = omega.pow_vartime([u64::from(n / (2 * m)), 0, 0, 0]);
 
         let mut k = 0;
         while k < n {
@@ -316,7 +316,7 @@ pub fn generate_twiddle_lookup_table<F: Field>(
     if is_lut_len_large {
         let mut twiddle_lut = vec![F::zero(); (1 << log_n) as usize];
         parallelize(&mut twiddle_lut, |twiddle_lut, start| {
-            let mut w_n = omega.pow_vartime(&[start as u64, 0, 0, 0]);
+            let mut w_n = omega.pow_vartime([start as u64, 0, 0, 0]);
             for twiddle_lut in twiddle_lut.iter_mut() {
                 *twiddle_lut = w_n;
                 w_n = w_n * omega;
@@ -332,18 +332,18 @@ pub fn generate_twiddle_lookup_table<F: Field>(
     parallelize(
         &mut twiddle_lut[..low_degree_lut_len],
         |twiddle_lut, start| {
-            let mut w_n = omega.pow_vartime(&[start as u64, 0, 0, 0]);
+            let mut w_n = omega.pow_vartime([start as u64, 0, 0, 0]);
             for twiddle_lut in twiddle_lut.iter_mut() {
                 *twiddle_lut = w_n;
                 w_n = w_n * omega;
             }
         },
     );
-    let high_degree_omega = omega.pow_vartime(&[(1 << sparse_degree) as u64, 0, 0, 0]);
+    let high_degree_omega = omega.pow_vartime([(1 << sparse_degree) as u64, 0, 0, 0]);
     parallelize(
         &mut twiddle_lut[low_degree_lut_len..],
         |twiddle_lut, start| {
-            let mut w_n = high_degree_omega.pow_vartime(&[start as u64, 0, 0, 0]);
+            let mut w_n = high_degree_omega.pow_vartime([start as u64, 0, 0, 0]);
             for twiddle_lut in twiddle_lut.iter_mut() {
                 *twiddle_lut = w_n;
                 w_n = w_n * high_degree_omega;
@@ -372,7 +372,7 @@ pub fn parallel_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
         let twiddle_lut = &*twiddle_lut;
         for (chunk_idx, tmp) in tmp.chunks_mut(sub_n).enumerate() {
             scope.spawn(move |_| {
-                let split_fft_offset = chunk_idx * sub_n >> log_split;
+                let split_fft_offset = (chunk_idx * sub_n) >> log_split;
                 for (i, tmp) in tmp.chunks_mut(split_m).enumerate() {
                     let split_fft_offset = split_fft_offset + i;
                     split_radix_fft(tmp, a, twiddle_lut, n, split_fft_offset, log_split);
@@ -392,7 +392,7 @@ pub fn parallel_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
     });
 
     // sub fft
-    let new_omega = omega.pow_vartime(&[split_m as u64, 0, 0, 0]);
+    let new_omega = omega.pow_vartime([split_m as u64, 0, 0, 0]);
     multicore::scope(|scope| {
         for a in a.chunks_mut(sub_n) {
             scope.spawn(move |_| {
@@ -419,7 +419,7 @@ pub fn parallel_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
 
 /// Convert coefficient bases group elements to lagrange basis by inverse FFT.
 pub fn g_to_lagrange<C: CurveAffine>(g_projective: Vec<C::Curve>, k: u32) -> Vec<C> {
-    let n_inv = C::Scalar::TWO_INV.pow_vartime(&[k as u64, 0, 0, 0]);
+    let n_inv = C::Scalar::TWO_INV.pow_vartime([k as u64, 0, 0, 0]);
     let mut omega_inv = C::Scalar::ROOT_OF_UNITY_INV;
     for _ in k..C::Scalar::S {
         omega_inv = omega_inv.square();
@@ -464,7 +464,7 @@ pub fn eval_polynomial<F: Field>(poly: &[F], point: F) -> F {
             {
                 scope.spawn(move |_| {
                     let start = chunk_idx * chunk_size;
-                    out[0] = evaluate(poly, point) * point.pow_vartime(&[start as u64, 0, 0, 0]);
+                    out[0] = evaluate(poly, point) * point.pow_vartime([start as u64, 0, 0, 0]);
                 });
             }
         });

@@ -1,3 +1,4 @@
+use crate::plonk::{Any, Column};
 use crate::poly::Polynomial;
 use ff::Field;
 use ff::PrimeField;
@@ -21,6 +22,13 @@ pub enum SerdeFormat {
     /// Serialization is the same as `RawBytes`, but no checks are performed.
     RawBytesUnchecked,
 }
+
+#[derive(Clone, Debug)]
+pub(crate) struct CopyCell {
+    pub column: Column<Any>,
+    pub row: usize,
+}
+
 // Keep this trait for compatibility with IPA serialization
 pub(crate) trait CurveRead: CurveAffine {
     /// Reads a compressed element from the buffer and attempts to parse it
@@ -55,6 +63,22 @@ pub(crate) fn base_to_scalar<C: CurveAffine>(base: &C::Base) -> C::Scalar {
     let bn = field_to_bn(base);
     // bn_to_field will perform a mod reduction
     bn_to_field(&bn)
+}
+
+#[macro_export]
+macro_rules! two_dim_vec_to_vec_of_slice {
+    ($arc_vec:ident) => {
+        unsafe {
+            let arc_vec_clone = $arc_vec.clone();
+            let ptr = Arc::as_ptr(&arc_vec_clone) as *mut Vec<Vec<_>>;
+            let mut_ref = &mut (*ptr);
+
+            mut_ref
+                .iter_mut()
+                .map(|item| item.as_mut_slice())
+                .collect::<Vec<_>>()
+        }
+    };
 }
 
 #[cfg(test)]

@@ -435,6 +435,18 @@ pub trait Layouter<F: Field> {
         N: Fn() -> NR,
         NR: Into<String>;
 
+    #[cfg(feature = "parallel_syn")]
+    fn assign_regions<A, AR, N, NR>(
+        &mut self,
+        name: N,
+        assignments: Vec<A>,
+    ) -> Result<Vec<AR>, Error>
+    where
+        A: FnMut(Region<'_, F>) -> Result<AR, Error> + Send,
+        AR: Send,
+        N: Fn() -> NR,
+        NR: Into<String>;
+
     /// Assign a table region to an absolute row number.
     ///
     /// ```ignore
@@ -508,6 +520,21 @@ impl<'a, F: Field, L: Layouter<F> + 'a> Layouter<F> for NamespacedLayouter<'a, F
         NR: Into<String>,
     {
         self.0.assign_region(name, assignment)
+    }
+
+    #[cfg(feature = "parallel_syn")]
+    fn assign_regions<A, AR, N, NR>(
+        &mut self,
+        name: N,
+        assignments: Vec<A>,
+    ) -> Result<Vec<AR>, Error>
+    where
+        A: FnMut(Region<'_, F>) -> Result<AR, Error> + Send,
+        AR: Send,
+        N: Fn() -> NR,
+        NR: Into<String>,
+    {
+        self.0.assign_regions(name, assignments)
     }
 
     fn assign_table<A, N, NR>(&mut self, name: N, assignment: A) -> Result<(), Error>

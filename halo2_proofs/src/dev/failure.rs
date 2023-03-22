@@ -551,8 +551,18 @@ fn render_lookup<F: FieldExt>(
         let cell_values = input.evaluate(
             &|_| BTreeMap::default(),
             &|_| panic!("virtual selectors are removed during optimization"),
-            &cell_value(&util::load(n, row, &cs.fixed_queries, &prover.fixed)),
-            &cell_value(&util::load(n, row, &cs.advice_queries, &prover.advice)),
+            &cell_value(&util::load_slice(
+                n,
+                row,
+                &cs.fixed_queries,
+                prover.fixed.as_slice(),
+            )),
+            &cell_value(&util::load_slice(
+                n,
+                row,
+                &cs.advice_queries,
+                &prover.advice,
+            )),
             &cell_value(&util::load_instance(
                 n,
                 row,
