@@ -10,6 +10,9 @@ use group::{
 
 pub use halo2curves::{CurveAffine, CurveExt, FieldExt, Group};
 
+/// TEMP
+pub static mut MULTIEXP_TOTAL_TIME: usize = 0;
+
 fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut C::Curve) {
     let coeffs: Vec<_> = coeffs.iter().map(|a| a.to_repr()).collect();
 
@@ -132,8 +135,11 @@ pub fn small_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::C
 pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Curve {
     assert_eq!(coeffs.len(), bases.len());
 
+    //println!("msm: {}", coeffs.len());
+
+    let start = get_time();
     let num_threads = multicore::current_num_threads();
-    if coeffs.len() > num_threads {
+    let res = if coeffs.len() > num_threads {
         let chunk = coeffs.len() / num_threads;
         let num_chunks = coeffs.chunks(chunk).len();
         let mut results = vec![C::Curve::identity(); num_chunks];
@@ -155,7 +161,15 @@ pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Cu
         let mut acc = C::Curve::identity();
         multiexp_serial(coeffs, bases, &mut acc);
         acc
+    };
+
+    let duration = get_duration(start);
+    #[allow(unsafe_code)]
+    unsafe {
+        MULTIEXP_TOTAL_TIME += duration;
     }
+
+    res
 }
 
 /// Performs a radix-$2$ Fast-Fourier Transformation (FFT) on a vector of size
@@ -180,7 +194,7 @@ pub fn best_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
 
     let threads = multicore::current_num_threads();
     let log_threads = log2_floor(threads);
-    let n = a.len() as usize;
+    let n = a.len();
     assert_eq!(n, 1 << log_n);
 
     for k in 0..n {
@@ -190,18 +204,20 @@ pub fn best_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
         }
     }
 
+    //let start = start_measure(format!("twiddles {} ({})", a.len(), threads), false);
     // precompute twiddle factors
-    let twiddles: Vec<_> = (0..(n / 2) as usize)
+    let twiddles: Vec<_> = (0..(n / 2))
         .scan(G::Scalar::one(), |w, _| {
             let tw = *w;
             w.group_scale(&omega);
             Some(tw)
         })
         .collect();
+    //stop_measure(start);
 
     if log_n <= log_threads {
         let mut chunk = 2_usize;
-        let mut twiddle_chunk = (n / 2) as usize;
+        let mut twiddle_chunk = n / 2;
         for _ in 0..log_n {
             a.chunks_mut(chunk).for_each(|coeffs| {
                 let (left, right) = coeffs.split_at_mut(chunk / 2);
@@ -275,7 +291,7 @@ pub fn recursive_butterfly_arithmetic<G: Group>(
 
 /// Convert coefficient bases group elements to lagrange basis by inverse FFT.
 pub fn g_to_lagrange<C: CurveAffine>(g_projective: Vec<C::Curve>, k: u32) -> Vec<C> {
-    let n_inv = C::Scalar::TWO_INV.pow_vartime(&[k as u64, 0, 0, 0]);
+    let n_inv = C::Scalar::TWO_INV.pow_vartime([k as u64, 0, 0, 0]);
     let mut omega_inv = C::Scalar::ROOT_OF_UNITY_INV;
     for _ in k..C::Scalar::S {
         omega_inv = omega_inv.square();
@@ -320,7 +336,7 @@ pub fn eval_polynomial<F: Field>(poly: &[F], point: F) -> F {
             {
                 scope.spawn(move |_| {
                     let start = chunk_idx * chunk_size;
-                    out[0] = evaluate(poly, point) * point.pow_vartime(&[start as u64, 0, 0, 0]);
+                    out[0] = evaluate(poly, point) * point.pow_vartime([start as u64, 0, 0, 0]);
                 });
             }
         });
@@ -371,9 +387,9 @@ where
 pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mut [T], f: F) {
     let n = v.len();
     let num_threads = multicore::current_num_threads();
-    let mut chunk = (n as usize) / num_threads;
+    let mut chunk = n / num_threads;
     if chunk < num_threads {
-        chunk = n as usize;
+        chunk = 1;
     }
 
     multicore::scope(|scope| {
@@ -382,6 +398,29 @@ pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mu
             scope.spawn(move |_| {
                 let start = chunk_num * chunk;
                 f(v, start);
+            });
+        }
+    });
+}
+
+/// This simple utility function will parallelize an operation that is to be
+/// performed over a mutable slice.
+pub fn parallelize_count<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(
+    v: &mut [T],
+    num_threads: usize,
+    f: F,
+) {
+    let n = v.len();
+    let mut chunk = n / num_threads;
+    if chunk < num_threads {
+        chunk = n;
+    }
+
+    multicore::scope(|scope| {
+        for (chunk_num, v) in v.chunks_mut(chunk).enumerate() {
+            let f = f.clone();
+            scope.spawn(move |_| {
+                f(v, chunk_num);
             });
         }
     });
@@ -486,6 +525,7 @@ use rand_core::OsRng;
 
 #[cfg(test)]
 use crate::halo2curves::pasta::Fp;
+use crate::plonk::{get_duration, get_time, start_measure, stop_measure};
 
 #[test]
 fn test_lagrange_interpolate() {

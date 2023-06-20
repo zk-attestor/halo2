@@ -13,11 +13,17 @@ use crate::{
     },
     transcript::{EncodedChallenge, TranscriptWrite},
 };
+#[cfg(feature = "profile")]
+use ark_std::{end_timer, start_timer};
 use group::{
     ff::{BatchInvert, Field},
     Curve,
 };
 use rand_core::RngCore;
+use rayon::prelude::*;
+use rustc_hash::FxHashMap;
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::{any::TypeId, convert::TryInto, num::ParseIntError, ops::Index};
 use std::{
     collections::BTreeMap,
@@ -83,6 +89,7 @@ impl<F: FieldExt> Argument<F> {
         transcript: &mut T,
     ) -> Result<Permuted<C>, Error>
     where
+        F: Hash,
         C: CurveAffine<ScalarExt = F>,
         C::Curve: Mul<F, Output = C::Curve> + MulAssign<F>,
     {
@@ -395,6 +402,147 @@ fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: Rn
     mut rng: R,
     input_expression: &Polynomial<C::Scalar, LagrangeCoeff>,
     table_expression: &Polynomial<C::Scalar, LagrangeCoeff>,
+) -> Result<ExpressionPair<C::Scalar>, Error>
+where
+    C::Scalar: Hash,
+{
+    let num_threads = rayon::current_num_threads();
+    // heuristic on when multi-threading isn't worth it
+    // for now it seems like multi-threading is often worth it
+    /*if params.n() < (num_threads as u64) << 10 {
+        return permute_expression_pair_seq::<_, _, _, ZK>(
+            pk,
+            params,
+            domain,
+            rng,
+            input_expression,
+            table_expression,
+        );
+    }*/
+    let usable_rows = params.n() as usize - (pk.vk.cs.blinding_factors() + 1);
+
+    let input_expression = &input_expression[0..usable_rows];
+
+    // Sort input lookup expression values
+    #[cfg(feature = "profile")]
+    let input_time = start_timer!(|| "permute_par input hashmap (cpu par)");
+    // count input_expression unique values using a HashMap, using rayon parallel fold+reduce
+    let capacity = usable_rows / num_threads + 1;
+    let input_uniques: HashMap<C::Scalar, usize> = input_expression
+        .par_iter()
+        .fold(
+            || HashMap::with_capacity(capacity),
+            |mut acc, coeff| {
+                *acc.entry(*coeff).or_insert(0) += 1;
+                acc
+            },
+        )
+        .reduce_with(|mut m1, m2| {
+            m2.into_iter().for_each(|(k, v)| {
+                *m1.entry(k).or_insert(0) += v;
+            });
+            m1
+        })
+        .unwrap();
+    #[cfg(feature = "profile")]
+    end_timer!(input_time);
+
+    #[cfg(feature = "profile")]
+    let timer = start_timer!(|| "permute_par input unique ranges (cpu par)");
+    let input_unique_ranges = input_uniques
+        .par_iter()
+        .fold(
+            || Vec::with_capacity(capacity),
+            |mut input_ranges, (&coeff, &count)| {
+                if input_ranges.is_empty() {
+                    input_ranges.push((coeff, 0..count));
+                } else {
+                    let prev_end = input_ranges.last().unwrap().1.end;
+                    input_ranges.push((coeff, prev_end..prev_end + count));
+                }
+                input_ranges
+            },
+        )
+        .reduce_with(|r1, mut r2| {
+            let r1_end = r1.last().unwrap().1.end;
+            r2.par_iter_mut().for_each(|r2| {
+                r2.1.start += r1_end;
+                r2.1.end += r1_end;
+            });
+            [r1, r2].concat()
+        })
+        .unwrap();
+    #[cfg(feature = "profile")]
+    end_timer!(timer);
+
+    #[cfg(feature = "profile")]
+    let to_vec_time = start_timer!(|| "to_vec");
+    let mut sorted_table_coeffs = table_expression[0..usable_rows].to_vec();
+    #[cfg(feature = "profile")]
+    end_timer!(to_vec_time);
+    #[cfg(feature = "profile")]
+    let sort_table_time = start_timer!(|| "permute_par sort table");
+    sorted_table_coeffs.par_sort();
+    #[cfg(feature = "profile")]
+    end_timer!(sort_table_time);
+
+    #[cfg(feature = "profile")]
+    let timer = start_timer!(|| "leftover table coeffs (cpu par)");
+    let leftover_table_coeffs: Vec<C::Scalar> = sorted_table_coeffs
+        .par_iter()
+        .enumerate()
+        .filter_map(|(i, coeff)| {
+            ((i != 0 && coeff == &sorted_table_coeffs[i - 1]) || !input_uniques.contains_key(coeff))
+                .then_some(*coeff)
+        })
+        .collect();
+    #[cfg(feature = "profile")]
+    end_timer!(timer);
+
+    let (mut permuted_input_expression, mut permuted_table_coeffs): (Vec<_>, Vec<_>) =
+        input_unique_ranges
+            .into_par_iter()
+            .enumerate()
+            .flat_map(|(i, (coeff, range))| {
+                // subtract off the number of rows in table rows that correspond to input uniques
+                let leftover_range_start = range.start - i;
+                let leftover_range_end = range.end - i - 1;
+                [(coeff, coeff)].into_par_iter().chain(
+                    leftover_table_coeffs[leftover_range_start..leftover_range_end]
+                        .par_iter()
+                        .map(move |leftover_table_coeff| (coeff, *leftover_table_coeff)),
+                )
+            })
+            .unzip();
+    permuted_input_expression.resize_with(params.n() as usize, || C::Scalar::random(&mut rng));
+    permuted_table_coeffs.resize_with(params.n() as usize, || C::Scalar::random(&mut rng));
+
+    Ok((
+        domain.lagrange_from_vec(permuted_input_expression),
+        domain.lagrange_from_vec(permuted_table_coeffs),
+    ))
+}
+
+/// Given a vector of input values A and a vector of table values S,
+/// this method permutes A and S to produce A' and S', such that:
+/// - like values in A' are vertically adjacent to each other; and
+/// - the first row in a sequence of like values in A' is the row
+///   that has the corresponding value in S'.
+/// This method returns (A', S') if no errors are encountered.
+#[allow(dead_code)]
+fn permute_expression_pair_seq<
+    'params,
+    C: CurveAffine,
+    P: Params<'params, C>,
+    R: RngCore,
+    const ZK: bool,
+>(
+    pk: &ProvingKey<C>,
+    params: &P,
+    domain: &EvaluationDomain<C::Scalar>,
+    mut rng: R,
+    input_expression: &Polynomial<C::Scalar, LagrangeCoeff>,
+    table_expression: &Polynomial<C::Scalar, LagrangeCoeff>,
 ) -> Result<ExpressionPair<C::Scalar>, Error> {
     let blinding_factors = pk.vk.cs.blinding_factors();
     let usable_rows = params.n() as usize - (blinding_factors + 1);
@@ -403,7 +551,7 @@ fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: Rn
     permuted_input_expression.truncate(usable_rows);
 
     // Sort input lookup expression values
-    permuted_input_expression.sort();
+    permuted_input_expression.par_sort();
 
     // A BTreeMap of each unique element in the table expression and its count
     let mut leftover_table_map: BTreeMap<C::Scalar, u32> = table_expression
@@ -430,19 +578,20 @@ fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: Rn
                     None
                 } else {
                     // Return error if input_value not found
-                    Some(Err(Error::ConstraintSystemFailure))
+                    panic!("{:?}", Error::ConstraintSystemFailure);
+                    // Some(Err(Error::ConstraintSystemFailure))
                 }
             // If input value is repeated
             } else {
-                Some(Ok(row))
+                Some(row)
             }
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Vec<_>>();
 
     // Populate permuted table at unfilled rows with leftover table elements
     for (coeff, count) in leftover_table_map.iter() {
         for _ in 0..*count {
-            permuted_table_coeffs[repeated_input_rows.pop().unwrap() as usize] = *coeff;
+            permuted_table_coeffs[repeated_input_rows.pop().unwrap()] = *coeff;
         }
     }
     assert!(repeated_input_rows.is_empty());

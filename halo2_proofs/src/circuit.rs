@@ -171,9 +171,7 @@ impl<'v, F: Field> AssignedCell<&'v Assigned<F>, F> {
         column: Column<Advice>,
         offset: usize,
     ) -> AssignedCell<&'_ Assigned<F>, F> {
-        let assigned_cell = region
-            .assign_advice(column, offset, self.value.map(|v| *v))
-            .unwrap_or_else(|err| panic!("{err:?}"));
+        let assigned_cell = region.assign_advice(column, offset, self.value.map(|v| *v));
         region.constrain_equal(&assigned_cell.cell, &self.cell);
         assigned_cell
     }
@@ -217,6 +215,20 @@ impl<'r, F: Field> Region<'r, F> {
             .enable_selector(&|| annotation().into(), selector, offset)
     }
 
+    /// Allows the circuit implementor to name/annotate a Column within a Region context.
+    ///
+    /// This is useful in order to improve the amount of information that `prover.verify()`
+    /// and `prover.assert_satisfied()` can provide.
+    pub fn name_column<A, AR, T>(&mut self, annotation: A, column: T)
+    where
+        A: Fn() -> AR,
+        AR: Into<String>,
+        T: Into<Column<Any>>,
+    {
+        self.region
+            .name_column(&|| annotation().into(), column.into());
+    }
+
     /// Assign an advice column value (witness).
     ///
     /// Even though `to` has `FnMut` bounds, it is guaranteed to be called at most once.
@@ -228,7 +240,7 @@ impl<'r, F: Field> Region<'r, F> {
         column: Column<Advice>,
         offset: usize,
         to: Value<impl Into<Assigned<F>>>, // For now only accept Value<F>, later might change to Value<Assigned<F>> for batch inversion
-    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error> {
+    ) -> AssignedCell<&'v Assigned<F>, F> {
         //let mut value = Value::unknown();
         self.region.assign_advice(
             //&|| annotation().into(),

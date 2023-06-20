@@ -100,8 +100,8 @@ impl<F: Field> Assignment<F> for Assembly<F> {
         _: Column<Advice>,
         _: usize,
         _: Value<Assigned<F>>,
-    ) -> Result<Value<&'v Assigned<F>>, Error> {
-        Ok(Value::unknown())
+    ) -> Value<&'v Assigned<F>> {
+        Value::unknown()
     }
 
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>) {
@@ -160,6 +160,14 @@ impl<F: Field> Assignment<F> for Assembly<F> {
 
     fn get_challenge(&self, _: Challenge) -> Value<F> {
         Value::unknown()
+    }
+
+    fn annotate_column<A, AR>(&mut self, _annotation: A, _column: Column<Any>)
+    where
+        A: FnOnce() -> AR,
+        AR: Into<String>,
+    {
+        // Do nothing
     }
 
     fn push_namespace<NR, N>(&mut self, _: N)
@@ -286,7 +294,7 @@ where
 
     let fixed_cosets = fixed_polys
         .iter()
-        .map(|poly| vk.domain.coeff_to_extended(poly.clone()))
+        .map(|poly| vk.domain.coeff_to_extended(poly))
         .collect();
 
     let permutation_pk = assembly
@@ -298,7 +306,7 @@ where
     let mut l0 = vk.domain.empty_lagrange();
     l0[0] = C::Scalar::one();
     let l0 = vk.domain.lagrange_to_coeff(l0);
-    let l0 = vk.domain.coeff_to_extended(l0);
+    let l0 = vk.domain.coeff_to_extended(&l0);
 
     // Compute l_blind(X) which evaluates to 1 for each blinding factor row
     // and 0 otherwise over the domain.
@@ -307,14 +315,14 @@ where
         *evaluation = C::Scalar::one();
     }
     let l_blind = vk.domain.lagrange_to_coeff(l_blind);
-    let l_blind = vk.domain.coeff_to_extended(l_blind);
+    let l_blind = vk.domain.coeff_to_extended(&l_blind);
 
     // Compute l_last(X) which evaluates to 1 on the first inactive row (just
     // before the blinding factors) and 0 otherwise over the domain
     let mut l_last = vk.domain.empty_lagrange();
     l_last[params.n() as usize - cs.blinding_factors() - 1] = C::Scalar::one();
     let l_last = vk.domain.lagrange_to_coeff(l_last);
-    let l_last = vk.domain.coeff_to_extended(l_last);
+    let l_last = vk.domain.coeff_to_extended(&l_last);
 
     // Compute l_active_row(X)
     let one = C::Scalar::one();

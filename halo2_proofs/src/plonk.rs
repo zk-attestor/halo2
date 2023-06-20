@@ -20,6 +20,8 @@ use crate::poly::{
 };
 use crate::transcript::{ChallengeScalar, EncodedChallenge, Transcript};
 use crate::SerdeFormat;
+#[cfg(feature = "profile")]
+use ark_std::perf_trace::{AtomicUsize, Ordering};
 
 mod assigned;
 mod circuit;
@@ -27,7 +29,7 @@ mod error;
 mod evaluation;
 mod keygen;
 mod lookup;
-pub(crate) mod permutation;
+pub mod permutation;
 mod vanishing;
 
 mod prover;
@@ -41,7 +43,110 @@ pub use prover::*;
 pub use verifier::*;
 
 use evaluation::Evaluator;
+use std::env::var;
 use std::io;
+use std::time::Instant;
+
+/// Temp
+#[allow(missing_debug_implementations)]
+pub struct MeasurementInfo {
+    /// Temp
+    pub measure: bool,
+    /// Temp
+    pub time: Instant,
+    /// Message
+    pub message: String,
+    /// Indent
+    pub indent: usize,
+}
+
+/// TEMP
+#[cfg(feature = "profile")]
+pub static NUM_INDENT: AtomicUsize = AtomicUsize::new(0);
+
+/// Temp
+pub fn get_time() -> Instant {
+    Instant::now()
+}
+
+/// Temp
+pub fn get_duration(start: Instant) -> usize {
+    let final_time = Instant::now() - start;
+    let secs = final_time.as_secs() as usize;
+    let millis = final_time.subsec_millis() as usize;
+    let micros = (final_time.subsec_micros() % 1000) as usize;
+    secs * 1000000 + millis * 1000 + micros
+}
+
+/// Temp
+pub fn log_measurement(indent: Option<usize>, msg: String, duration: usize) {
+    let indent = indent.unwrap_or(0);
+    println!(
+        "{}{} ........ {}s",
+        "*".repeat(indent),
+        msg,
+        (duration as f32) / 1000000.0
+    );
+}
+
+/// Temp
+#[cfg(feature = "profile")]
+pub fn start_measure<S: AsRef<str>>(msg: S, always: bool) -> MeasurementInfo {
+    let measure: u32 = var("MEASURE")
+        .unwrap_or_else(|_| "0".to_string())
+        .parse()
+        .expect("Cannot parse MEASURE env var as u32");
+
+    let indent = NUM_INDENT.fetch_add(1, Ordering::Relaxed);
+
+    if always || measure == 1
+    /* || msg.starts_with("compressed_cosets")*/
+    {
+        MeasurementInfo {
+            measure: true,
+            time: get_time(),
+            message: msg.as_ref().to_string(),
+            indent,
+        }
+    } else {
+        MeasurementInfo {
+            measure: false,
+            time: get_time(),
+            message: "".to_string(),
+            indent,
+        }
+    }
+}
+#[cfg(not(feature = "profile"))]
+pub fn start_measure<S: AsRef<str>>(_: S, _: bool) {}
+
+/// Temp
+#[cfg(feature = "profile")]
+pub fn stop_measure(info: MeasurementInfo) -> usize {
+    NUM_INDENT.fetch_sub(1, Ordering::Relaxed);
+    let duration = get_duration(info.time);
+    if info.measure {
+        log_measurement(Some(info.indent), info.message, duration);
+    }
+    duration
+}
+#[cfg(not(feature = "profile"))]
+pub fn stop_measure(_: ()) {}
+
+/// Get env variable
+pub fn env_value(key: &str, default: usize) -> usize {
+    match var(key) {
+        Ok(val) => val.parse().unwrap(),
+        Err(_) => default,
+    }
+}
+
+/// Temp
+pub fn log_info(msg: String) {
+    if env_value("INFO", 0) != 0 {
+        println!("{}", msg);
+    }
+}
 
 /// This is a verifying key which allows for the verification of proofs for a
 /// particular circuit.

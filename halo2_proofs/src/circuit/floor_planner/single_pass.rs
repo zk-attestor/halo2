@@ -275,20 +275,27 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         )
     }
 
+    fn name_column<'v>(
+        &'v mut self,
+        annotation: &'v (dyn Fn() -> String + 'v),
+        column: Column<Any>,
+    ) {
+        self.layouter.cs.annotate_column(annotation, column);
+    }
+
     fn assign_advice<'b, 'v>(
         &'b mut self,
         // annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,
         to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error> {
+    ) -> AssignedCell<&'v Assigned<F>, F> {
         let value = self.layouter.cs.assign_advice(
-            // annotation,
             column, offset, //*self.layouter.regions[*self.region_index] + offset,
             to,
-        )?;
+        );
 
-        Ok(AssignedCell {
+        AssignedCell {
             value,
             cell: Cell {
                 // region_index: self.region_index,
@@ -296,7 +303,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
                 column: column.into(),
             },
             _marker: PhantomData,
-        })
+        }
     }
 
     fn assign_advice_from_constant<'v>(
@@ -307,7 +314,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         constant: Assigned<F>,
     ) -> Result<Cell, Error> {
         let advice = self
-            .assign_advice(column, offset, Value::known(constant))?
+            .assign_advice(column, offset, Value::known(constant))
             .cell;
         self.constrain_constant(advice, constant)?;
 
@@ -325,7 +332,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F>
         let value = self.layouter.cs.query_instance(instance, row)?;
 
         let cell = self
-            .assign_advice(advice, offset, value.map(|v| Assigned::Trivial(v)))?
+            .assign_advice(advice, offset, value.map(|v| Assigned::Trivial(v)))
             .cell;
 
         self.layouter.cs.copy(

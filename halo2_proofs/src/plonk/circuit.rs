@@ -1,12 +1,15 @@
 use core::cmp::max;
 use core::ops::{Add, Mul};
 use ff::Field;
+use std::collections::HashMap;
+use std::env::var;
 use std::{
     convert::TryFrom,
     ops::{Neg, Sub},
 };
 
 use super::{lookup, permutation, Assigned, Error};
+use crate::dev::metadata;
 use crate::{
     circuit::{Layouter, Region, Value},
     poly::Rotation,
@@ -80,6 +83,12 @@ pub(crate) mod sealed {
         }
         pub fn to_u8(&self) -> u8 {
             self.0
+        }
+    }
+
+    impl SealedPhase for Phase {
+        fn to_sealed(self) -> Phase {
+            self
         }
     }
 
@@ -503,7 +512,7 @@ impl TableColumn {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct Challenge {
     index: usize,
-    phase: sealed::Phase,
+    pub(crate) phase: sealed::Phase,
 }
 
 impl Challenge {
@@ -533,6 +542,14 @@ pub trait Assignment<F: Field> {
         NR: Into<String>,
         N: FnOnce() -> NR;
 
+    /// Allows the developer to include an annotation for an specific column within a `Region`.
+    ///
+    /// This is usually useful for debugging circuit failures.
+    fn annotate_column<A, AR>(&mut self, annotation: A, column: Column<Any>)
+    where
+        A: FnOnce() -> AR,
+        AR: Into<String>;
+
     /// Exits the current region.
     ///
     /// Panics if we are not currently in a region (if `enter_region` was not called).
@@ -560,18 +577,11 @@ pub trait Assignment<F: Field> {
 
     /// Assign an advice column value (witness)
     fn assign_advice<'r, 'v>(
-        //<V, VR, A, AR>(
         &'r mut self,
-        // annotation: A,
         column: Column<Advice>,
         row: usize,
-        to: Value<Assigned<F>>, // V,
-    ) -> Result<Value<&'v Assigned<F>>, Error>;
-    // where
-    // V: FnOnce() -> Value<VR>,
-    // VR: Into<Assigned<F>>,
-    // A: FnOnce() -> AR,
-    // AR: Into<String>;
+        to: Value<Assigned<F>>,
+    ) -> Value<&'v Assigned<F>>;
 
     /// Assign a fixed value
     fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, to: Assigned<F>);
@@ -1376,6 +1386,9 @@ pub struct ConstraintSystem<F: Field> {
     // input expressions and a sequence of table expressions involved in the lookup.
     pub(crate) lookups: Vec<lookup::Argument<F>>,
 
+    // List of indexes of Fixed columns which are associated to a circuit-general Column tied to their annotation.
+    pub(crate) general_column_annotations: HashMap<metadata::Column, String>,
+
     // Vector of fixed columns, which can be used to store constant values
     // that are copied into advice columns.
     pub(crate) constants: Vec<Column<Fixed>>,
@@ -1459,6 +1472,7 @@ impl<F: Field> Default for ConstraintSystem<F> {
             instance_queries: Vec::new(),
             permutation: permutation::Argument::new(),
             lookups: Vec::new(),
+            general_column_annotations: HashMap::new(),
             constants: vec![],
             minimum_degree: None,
         }
@@ -1843,6 +1857,34 @@ impl<F: Field> ConstraintSystem<F> {
         }
     }
 
+    /// Annotate a Lookup column.
+    pub fn annotate_lookup_column<A, AR>(&mut self, column: TableColumn, annotation: A)
+    where
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        // We don't care if the table has already an annotation. If it's the case we keep the new one.
+        self.general_column_annotations.insert(
+            metadata::Column::from((Any::Fixed, column.inner().index)),
+            annotation().into(),
+        );
+    }
+
+    /// Annotate an Instance column.
+    pub fn annotate_lookup_any_column<A, AR, T>(&mut self, column: T, annotation: A)
+    where
+        A: Fn() -> AR,
+        AR: Into<String>,
+        T: Into<Column<Any>>,
+    {
+        let col_any = column.into();
+        // We don't care if the table has already an annotation. If it's the case we keep the new one.
+        self.general_column_annotations.insert(
+            metadata::Column::from((col_any.column_type, col_any.index)),
+            annotation().into(),
+        );
+    }
+
     /// Allocate a new fixed column
     pub fn fixed_column(&mut self) -> Column<Fixed> {
         let tmp = Column {
@@ -1958,6 +2000,14 @@ impl<F: Field> ConstraintSystem<F> {
                 .max()
                 .unwrap_or(0),
         );
+
+        fn get_max_degree() -> usize {
+            var("MAX_DEGREE")
+                .unwrap_or_else(|_| "5".to_string())
+                .parse()
+                .expect("Cannot parse MAX_DEGREE env var as usize")
+        }
+        degree = std::cmp::min(degree, get_max_degree());
 
         std::cmp::max(degree, self.minimum_degree.unwrap_or(1))
     }

@@ -50,6 +50,16 @@ pub trait RegionLayouter<F: Field>: fmt::Debug {
         offset: usize,
     ) -> Result<(), Error>;
 
+    /// Allows the circuit implementor to name/annotate a Column within a Region context.
+    ///
+    /// This is useful in order to improve the amount of information that `prover.verify()`
+    /// and `prover.assert_satisfied()` can provide.
+    fn name_column<'v>(
+        &'v mut self,
+        annotation: &'v (dyn Fn() -> String + 'v),
+        column: Column<Any>,
+    );
+
     /// Assign an advice column value (witness)
     fn assign_advice<'b, 'v>(
         &'b mut self,
@@ -57,7 +67,7 @@ pub trait RegionLayouter<F: Field>: fmt::Debug {
         column: Column<Advice>,
         offset: usize,
         to: Value<Assigned<F>>, // &'v mut (dyn FnMut() -> Value<Assigned<F>> + 'v),
-    ) -> Result<AssignedCell<&'v Assigned<F>, F>, Error>;
+    ) -> AssignedCell<&'v Assigned<F>, F>;
 
     /// Assigns a constant value to the column `advice` at `offset` within this region.
     ///
@@ -287,6 +297,14 @@ impl<F: Field> RegionLayouter<F> for RegionShape {
             row_offset: offset,
             column: column.into(),
         })
+    }
+
+    fn name_column<'v>(
+        &'v mut self,
+        _annotation: &'v (dyn Fn() -> String + 'v),
+        _column: Column<Any>,
+    ) {
+        // Do nothing
     }
 
     fn constrain_constant(&mut self, _cell: Cell, _constant: Assigned<F>) -> Result<(), Error> {

@@ -3,6 +3,9 @@ use group::{
     Curve,
 };
 use rand_core::RngCore;
+use rayon::prelude::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
+};
 use std::iter::{self, ExactSizeIterator};
 
 use super::super::{circuit::Any, ChallengeBeta, ChallengeGamma, ChallengeX};
@@ -126,7 +129,7 @@ impl Argument {
                     Any::Instance => instance,
                 };
                 parallelize(&mut modified_values, |modified_values, start| {
-                    let mut deltaomega = deltaomega * &omega.pow_vartime(&[start as u64, 0, 0, 0]);
+                    let mut deltaomega = deltaomega * &omega.pow_vartime([start as u64, 0, 0, 0]);
                     for (modified_values, value) in modified_values
                         .iter_mut()
                         .zip(values[column.index()][start..].iter())
@@ -172,7 +175,7 @@ impl Argument {
             let z = domain.lagrange_to_coeff(z);
             let permutation_product_poly = z.clone();
 
-            let permutation_product_coset = domain.coeff_to_extended(z.clone());
+            let permutation_product_coset = domain.coeff_to_extended(&z);
 
             let permutation_product_commitment =
                 permutation_product_commitment_projective.to_affine();
