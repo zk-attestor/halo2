@@ -49,6 +49,7 @@ name = "fft"
 harness = false
 
 [dependencies]
+itertools = "0.10"
 backtrace = { version = "0.3", optional = true }
 crossbeam = "0.8"
 ff = "0.13"
@@ -78,6 +79,7 @@ gumdrop = "0.8"
 proptest = "1"
 rand_core = { version = "0.6", features = ["getrandom"] }
 rand_chacha = "0.3.1"
+ark-std = { version = "0.3.0", features = ["print-trace"] }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
 getrandom = { version = "0.2", features = ["js"] }
@@ -108,6 +110,3 @@ name = "serialization"
 
 [[example]]
 name = "shuffle"
-
-[[example]]
-name = "shuffle_api"

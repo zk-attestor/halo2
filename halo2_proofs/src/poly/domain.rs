@@ -2,8 +2,8 @@
 //! domain that is of a suitable size for the application.
 
 use crate::{
-    arithmetic::{best_fft, parallelize, parallelize_count},
-    multicore,
+    arithmetic::{best_fft, parallelize},
+    fft::recursive::FFTData,
     plonk::Assigned,
 };
 
@@ -11,395 +11,7 @@ use super::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation};
 
 use group::ff::{BatchInvert, Field, WithSmallOrderMulGroup};
 
-use std::{env::var, marker::PhantomData};
-
-fn get_fft_mode() -> usize {
-    var("FFT_MODE")
-        .unwrap_or_else(|_| "1".to_string())
-        .parse()
-        .expect("Cannot parse FFT_MODE env var as usize")
-}
-
-/// FFTStage
-#[derive(Clone, Debug)]
-pub struct FFTStage {
-    radix: usize,
-    length: usize,
-}
-
-/// FFT stages
-pub fn get_stages(size: usize, radixes: Vec<usize>) -> Vec<FFTStage> {
-    let mut stages: Vec<FFTStage> = vec![];
-
-    let mut n = size;
-
-    // Use the specified radices
-    for &radix in &radixes {
-        n /= radix;
-        stages.push(FFTStage { radix, length: n });
-    }
-
-    // Fill in the rest of the tree if needed
-    let mut p = 2;
-    while n > 1 {
-        while n % p != 0 {
-            if p == 4 {
-                p = 2;
-            }
-        }
-        n /= p;
-        stages.push(FFTStage {
-            radix: p,
-            length: n,
-        });
-    }
-
-    /*for i in 0..stages.len() {
-        println!("Stage {}: {}, {}", i, stages[i].radix, stages[i].length);
-    }*/
-
-    stages
-}
-
-/// FFTData
-#[derive(Clone, Debug)]
-struct FFTData<F: Field> {
-    n: usize,
-
-    stages: Vec<FFTStage>,
-
-    f_twiddles: Vec<Vec<F>>,
-    inv_twiddles: Vec<Vec<F>>,
-    //scratch: Vec<F>,
-}
-
-impl<F: Field> FFTData<F> {
-    /// Create FFT data
-    pub fn new(n: usize, omega: F, omega_inv: F) -> Self {
-        let stages = get_stages(n, vec![]);
-        let mut f_twiddles = vec![];
-        let mut inv_twiddles = vec![];
-        let mut scratch = vec![F::ONE; n];
-
-        // Generate stage twiddles
-        for inv in 0..2 {
-            let inverse = inv == 0;
-            let o = if inverse { omega_inv } else { omega };
-            let stage_twiddles = if inverse {
-                &mut inv_twiddles
-            } else {
-                &mut f_twiddles
-            };
-
-            let twiddles = &mut scratch;
-
-            // Twiddles
-            parallelize(twiddles, |twiddles, start| {
-                let w_m = o;
-                let mut w = o.pow_vartime([start as u64]);
-                for value in twiddles.iter_mut() {
-                    *value = w;
-                    w *= w_m;
-                }
-            });
-
-            // Re-order twiddles for cache friendliness
-            let num_stages = stages.len();
-            stage_twiddles.resize(num_stages, vec![]);
-            for l in 0..num_stages {
-                let radix = stages[l].radix;
-                let stage_length = stages[l].length;
-
-                let num_twiddles = stage_length * (radix - 1);
-                stage_twiddles[l].resize(num_twiddles + 1, F::ZERO);
-
-                // Set j
-                stage_twiddles[l][num_twiddles] = twiddles[(twiddles.len() * 3) / 4];
-
-                let stride = n / (stage_length * radix);
-                let mut tws = vec![0usize; radix - 1];
-                for i in 0..stage_length {
-                    for j in 0..radix - 1 {
-                        stage_twiddles[l][i * (radix - 1) + j] = twiddles[tws[j]];
-                        tws[j] += (j + 1) * stride;
-                    }
-                }
-            }
-        }
-
-        Self {
-            n,
-            stages,
-            f_twiddles,
-            inv_twiddles,
-            //scratch,
-        }
-    }
-}
-
-/// Radix 2 butterfly
-pub fn butterfly_2<F: Field>(out: &mut [F], twiddles: &[F], stage_length: usize) {
-    let mut out_offset = 0;
-    let mut out_offset2 = stage_length;
-
-    let t = out[out_offset2];
-    out[out_offset2] = out[out_offset] - t;
-    out[out_offset] += t;
-    out_offset2 += 1;
-    out_offset += 1;
-
-    for twiddle in twiddles[1..stage_length].iter() {
-        let t = *twiddle * out[out_offset2];
-        out[out_offset2] = out[out_offset] - t;
-        out[out_offset] += t;
-        out_offset2 += 1;
-        out_offset += 1;
-    }
-}
-
-/// Radix 2 butterfly
-fn butterfly_2_parallel<F: Field>(
-    out: &mut [F],
-    twiddles: &[F],
-    _stage_length: usize,
-    num_threads: usize,
-) {
-    let n = out.len();
-    let mut chunk = n / num_threads;
-    if chunk < num_threads {
-        chunk = n;
-    }
-
-    multicore::scope(|scope| {
-        let (part_a, part_b) = out.split_at_mut(n / 2);
-        for (i, (part0, part1)) in part_a
-            .chunks_mut(chunk)
-            .zip(part_b.chunks_mut(chunk))
-            .enumerate()
-        {
-            scope.spawn(move |_| {
-                let offset = i * chunk;
-                for k in 0..part0.len() {
-                    let t = twiddles[offset + k] * part1[k];
-                    part1[k] = part0[k] - t;
-                    part0[k] += t;
-                }
-            });
-        }
-    });
-}
-
-/// Radix 4 butterfly
-pub fn butterfly_4<F: Field>(out: &mut [F], twiddles: &[F], stage_length: usize) {
-    let j = twiddles[twiddles.len() - 1];
-    let mut tw = 0;
-
-    /* Case twiddle == one */
-    {
-        let i0 = 0;
-        let i1 = stage_length;
-        let i2 = stage_length * 2;
-        let i3 = stage_length * 3;
-
-        let z0 = out[i0];
-        let z1 = out[i1];
-        let z2 = out[i2];
-        let z3 = out[i3];
-
-        let t1 = z0 + z2;
-        let t2 = z1 + z3;
-        let t3 = z0 - z2;
-        let t4j = j * (z1 - z3);
-
-        out[i0] = t1 + t2;
-        out[i1] = t3 - t4j;
-        out[i2] = t1 - t2;
-        out[i3] = t3 + t4j;
-
-        tw += 3;
-    }
-
-    for k in 1..stage_length {
-        let i0 = k;
-        let i1 = k + stage_length;
-        let i2 = k + stage_length * 2;
-        let i3 = k + stage_length * 3;
-
-        let z0 = out[i0];
-        let z1 = out[i1] * twiddles[tw];
-        let z2 = out[i2] * twiddles[tw + 1];
-        let z3 = out[i3] * twiddles[tw + 2];
-
-        let t1 = z0 + z2;
-        let t2 = z1 + z3;
-        let t3 = z0 - z2;
-        let t4j = j * (z1 - z3);
-
-        out[i0] = t1 + t2;
-        out[i1] = t3 - t4j;
-        out[i2] = t1 - t2;
-        out[i3] = t3 + t4j;
-
-        tw += 3;
-    }
-}
-
-/// Radix 4 butterfly
-pub fn butterfly_4_parallel<F: Field>(
-    out: &mut [F],
-    twiddles: &[F],
-    _stage_length: usize,
-    num_threads: usize,
-) {
-    let j = twiddles[twiddles.len() - 1];
-
-    let n = out.len();
-    let mut chunk = n / num_threads;
-    if chunk < num_threads {
-        chunk = n;
-    }
-    multicore::scope(|scope| {
-        //let mut parts: Vec<&mut [F]> = out.chunks_mut(4).collect();
-        //out.chunks_mut(4).map(|c| c.chunks_mut(chunk)).fold(predicate)
-        let (part_a, part_b) = out.split_at_mut(n / 2);
-        let (part_aa, part_ab) = part_a.split_at_mut(n / 4);
-        let (part_ba, part_bb) = part_b.split_at_mut(n / 4);
-        for (i, (((part0, part1), part2), part3)) in part_aa
-            .chunks_mut(chunk)
-            .zip(part_ab.chunks_mut(chunk))
-            .zip(part_ba.chunks_mut(chunk))
-            .zip(part_bb.chunks_mut(chunk))
-            .enumerate()
-        {
-            scope.spawn(move |_| {
-                let offset = i * chunk;
-                let mut tw = offset * 3;
-                for k in 0..part1.len() {
-                    let z0 = part0[k];
-                    let z1 = part1[k] * twiddles[tw];
-                    let z2 = part2[k] * twiddles[tw + 1];
-                    let z3 = part3[k] * twiddles[tw + 2];
-
-                    let t1 = z0 + z2;
-                    let t2 = z1 + z3;
-                    let t3 = z0 - z2;
-                    let t4j = j * (z1 - z3);
-
-                    part0[k] = t1 + t2;
-                    part1[k] = t3 - t4j;
-                    part2[k] = t1 - t2;
-                    part3[k] = t3 + t4j;
-
-                    tw += 3;
-                }
-            });
-        }
-    });
-}
-
-/// Inner recursion
-#[allow(clippy::too_many_arguments)]
-fn recursive_fft_inner<F: Field>(
-    data_in: &[F],
-    data_out: &mut [F],
-    twiddles: &Vec<Vec<F>>,
-    stages: &Vec<FFTStage>,
-    in_offset: usize,
-    stride: usize,
-    level: usize,
-    num_threads: usize,
-) {
-    let radix = stages[level].radix;
-    let stage_length = stages[level].length;
-
-    if num_threads > 1 {
-        if stage_length == 1 {
-            for i in 0..radix {
-                data_out[i] = data_in[in_offset + i * stride];
-            }
-        } else {
-            let num_threads_recursive = if num_threads >= radix {
-                radix
-            } else {
-                num_threads
-            };
-            parallelize_count(data_out, num_threads_recursive, |data_out, i| {
-                let num_threads_in_recursion = if num_threads < radix {
-                    1
-                } else {
-                    (num_threads + i) / radix
-                };
-                recursive_fft_inner(
-                    data_in,
-                    data_out,
-                    twiddles,
-                    stages,
-                    in_offset + i * stride,
-                    stride * radix,
-                    level + 1,
-                    num_threads_in_recursion,
-                )
-            });
-        }
-        match radix {
-            2 => butterfly_2_parallel(data_out, &twiddles[level], stage_length, num_threads),
-            4 => butterfly_4_parallel(data_out, &twiddles[level], stage_length, num_threads),
-            _ => unimplemented!("radix unsupported"),
-        }
-    } else {
-        if stage_length == 1 {
-            for i in 0..radix {
-                data_out[i] = data_in[in_offset + i * stride];
-            }
-        } else {
-            for i in 0..radix {
-                recursive_fft_inner(
-                    data_in,
-                    &mut data_out[i * stage_length..(i + 1) * stage_length],
-                    twiddles,
-                    stages,
-                    in_offset + i * stride,
-                    stride * radix,
-                    level + 1,
-                    num_threads,
-                );
-            }
-        }
-        match radix {
-            2 => butterfly_2(data_out, &twiddles[level], stage_length),
-            4 => butterfly_4(data_out, &twiddles[level], stage_length),
-            _ => unimplemented!("radix unsupported"),
-        }
-    }
-}
-
-fn recursive_fft<F: Field>(data: &FFTData<F>, data_in: &mut Vec<F>, inverse: bool) {
-    let num_threads = multicore::current_num_threads();
-    //let start = start_measure(format!("recursive fft {} ({})", data_in.len(), num_threads), false);
-
-    // TODO: reuse scratch buffer between FFTs
-    //let start_mem = start_measure(format!("alloc"), false);
-    let mut scratch = vec![F::ZERO; data_in.len()];
-    //stop_measure(start_mem);
-
-    recursive_fft_inner(
-        data_in,
-        &mut /*data.*/scratch,
-        if inverse {
-            &data.inv_twiddles
-        } else {
-            &data.f_twiddles
-        },
-        &data.stages,
-        0,
-        1,
-        0,
-        num_threads,
-    );
-
-    // Will simply swap the vector's buffer, no data is actually copied
-    std::mem::swap(data_in, &mut /*data.*/scratch);
-}
+use std::marker::PhantomData;
 
 /// This structure contains precomputed constants and other details needed for
 /// performing operations on an evaluation domain of size $2^k$ and an extended
@@ -581,6 +193,32 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         }
     }
 
+    /// Obtains a polynomial in ExtendedLagrange form when given a vector of
+    /// Lagrange polynomials with total size `extended_n`; panics if the
+    /// provided vector is the wrong length.
+    pub fn lagrange_vec_to_extended(
+        &self,
+        values: Vec<Polynomial<F, LagrangeCoeff>>,
+    ) -> Polynomial<F, ExtendedLagrangeCoeff> {
+        assert_eq!(values.len(), self.extended_len() >> self.k);
+        assert_eq!(values[0].len(), self.n as usize);
+
+        // transpose the values in parallel
+        let mut transposed = vec![vec![F::ZERO; values.len()]; self.n as usize];
+        values.into_iter().enumerate().for_each(|(i, p)| {
+            parallelize(&mut transposed, |transposed, start| {
+                for (transposed, p) in transposed.iter_mut().zip(p.values[start..].iter()) {
+                    transposed[i] = *p;
+                }
+            });
+        });
+
+        Polynomial {
+            values: transposed.into_iter().flatten().collect(),
+            _marker: PhantomData,
+        }
+    }
+
     /// Returns an empty (zero) polynomial in the coefficient basis
     pub fn empty_coeff(&self) -> Polynomial<F, Coeff> {
         Polynomial {
@@ -669,6 +307,82 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         }
     }
 
+    /// This takes us from an n-length coefficient vector into parts of the
+    /// extended evaluation domain. For example, for a polynomial with size n,
+    /// and an extended domain of size mn, we can compute all parts
+    /// independently, which are
+    ///     `FFT(f(zeta * X), n)`
+    ///     `FFT(f(zeta * extended_omega * X), n)`
+    ///     ...
+    ///     `FFT(f(zeta * extended_omega^{m-1} * X), n)`
+    pub fn coeff_to_extended_parts(
+        &self,
+        a: &Polynomial<F, Coeff>,
+    ) -> Vec<Polynomial<F, LagrangeCoeff>> {
+        assert_eq!(a.values.len(), 1 << self.k);
+
+        let num_parts = self.extended_len() >> self.k;
+        let mut extended_omega_factor = F::ONE;
+        (0..num_parts)
+            .map(|_| {
+                let part = self.coeff_to_extended_part(a.clone(), extended_omega_factor);
+                extended_omega_factor *= self.extended_omega;
+                part
+            })
+            .collect()
+    }
+
+    /// This takes us from several n-length coefficient vectors each into parts
+    /// of the extended evaluation domain. For example, for a polynomial with
+    /// size n, and an extended domain of size mn, we can compute all parts
+    /// independently, which are
+    ///     `FFT(f(zeta * X), n)`
+    ///     `FFT(f(zeta * extended_omega * X), n)`
+    ///     ...
+    ///     `FFT(f(zeta * extended_omega^{m-1} * X), n)`
+    pub fn batched_coeff_to_extended_parts(
+        &self,
+        a: &[Polynomial<F, Coeff>],
+    ) -> Vec<Vec<Polynomial<F, LagrangeCoeff>>> {
+        assert_eq!(a[0].values.len(), 1 << self.k);
+
+        let mut extended_omega_factor = F::ONE;
+        let num_parts = self.extended_len() >> self.k;
+        (0..num_parts)
+            .map(|_| {
+                let a_lagrange = a
+                    .iter()
+                    .map(|poly| self.coeff_to_extended_part(poly.clone(), extended_omega_factor))
+                    .collect();
+                extended_omega_factor *= self.extended_omega;
+                a_lagrange
+            })
+            .collect()
+    }
+
+    /// This takes us from an n-length coefficient vector into a part of the
+    /// extended evaluation domain. For example, for a polynomial with size n,
+    /// and an extended domain of size mn, we can compute one of the m parts
+    /// separately, which is
+    ///     `FFT(f(zeta * extended_omega_factor * X), n)`
+    /// where `extended_omega_factor` is `extended_omega^i` with `i` in `[0, m)`.
+    pub fn coeff_to_extended_part(
+        &self,
+        mut a: Polynomial<F, Coeff>,
+        extended_omega_factor: F,
+    ) -> Polynomial<F, LagrangeCoeff> {
+        assert_eq!(a.values.len(), 1 << self.k);
+
+        self.distribute_powers(&mut a.values, self.g_coset * extended_omega_factor);
+        let data = self.get_fft_data(a.len());
+        best_fft(&mut a.values, self.omega, self.k, data, false);
+
+        Polynomial {
+            values: a.values,
+            _marker: PhantomData,
+        }
+    }
+
     /// Rotate the extended domain polynomial over the original domain.
     pub fn rotate_extended(
         &self,
@@ -716,6 +430,72 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             .truncate((&self.n * self.quotient_poly_degree) as usize);
 
         a.values
+    }
+
+    /// This takes us from the a list of lagrange-based polynomials with
+    /// different degrees and gets their extended lagrange-based summation.
+    pub fn lagrange_vecs_to_extended(
+        &self,
+        mut a: Vec<Vec<Polynomial<F, LagrangeCoeff>>>,
+    ) -> Polynomial<F, ExtendedLagrangeCoeff> {
+        let mut result_poly = if a[a.len() - 1].len() == 1 << (self.extended_k - self.k) {
+            self.lagrange_vec_to_extended(a.pop().unwrap())
+        } else {
+            self.empty_extended()
+        };
+
+        // Transform from each cluster of lagrange representations to coeff representations.
+        let mut ifft_divisor = self.extended_ifft_divisor;
+        let mut omega_inv = self.extended_omega_inv;
+        {
+            let mut i = a.last().unwrap().len() << self.k;
+            while i < (1 << self.extended_k) {
+                ifft_divisor = ifft_divisor + ifft_divisor;
+                omega_inv = omega_inv * omega_inv;
+                i <<= 1;
+            }
+        }
+
+        let mut result = vec![F::ZERO; 1 << self.extended_k as usize];
+        for (i, a_parts) in a.into_iter().enumerate().rev() {
+            // transpose the values in parallel
+            assert_eq!(1 << i, a_parts.len());
+            let mut a_poly: Vec<F> = {
+                let mut transposed = vec![vec![F::ZERO; a_parts.len()]; self.n as usize];
+                a_parts.into_iter().enumerate().for_each(|(j, p)| {
+                    parallelize(&mut transposed, |transposed, start| {
+                        for (transposed, p) in transposed.iter_mut().zip(p.values[start..].iter()) {
+                            transposed[j] = *p;
+                        }
+                    });
+                });
+                transposed.into_iter().flatten().collect()
+            };
+
+            self.ifft(&mut a_poly, omega_inv, self.k + i as u32, ifft_divisor);
+            ifft_divisor = ifft_divisor + ifft_divisor;
+            omega_inv = omega_inv * omega_inv;
+
+            parallelize(&mut result[0..(self.n << i) as usize], |result, start| {
+                for (other, current) in result.iter_mut().zip(a_poly[start..].iter()) {
+                    *other += current;
+                }
+            });
+        }
+        let data = self.get_fft_data(result.len());
+        best_fft(
+            &mut result,
+            self.extended_omega,
+            self.extended_k,
+            data,
+            false,
+        );
+        parallelize(&mut result_poly.values, |values, start| {
+            for (value, other) in values.iter_mut().zip(result[start..].iter()) {
+                *value += other;
+            }
+        });
+        result_poly
     }
 
     /// This divides the polynomial (in the extended domain) by the vanishing
@@ -766,6 +546,19 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         });
     }
 
+    /// Given a slice of group elements `[a_0, a_1, a_2, ...]`, this returns
+    /// `[a_0, [c]a_1, [c^2]a_2, [c^3]a_3, [c^4]a_4, ...]`,
+    ///
+    fn distribute_powers(&self, a: &mut [F], c: F) {
+        parallelize(a, |a, index| {
+            let mut c_power = c.pow_vartime([index as u64]);
+            for a in a {
+                *a *= c_power;
+                c_power *= c;
+            }
+        });
+    }
+
     fn ifft(&self, a: &mut Vec<F>, omega_inv: F, log_n: u32, divisor: F) {
         self.fft_inner(a, omega_inv, log_n, true);
         parallelize(a, |a, _| {
@@ -777,16 +570,8 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     }
 
     fn fft_inner(&self, a: &mut Vec<F>, omega: F, log_n: u32, inverse: bool) {
-        if get_fft_mode() == 1 {
-            let fft_data = if a.len() == self.fft_data.n {
-                &self.fft_data
-            } else {
-                &self.extended_fft_data
-            };
-            recursive_fft(fft_data, a, inverse);
-        } else {
-            best_fft(a, omega, log_n);
-        }
+        let fft_data = self.get_fft_data(a.len());
+        best_fft(a, omega, log_n, fft_data, inverse)
     }
 
     /// Get the size of the domain
@@ -903,6 +688,20 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             omega: &self.omega,
         }
     }
+
+    /// Get the private field `n`
+    pub fn get_n(&self) -> u64 {
+        self.n
+    }
+
+    /// Get the private `fft_data`
+    pub fn get_fft_data(&self, l: usize) -> &FFTData<F> {
+        if l == self.fft_data.get_n() {
+            &self.fft_data
+        } else {
+            &self.extended_fft_data
+        }
+    }
 }
 
 /// Represents the minimal parameters that determine an `EvaluationDomain`.
@@ -986,35 +785,175 @@ fn test_l_i() {
 }
 
 #[test]
-fn test_fft() {
+fn test_coeff_to_extended_part() {
     use halo2curves::pasta::pallas::Scalar;
     use rand_core::OsRng;
 
-    fn get_degree() -> usize {
-        var("DEGREE")
-            .unwrap_or_else(|_| "8".to_string())
-            .parse()
-            .expect("Cannot parse DEGREE env var as usize")
+    let domain = EvaluationDomain::<Scalar>::new(1, 3);
+    let rng = OsRng;
+    let mut poly = domain.empty_coeff();
+    assert_eq!(poly.len(), 8);
+    for value in poly.iter_mut() {
+        *value = Scalar::random(rng);
     }
-    let k = get_degree() as u32;
 
-    let domain = EvaluationDomain::<Scalar>::new(1, k);
-    let n = domain.n as usize;
+    let want = domain.coeff_to_extended(&poly);
+    let got = {
+        let parts = domain.coeff_to_extended_parts(&poly);
+        domain.lagrange_vec_to_extended(parts)
+    };
+    assert_eq!(want.values, got.values);
+}
 
-    let input = vec![Scalar::random(OsRng); n];
-    /*let mut input = vec![Scalar::zero(); n];
-    for i in 0..n {
-        input[i] = Scalar::random(OsRng);
-    }*/
+#[test]
+fn bench_coeff_to_extended_parts() {
+    use halo2curves::pasta::pallas::Scalar;
+    use rand_core::OsRng;
+    use std::time::Instant;
 
-    let mut a = input.clone();
-    best_fft(&mut a, domain.omega, k);
+    let k = 20;
+    let domain = EvaluationDomain::<Scalar>::new(3, k);
+    let rng = OsRng;
+    let mut poly1 = domain.empty_coeff();
+    assert_eq!(poly1.len(), 1 << k);
 
-    let mut b = input.clone();
-    recursive_fft(&domain.fft_data, &mut b, false);
-
-    for i in 0..n {
-        //println!("{}: {} {}", i, a[i], b[i]);
-        assert_eq!(a[i], b[i]);
+    for value in poly1.iter_mut() {
+        *value = Scalar::random(rng);
     }
+
+    let poly2 = poly1.clone();
+
+    let coeff_to_extended_timer = Instant::now();
+    let _ = domain.coeff_to_extended(&poly1);
+    println!(
+        "domain.coeff_to_extended time: {}s",
+        coeff_to_extended_timer.elapsed().as_secs_f64()
+    );
+
+    let coeff_to_extended_parts_timer = Instant::now();
+    let _ = domain.coeff_to_extended_parts(&poly2);
+    println!(
+        "domain.coeff_to_extended_parts time: {}s",
+        coeff_to_extended_parts_timer.elapsed().as_secs_f64()
+    );
+}
+
+#[test]
+fn test_lagrange_vecs_to_extended() {
+    use halo2curves::pasta::pallas::Scalar;
+    use rand_core::OsRng;
+
+    let rng = OsRng;
+    let domain = EvaluationDomain::<Scalar>::new(8, 3);
+    let mut poly_vec = vec![];
+    let mut poly_lagrange_vecs = vec![];
+    let mut want = domain.empty_extended();
+    let mut omega = domain.extended_omega;
+    for i in (0..(domain.extended_k - domain.k + 1)).rev() {
+        let mut poly = vec![Scalar::zero(); (1 << i) * domain.n as usize];
+        for value in poly.iter_mut() {
+            *value = Scalar::random(rng);
+        }
+        // poly under coeff representation.
+        poly_vec.push(poly.clone());
+        // poly under lagrange vector representation.
+        let mut poly2 = poly.clone();
+        let data = domain.get_fft_data(poly2.len());
+        best_fft(&mut poly2, omega, i + domain.k, data, false);
+        let transposed_poly: Vec<Polynomial<Scalar, LagrangeCoeff>> = (0..(1 << i))
+            .map(|j| {
+                let mut p = domain.empty_lagrange();
+                for k in 0..domain.n {
+                    p[k as usize] = poly2[j + (k as usize) * (1 << i)];
+                }
+                p
+            })
+            .collect();
+        poly_lagrange_vecs.push(transposed_poly);
+        // poly under extended representation.
+        poly.resize(domain.extended_len(), Scalar::zero());
+        let data = domain.get_fft_data(poly.len());
+        best_fft(
+            &mut poly,
+            domain.extended_omega,
+            domain.extended_k,
+            data,
+            false,
+        );
+        let poly = {
+            let mut p = domain.empty_extended();
+            p.values = poly;
+            p
+        };
+        want = want + &poly;
+        omega = omega * omega;
+    }
+
+    poly_lagrange_vecs.reverse();
+    let got = domain.lagrange_vecs_to_extended(poly_lagrange_vecs);
+    assert_eq!(want.values, got.values);
+}
+
+#[test]
+fn bench_lagrange_vecs_to_extended() {
+    use halo2curves::pasta::pallas::Scalar;
+    use rand_core::OsRng;
+    use std::time::Instant;
+
+    let rng = OsRng;
+    let domain = EvaluationDomain::<Scalar>::new(8, 10);
+    let mut poly_vec = vec![];
+    let mut poly_lagrange_vecs = vec![];
+    let mut poly_extended_vecs = vec![];
+    let mut omega = domain.extended_omega;
+
+    for i in (0..(domain.extended_k - domain.k + 1)).rev() {
+        let mut poly = vec![Scalar::zero(); (1 << i) * domain.n as usize];
+        for value in poly.iter_mut() {
+            *value = Scalar::random(rng);
+        }
+        // poly under coeff representation.
+        poly_vec.push(poly.clone());
+        // poly under lagrange vector representation.
+        let mut poly2 = poly.clone();
+        let data = domain.get_fft_data(poly2.len());
+        best_fft(&mut poly2, omega, i + domain.k, data, false);
+        let transposed_poly: Vec<Polynomial<Scalar, LagrangeCoeff>> = (0..(1 << i))
+            .map(|j| {
+                let mut p = domain.empty_lagrange();
+                for k in 0..domain.n {
+                    p[k as usize] = poly2[j + (k as usize) * (1 << i)];
+                }
+                p
+            })
+            .collect();
+        poly_lagrange_vecs.push(transposed_poly);
+        // poly under extended representation.
+        poly.resize(domain.extended_len(), Scalar::zero());
+        let data = domain.get_fft_data(poly.len());
+        best_fft(
+            &mut poly,
+            domain.extended_omega,
+            domain.extended_k,
+            data,
+            false,
+        );
+        let poly = {
+            let mut p = domain.empty_extended();
+            p.values = poly;
+            p
+        };
+        poly_extended_vecs.push(poly);
+        omega = omega * omega;
+    }
+
+    let want_timer = Instant::now();
+    let _ = poly_extended_vecs
+        .iter()
+        .fold(domain.empty_extended(), |acc, p| acc + p);
+    println!("want time: {}s", want_timer.elapsed().as_secs_f64());
+    poly_lagrange_vecs.reverse();
+    let got_timer = Instant::now();
+    let _ = domain.lagrange_vecs_to_extended(poly_lagrange_vecs);
+    println!("got time: {}s", got_timer.elapsed().as_secs_f64());
 }
