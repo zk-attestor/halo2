@@ -121,7 +121,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for SingleChipLayouter<'a
         let log_region_info = row_count >= 40;
         if log_region_info {
             log::debug!(
-                "region row_count \"{}\": {}",
+                "region \"{}\" row_count: {}",
                 region_name,
                 shape.row_count()
             );
