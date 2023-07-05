@@ -900,11 +900,11 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
     }
 
     pub fn advice_values(&self, column: Column<Advice>) -> &[CellValue<F>] {
-        &self.advice[column.index()]
+        self.advice[column.index()]
     }
 
     pub fn fixed_values(&self, column: Column<Fixed>) -> &[CellValue<F>] {
-        &self.fixed[column.index()]
+        self.fixed[column.index()]
     }
 
     /// Returns `Ok(())` if this `MockProver` is satisfied, or a list of errors indicating
