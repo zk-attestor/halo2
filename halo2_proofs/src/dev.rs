@@ -405,9 +405,21 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
         for (i, sub_range) in ranges.iter().enumerate() {
             if sub_range.start < range_start {
                 // TODO: use more precise error type
+                log::error!(
+                    "subCS_{} sub_range.start: {} < range_start{}",
+                    i,
+                    sub_range.start,
+                    range_start
+                );
                 return Err(Error::Synthesis);
             }
-            if i == ranges.len() - 1 && sub_range.end >= self.rw_rows.end {
+            if i == ranges.len() - 1 && sub_range.end > self.rw_rows.end {
+                log::error!(
+                    "subCS_{} sub_range.end: {} > self.rw_rows.end{}",
+                    i,
+                    sub_range.end,
+                    self.rw_rows.end
+                );
                 return Err(Error::Synthesis);
             }
             range_start = sub_range.end;
@@ -888,11 +900,11 @@ impl<'a, F: FieldExt> MockProver<'a, F> {
     }
 
     pub fn advice_values(&self, column: Column<Advice>) -> &[CellValue<F>] {
-        &self.advice[column.index()]
+        self.advice[column.index()]
     }
 
     pub fn fixed_values(&self, column: Column<Fixed>) -> &[CellValue<F>] {
-        &self.fixed[column.index()]
+        self.fixed[column.index()]
     }
 
     /// Returns `Ok(())` if this `MockProver` is satisfied, or a list of errors indicating
