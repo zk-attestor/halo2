@@ -390,7 +390,7 @@ impl Selector {
 }
 
 /// Query of fixed column at a certain relative location
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct FixedQuery {
     /// Query index
     pub(crate) index: usize,
@@ -417,7 +417,7 @@ impl FixedQuery {
 }
 
 /// Query of advice column at a certain relative location
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct AdviceQuery {
     /// Query index
     pub(crate) index: usize,
@@ -451,7 +451,7 @@ impl AdviceQuery {
 }
 
 /// Query of instance column at a certain relative location
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct InstanceQuery {
     /// Query index
     pub(crate) index: usize,
@@ -698,7 +698,7 @@ pub trait Circuit<F: Field> {
 }
 
 /// Low-degree expression representing an identity that must hold over the committed columns.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Expression<F> {
     /// This is a constant polynomial
     Constant(F),
@@ -1210,7 +1210,7 @@ pub(crate) struct PointIndex(pub usize);
 
 /// A "virtual cell" is a PLONK cell that has been queried at a particular relative offset
 /// within a custom gate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VirtualCell {
     pub(crate) column: Column<Any>,
     pub(crate) rotation: Rotation,
@@ -1336,7 +1336,7 @@ impl<F: Field, C: Into<Constraint<F>>, Iter: IntoIterator<Item = C>> IntoIterato
 }
 
 /// Gate
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Gate<F: Field> {
     name: &'static str,
     constraint_names: Vec<&'static str>,
@@ -1372,7 +1372,7 @@ impl<F: Field> Gate<F> {
 
 /// This is a description of the circuit environment, such as the gate, column and
 /// permutation arrangements.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstraintSystem<F: Field> {
     pub num_fixed_columns: usize,
     pub num_advice_columns: usize,
