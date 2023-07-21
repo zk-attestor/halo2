@@ -1,7 +1,7 @@
 use core::cmp::max;
 use core::ops::{Add, Mul};
 use ff::Field;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ops::Range;
 use std::{
     convert::TryFrom,
@@ -1407,7 +1407,7 @@ pub struct ConstraintSystem<F: Field> {
     pub lookups: Vec<lookup::Argument<F>>,
 
     // List of indexes of Fixed columns which are associated to a circuit-general Column tied to their annotation.
-    pub(crate) general_column_annotations: HashMap<metadata::Column, String>,
+    pub(crate) general_column_annotations: BTreeMap<metadata::Column, String>,
 
     // Vector of fixed columns, which can be used to store constant values
     // that are copied into advice columns.
@@ -1493,7 +1493,7 @@ impl<F: Field> Default for ConstraintSystem<F> {
             instance_queries: Vec::new(),
             permutation: permutation::Argument::new(),
             lookups: Vec::new(),
-            general_column_annotations: HashMap::new(),
+            general_column_annotations: BTreeMap::new(),
             constants: vec![],
             minimum_degree: None,
         }
