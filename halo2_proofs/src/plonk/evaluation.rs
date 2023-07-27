@@ -303,6 +303,7 @@ impl<C: CurveAffine> Evaluator<C> {
         let p = &pk.vk.cs.permutation;
 
         // Calculate the advice and instance cosets
+        #[cfg(feature = "profile")]
         let start = start_measure("cosets", false);
         let advice: Vec<Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>> = advice_polys
             .iter()
@@ -322,7 +323,7 @@ impl<C: CurveAffine> Evaluator<C> {
                     .collect()
             })
             .collect();
-        stop_measure(start);
+        // stop_measure(start);
 
         let mut values = domain.empty_extended();
 
@@ -335,7 +336,7 @@ impl<C: CurveAffine> Evaluator<C> {
             .zip(permutations.iter())
         {
             // Custom gates
-            let start = start_measure("custom gates", false);
+            // let start = start_measure("custom gates", false);
             multicore::scope(|scope| {
                 let chunk_size = (size + num_threads - 1) / num_threads;
                 for (thread_idx, values) in values.chunks_mut(chunk_size).enumerate() {
@@ -363,9 +364,11 @@ impl<C: CurveAffine> Evaluator<C> {
                     });
                 }
             });
+            #[cfg(feature = "profile")]
             stop_measure(start);
 
             // Permutations
+            #[cfg(feature = "profile")]
             let start = start_measure("permutations", false);
             let sets = &permutation.sets;
             if !sets.is_empty() {
@@ -447,9 +450,11 @@ impl<C: CurveAffine> Evaluator<C> {
                     }
                 });
             }
+            #[cfg(feature = "profile")]
             stop_measure(start);
 
             // Lookups
+            #[cfg(feature = "profile")]
             let start = start_measure("lookups", false);
             for (n, lookup) in lookups.iter().enumerate() {
                 // Polynomials required for this lookup.
@@ -520,6 +525,7 @@ impl<C: CurveAffine> Evaluator<C> {
                     }
                 });
             }
+            #[cfg(feature = "profile")]
             stop_measure(start);
         }
         values
