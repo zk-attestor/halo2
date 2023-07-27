@@ -338,7 +338,7 @@ fn main() {
             K,
             circuit.clone(),
             Err(vec![(
-                ((1, "z should end with 1").into(), 0, "").into(),
+                ((1, "z should end with 1").into(), 0, "".to_owned()).into(),
                 FailureLocation::InRegion {
                     region: (0, "Shuffle original into shuffled").into(),
                     offset: 32,

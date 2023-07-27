@@ -84,6 +84,7 @@ pub(crate) mod sealed {
             assert!(self.0 < 2, "The API only supports three phases");
             Phase(self.0 + 1)
         }
+        #[allow(clippy::wrong_self_convention)]
         pub fn to_u8(&self) -> u8 {
             self.0
         }
