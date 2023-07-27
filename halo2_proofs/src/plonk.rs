@@ -8,6 +8,7 @@
 use blake2b_simd::Params as Blake2bParams;
 use ff::PrimeField;
 use group::ff::Field;
+use serde::{Deserialize, Serialize};
 
 use crate::arithmetic::{CurveAffine, FieldExt};
 use crate::helpers::{
@@ -150,7 +151,11 @@ pub fn log_info(msg: String) {
 
 /// This is a verifying key which allows for the verification of proofs for a
 /// particular circuit.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(bound(
+    serialize = "C::Scalar: Serialize, C: Serialize",
+    deserialize = "C::Scalar: Deserialize<'de>, C: Deserialize<'de>"
+))]
 pub struct VerifyingKey<C: CurveAffine> {
     domain: EvaluationDomain<C::Scalar>,
     fixed_commitments: Vec<C>,
@@ -365,7 +370,11 @@ pub struct PinnedVerificationKey<'a, C: CurveAffine> {
 }
 /// This is a proving key which allows for the creation of proofs for a
 /// particular circuit.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(bound(
+    serialize = "C::Scalar: Serialize, C: Serialize",
+    deserialize = "C::Scalar: Deserialize<'de>, C: Deserialize<'de>"
+))]
 pub struct ProvingKey<C: CurveAffine> {
     vk: VerifyingKey<C>,
     l0: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,

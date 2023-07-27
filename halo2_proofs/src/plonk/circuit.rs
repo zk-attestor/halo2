@@ -1,6 +1,7 @@
 use core::cmp::max;
 use core::ops::{Add, Mul};
 use ff::Field;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env::var;
 use std::{
@@ -25,7 +26,7 @@ pub trait ColumnType:
 }
 
 /// A column with an index and type
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Column<C: ColumnType> {
     index: usize,
     column_type: C,
@@ -69,8 +70,10 @@ impl<C: ColumnType> PartialOrd for Column<C> {
 pub(crate) mod sealed {
     use std::ops::Add;
 
+    use serde::{Deserialize, Serialize};
+
     /// Phase of advice column
-    #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
     pub struct Phase(pub(super) u8);
 
     impl Phase {
@@ -134,7 +137,7 @@ impl SealedPhase for super::ThirdPhase {
 }
 
 /// An advice column
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Advice {
     pub(crate) phase: sealed::Phase,
 }
@@ -173,15 +176,15 @@ impl std::fmt::Debug for Advice {
 }
 
 /// A fixed column
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Fixed;
 
 /// An instance column
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Instance;
 
 /// An enum over the Advice, Fixed, Instance structs
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Any {
     /// An Advice variant
     Advice(Advice),
@@ -388,7 +391,7 @@ impl TryFrom<Column<Any>> for Column<Instance> {
 ///     Ok(())
 /// }
 /// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Selector(pub(crate) usize, bool);
 
 impl Selector {
@@ -405,7 +408,7 @@ impl Selector {
 }
 
 /// Query of fixed column at a certain relative location
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct FixedQuery {
     /// Query index
     pub(crate) index: usize,
@@ -428,7 +431,7 @@ impl FixedQuery {
 }
 
 /// Query of advice column at a certain relative location
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct AdviceQuery {
     /// Query index
     pub(crate) index: usize,
@@ -458,7 +461,7 @@ impl AdviceQuery {
 }
 
 /// Query of instance column at a certain relative location
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct InstanceQuery {
     /// Query index
     pub(crate) index: usize,
@@ -509,7 +512,7 @@ impl TableColumn {
 }
 
 /// A challenge squeezed from transcript after advice columns at the phase have been committed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Challenge {
     index: usize,
     pub(crate) phase: sealed::Phase,
@@ -678,7 +681,7 @@ pub trait Circuit<F: Field> {
 }
 
 /// Low-degree expression representing an identity that must hold over the committed columns.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Expression<F> {
     /// This is a constant polynomial
     Constant(F),
@@ -1190,7 +1193,7 @@ pub(crate) struct PointIndex(pub usize);
 
 /// A "virtual cell" is a PLONK cell that has been queried at a particular relative offset
 /// within a custom gate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VirtualCell {
     pub(crate) column: Column<Any>,
     pub(crate) rotation: Rotation,
@@ -1316,10 +1319,10 @@ impl<F: Field, C: Into<Constraint<F>>, Iter: IntoIterator<Item = C>> IntoIterato
 }
 
 /// Gate
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Gate<F: Field> {
-    name: &'static str,
-    constraint_names: Vec<&'static str>,
+    name: String,
+    constraint_names: Vec<String>,
     polys: Vec<Expression<F>>,
     /// We track queried selectors separately from other cells, so that we can use them to
     /// trigger debug checks on gates.
@@ -1328,12 +1331,12 @@ pub struct Gate<F: Field> {
 }
 
 impl<F: Field> Gate<F> {
-    pub(crate) fn name(&self) -> &'static str {
-        self.name
+    pub(crate) fn name(&self) -> &str {
+        &self.name
     }
 
-    pub(crate) fn constraint_name(&self, constraint_index: usize) -> &'static str {
-        self.constraint_names[constraint_index]
+    pub(crate) fn constraint_name(&self, constraint_index: usize) -> &str {
+        &self.constraint_names[constraint_index]
     }
 
     /// Returns constraints of this gate
@@ -1352,7 +1355,7 @@ impl<F: Field> Gate<F> {
 
 /// This is a description of the circuit environment, such as the gate, column and
 /// permutation arrangements.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConstraintSystem<F: Field> {
     pub(crate) num_fixed_columns: usize,
     pub(crate) num_advice_columns: usize,
@@ -1699,7 +1702,7 @@ impl<F: Field> ConstraintSystem<F> {
         let (constraint_names, polys): (_, Vec<_>) = constraints
             .into_iter()
             .map(|c| c.into())
-            .map(|c| (c.name, c.poly))
+            .map(|c| (c.name.to_string(), c.poly))
             .unzip();
 
         assert!(
@@ -1708,7 +1711,7 @@ impl<F: Field> ConstraintSystem<F> {
         );
 
         self.gates.push(Gate {
-            name,
+            name: name.to_string(),
             constraint_names,
             polys,
             queried_selectors,

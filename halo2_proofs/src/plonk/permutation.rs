@@ -17,11 +17,12 @@ pub(crate) mod prover;
 pub(crate) mod verifier;
 
 pub use keygen::Assembly;
+use serde::{Deserialize, Serialize};
 
 use std::io;
 
 /// A permutation argument.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Argument {
     /// A sequence of columns involved in the argument.
     pub(super) columns: Vec<Column<Any>>,
@@ -83,7 +84,7 @@ impl Argument {
 }
 
 /// The verifying key for a single permutation argument.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VerifyingKey<C: CurveAffine> {
     commitments: Vec<C>,
 }
@@ -123,7 +124,11 @@ impl<C: CurveAffine> VerifyingKey<C> {
 }
 
 /// The proving key for a single permutation argument.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(bound(
+    serialize = "C::Scalar: Serialize",
+    deserialize = "C::Scalar: Deserialize<'de>"
+))]
 pub(crate) struct ProvingKey<C: CurveAffine> {
     permutations: Vec<Polynomial<C::Scalar, LagrangeCoeff>>,
     polys: Vec<Polynomial<C::Scalar, Coeff>>,

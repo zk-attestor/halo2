@@ -10,6 +10,7 @@ use crate::{
 use super::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation};
 
 use group::ff::{BatchInvert, Field, PrimeField};
+use serde::{Deserialize, Serialize};
 
 use std::{env::var, marker::PhantomData};
 
@@ -24,7 +25,7 @@ fn get_fft_mode() -> usize {
 }
 
 /// FFTStage
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FFTStage {
     radix: usize,
     length: usize,
@@ -65,7 +66,7 @@ pub fn get_stages(size: usize, radixes: Vec<usize>) -> Vec<FFTStage> {
 }
 
 /// FFTData
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct FFTData<F: FieldExt> {
     n: usize,
 
@@ -409,7 +410,7 @@ fn recursive_fft<F: FieldExt>(data: &FFTData<F>, data_in: &mut Vec<F>, inverse: 
 /// This structure contains precomputed constants and other details needed for
 /// performing operations on an evaluation domain of size $2^k$ and an extended
 /// domain of size $2^{k} * j$ with $j \neq 0$.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EvaluationDomain<G: Group> {
     n: u64,
     k: u32,

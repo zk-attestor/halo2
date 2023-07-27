@@ -10,6 +10,7 @@ use crate::SerdeFormat;
 use ff::PrimeField;
 use group::ff::{BatchInvert, Field};
 use halo2curves::FieldExt;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::io;
 use std::marker::PhantomData;
@@ -65,7 +66,7 @@ impl Basis for ExtendedLagrangeCoeff {}
 
 /// Represents a univariate polynomial defined over a field and a particular
 /// basis.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Polynomial<F, B> {
     pub(crate) values: Vec<F>,
     _marker: PhantomData<B>,
@@ -353,7 +354,7 @@ impl<'a, F: Field, B: Basis> Sub<F> for &'a Polynomial<F, B> {
 /// Describes the relative rotation of a vector. Negative numbers represent
 /// reverse (leftmost) rotations and positive numbers represent forward (rightmost)
 /// rotations. Zero represents no rotation.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Rotation(pub i32);
 
 impl Rotation {

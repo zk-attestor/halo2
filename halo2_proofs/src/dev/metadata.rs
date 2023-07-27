@@ -1,5 +1,7 @@
 //! Metadata about circuits.
 
+use serde::{Deserialize, Serialize};
+
 use super::metadata::Column as ColumnMetadata;
 use crate::plonk::{self, Any};
 use std::{
@@ -7,7 +9,7 @@ use std::{
     fmt::{self, Debug},
 };
 /// Metadata about a column within a circuit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Column {
     /// The type of the column.
     pub(super) column_type: Any,
@@ -149,14 +151,14 @@ impl fmt::Display for DebugVirtualCell {
 }
 
 /// Metadata about a configured gate within a circuit.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Gate {
     /// The index of the active gate. These indices are assigned in the order in which
     /// `ConstraintSystem::create_gate` is called during `Circuit::configure`.
     pub(super) index: usize,
     /// The name of the active gate. These are specified by the gate creator (such as
     /// a chip implementation), and is not enforced to be unique.
-    pub(super) name: &'static str,
+    pub(super) name: String,
 }
 
 impl fmt::Display for Gate {
@@ -165,14 +167,23 @@ impl fmt::Display for Gate {
     }
 }
 
-impl From<(usize, &'static str)> for Gate {
-    fn from((index, name): (usize, &'static str)) -> Self {
+impl From<(usize, String)> for Gate {
+    fn from((index, name): (usize, String)) -> Self {
         Gate { index, name }
     }
 }
 
+impl From<(usize, &'static str)> for Gate {
+    fn from((index, name): (usize, &'static str)) -> Self {
+        Gate {
+            index,
+            name: name.to_owned(),
+        }
+    }
+}
+
 /// Metadata about a configured constraint within a circuit.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Constraint {
     /// The gate containing the constraint.
     pub(super) gate: Gate,
@@ -182,7 +193,7 @@ pub struct Constraint {
     pub(super) index: usize,
     /// The name of the constraint. This is specified by the gate creator (such as a chip
     /// implementation), and is not enforced to be unique.
-    pub(super) name: &'static str,
+    pub(super) name: String,
 }
 
 impl fmt::Display for Constraint {
@@ -202,8 +213,8 @@ impl fmt::Display for Constraint {
     }
 }
 
-impl From<(Gate, usize, &'static str)> for Constraint {
-    fn from((gate, index, name): (Gate, usize, &'static str)) -> Self {
+impl From<(Gate, usize, String)> for Constraint {
+    fn from((gate, index, name): (Gate, usize, String)) -> Self {
         Constraint { gate, index, name }
     }
 }

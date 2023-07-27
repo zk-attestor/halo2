@@ -16,6 +16,7 @@ use group::{
     ff::{BatchInvert, Field},
     Curve,
 };
+use serde::{Deserialize, Serialize};
 use std::any::TypeId;
 use std::convert::TryInto;
 use std::num::ParseIntError;
@@ -34,7 +35,7 @@ fn get_rotation_idx(idx: usize, rot: i32, rot_scale: i32, isize: i32) -> usize {
 }
 
 /// Value used in a calculation
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Serialize, Deserialize)]
 pub enum ValueSource {
     /// This is a constant value
     Constant(usize),
@@ -106,7 +107,7 @@ impl ValueSource {
 }
 
 /// Calculation
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Calculation {
     /// This is an addition
     Add(ValueSource, ValueSource),
@@ -180,7 +181,11 @@ impl Calculation {
 }
 
 /// Evaluator
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[serde(bound(
+    serialize = "C::Scalar: Serialize",
+    deserialize = "C::Scalar: Deserialize<'de>"
+))]
 pub struct Evaluator<C: CurveAffine> {
     ///  Custom gates evalution
     pub custom_gates: GraphEvaluator<C>,
@@ -189,7 +194,11 @@ pub struct Evaluator<C: CurveAffine> {
 }
 
 /// GraphEvaluator
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(bound(
+    serialize = "C::Scalar: Serialize",
+    deserialize = "C::Scalar: Deserialize<'de>"
+))]
 pub struct GraphEvaluator<C: CurveAffine> {
     /// Constants
     pub constants: Vec<C::ScalarExt>,
@@ -211,7 +220,7 @@ pub struct EvaluationData<C: CurveAffine> {
 }
 
 /// CaluclationInfo
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CalculationInfo {
     /// Calculation
     pub calculation: Calculation,

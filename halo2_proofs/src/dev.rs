@@ -834,9 +834,9 @@ impl<F: FieldExt> MockProver<F> {
                                 Value::Real(x) if x.is_zero_vartime() => None,
                                 Value::Real(_) => Some(VerifyFailure::ConstraintNotSatisfied {
                                     constraint: (
-                                        (gate_index, gate.name()).into(),
+                                        (gate_index, gate.name().to_string()).into(),
                                         poly_index,
-                                        gate.constraint_name(poly_index),
+                                        gate.constraint_name(poly_index).to_string(),
                                     )
                                         .into(),
                                     location: FailureLocation::find_expressions(
@@ -860,9 +860,9 @@ impl<F: FieldExt> MockProver<F> {
                                 }),
                                 Value::Poison => Some(VerifyFailure::ConstraintPoisoned {
                                     constraint: (
-                                        (gate_index, gate.name()).into(),
+                                        (gate_index, gate.name().to_string()).into(),
                                         poly_index,
-                                        gate.constraint_name(poly_index),
+                                        gate.constraint_name(poly_index).to_string(),
                                     )
                                         .into(),
                                 }),
@@ -995,7 +995,7 @@ impl<F: FieldExt> MockProver<F> {
                                 assert!(table.binary_search(input).is_err());
 
                                 Some(VerifyFailure::Lookup {
-                                    name: lookup.name,
+                                    name: lookup.name.clone(),
                                     lookup_index,
                                     location: FailureLocation::find_expressions(
                                         &self.cs,
@@ -1146,7 +1146,7 @@ impl<F: FieldExt> MockProver<F> {
                                             None
                                         } else {
                                             Some(VerifyFailure::CellNotAssigned {
-                                                gate: (gate_index, gate.name()).into(),
+                                                gate: (gate_index, gate.name().to_string()).into(),
                                                 region: (
                                                     r_i,
                                                     r.name.clone(),
@@ -1225,9 +1225,9 @@ impl<F: FieldExt> MockProver<F> {
                                 Value::Real(x) if x.is_zero_vartime() => None,
                                 Value::Real(_) => Some(VerifyFailure::ConstraintNotSatisfied {
                                     constraint: (
-                                        (gate_index, gate.name()).into(),
+                                        (gate_index, gate.name().to_string()).into(),
                                         poly_index,
-                                        gate.constraint_name(poly_index),
+                                        gate.constraint_name(poly_index).to_string(),
                                     )
                                         .into(),
                                     location: FailureLocation::find_expressions(
@@ -1251,9 +1251,9 @@ impl<F: FieldExt> MockProver<F> {
                                 }),
                                 Value::Poison => Some(VerifyFailure::ConstraintPoisoned {
                                     constraint: (
-                                        (gate_index, gate.name()).into(),
+                                        (gate_index, gate.name().to_string()).into(),
                                         poly_index,
-                                        gate.constraint_name(poly_index),
+                                        gate.constraint_name(poly_index).to_string(),
                                     )
                                         .into(),
                                 }),
@@ -1374,7 +1374,7 @@ impl<F: FieldExt> MockProver<F> {
                         .filter_map(move |(input, input_row)| {
                             if table.binary_search(input).is_err() {
                                 Some(VerifyFailure::Lookup {
-                                    name: lookup.name,
+                                    name: lookup.name.clone(),
                                     lookup_index,
                                     location: FailureLocation::find_expressions(
                                         &self.cs,
@@ -1781,7 +1781,7 @@ mod tests {
         assert_eq!(
             prover.verify(),
             Err(vec![VerifyFailure::Lookup {
-                name: "lookup",
+                name: "lookup".to_owned(),
                 lookup_index: 0,
                 location: FailureLocation::InRegion {
                     region: (1, "Faulty synthesis").into(),
@@ -1913,7 +1913,7 @@ mod tests {
         assert_eq!(
             prover.verify(),
             Err(vec![VerifyFailure::Lookup {
-                name: "lookup",
+                name: "lookup".to_owned(),
                 lookup_index: 0,
                 location: FailureLocation::InRegion {
                     region: (2, "Faulty synthesis").into(),
@@ -2030,7 +2030,7 @@ mod tests {
         assert_eq!(
             prover.verify(),
             Err(vec![VerifyFailure::ConstraintNotSatisfied {
-                constraint: ((0, "Equality check").into(), 0, "").into(),
+                constraint: ((0, "Equality check".to_owned()).into(), 0, "".to_owned()).into(),
                 location: FailureLocation::InRegion {
                     region: (1, "Wrong synthesis").into(),
                     offset: 0,

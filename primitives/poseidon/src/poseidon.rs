@@ -25,6 +25,7 @@ impl<F: FieldExt, const T: usize, const RATE: usize> Poseidon<F, T, RATE> {
     pub fn update(&mut self, elements: &[F]) {
         let mut input_elements = self.absorbing.clone();
         input_elements.extend_from_slice(elements);
+        dbg!(&input_elements);
 
         for chunk in input_elements.chunks(RATE) {
             if chunk.len() < RATE {
@@ -32,12 +33,14 @@ impl<F: FieldExt, const T: usize, const RATE: usize> Poseidon<F, T, RATE> {
                 // absorbation line
                 self.absorbing = chunk.to_vec();
             } else {
+                dbg!(&self.state);
                 // Add new chunk of inputs for the next permutation cycle.
                 for (input_element, state) in chunk.iter().zip(self.state.0.iter_mut().skip(1)) {
                     state.add_assign(input_element);
                 }
                 // Perform intermediate permutation
                 self.spec.permute(&mut self.state);
+                dbg!(&self.state);
                 // Flush the absorption line
                 self.absorbing.clear();
             }
@@ -62,6 +65,7 @@ impl<F: FieldExt, const T: usize, const RATE: usize> Poseidon<F, T, RATE> {
 
         // Perform final permutation
         self.spec.permute(&mut self.state);
+        dbg!(&self.state);
         // Flush the absorption line
         self.absorbing.clear();
         // Returns the challenge while preserving internal state
