@@ -133,7 +133,7 @@ fn main() -> std::io::Result<()> {
     let vk = keygen_vk(&params, &circuit).expect("vk should not fail");
     let pk = keygen_pk(&params, vk, &circuit).expect("pk should not fail");
 
-    for buf_size in [1024, 1024 * 1024, 1024 * 1024 * 1024] {
+    for buf_size in [1024, 8 * 1024, 1024 * 1024, 1024 * 1024 * 1024] {
         println!("buf_size: {buf_size}");
         // Using halo2_proofs serde implementation
         let f = File::create("serialization-test.pk")?;
