@@ -45,38 +45,38 @@ pub use verifier::*;
 use evaluation::Evaluator;
 use std::env::var;
 use std::io;
-use std::time::Instant;
+// use std::time::Instant;
 
-/// Temp
-#[allow(missing_debug_implementations)]
-pub struct MeasurementInfo {
-    /// Temp
-    pub measure: bool,
-    /// Temp
-    pub time: Instant,
-    /// Message
-    pub message: String,
-    /// Indent
-    pub indent: usize,
-}
+// /// Temp
+// #[allow(missing_debug_implementations)]
+// pub struct MeasurementInfo {
+//     /// Temp
+//     pub measure: bool,
+//     /// Temp
+//     pub time: Instant,
+//     /// Message
+//     pub message: String,
+//     /// Indent
+//     pub indent: usize,
+// }
 
-/// TEMP
-#[cfg(feature = "profile")]
-pub static NUM_INDENT: AtomicUsize = AtomicUsize::new(0);
+// /// TEMP
+// #[cfg(feature = "profile")]
+// pub static NUM_INDENT: AtomicUsize = AtomicUsize::new(0);
 
-/// Temp
-pub fn get_time() -> Instant {
-    Instant::now()
-}
+// /// Temp
+// pub fn get_time() -> Instant {
+//     Instant::now()
+// }
 
-/// Temp
-pub fn get_duration(start: Instant) -> usize {
-    let final_time = Instant::now() - start;
-    let secs = final_time.as_secs() as usize;
-    let millis = final_time.subsec_millis() as usize;
-    let micros = (final_time.subsec_micros() % 1000) as usize;
-    secs * 1000000 + millis * 1000 + micros
-}
+// /// Temp
+// pub fn get_duration(start: Instant) -> usize {
+//     let final_time = Instant::now() - start;
+//     let secs = final_time.as_secs() as usize;
+//     let millis = final_time.subsec_millis() as usize;
+//     let micros = (final_time.subsec_micros() % 1000) as usize;
+//     secs * 1000000 + millis * 1000 + micros
+// }
 
 /// Temp
 pub fn log_measurement(indent: Option<usize>, msg: String, duration: usize) {
