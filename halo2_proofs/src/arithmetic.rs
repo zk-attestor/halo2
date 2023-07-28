@@ -137,7 +137,7 @@ pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Cu
 
     //println!("msm: {}", coeffs.len());
 
-    let start = get_time();
+    // let start = get_time();
     let num_threads = multicore::current_num_threads();
     let res = if coeffs.len() > num_threads {
         let chunk = coeffs.len() / num_threads;
@@ -163,11 +163,11 @@ pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Cu
         acc
     };
 
-    let duration = get_duration(start);
+    // let duration = get_duration(start);
     #[allow(unsafe_code)]
-    unsafe {
-        MULTIEXP_TOTAL_TIME += duration;
-    }
+    // unsafe {
+    //     MULTIEXP_TOTAL_TIME += duration;
+    // }
 
     res
 }
@@ -525,7 +525,7 @@ use rand_core::OsRng;
 
 #[cfg(test)]
 use crate::halo2curves::pasta::Fp;
-use crate::plonk::{get_duration, get_time, start_measure, stop_measure};
+// use crate::plonk::{get_duration, get_time, start_measure, stop_measure};
 
 #[test]
 fn test_lagrange_interpolate() {

@@ -4,7 +4,7 @@
 use crate::{
     arithmetic::{best_fft, parallelize, parallelize_count, FieldExt, Group},
     multicore,
-    plonk::{get_duration, get_time, start_measure, stop_measure, Assigned},
+    plonk::{Assigned},
 };
 
 use super::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation};
@@ -787,7 +787,7 @@ impl<G: Group> EvaluationDomain<G> {
     }
 
     fn fft_inner(&self, a: &mut Vec<G::Scalar>, omega: G::Scalar, log_n: u32, inverse: bool) {
-        let start = get_time();
+        // let start = get_time();
         if get_fft_mode() == 1 {
             let fft_data = if a.len() == self.fft_data.n {
                 &self.fft_data
@@ -798,12 +798,12 @@ impl<G: Group> EvaluationDomain<G> {
         } else {
             best_fft(a, omega, log_n);
         }
-        let duration = get_duration(start);
+        // let duration = get_duration(start);
 
-        #[allow(unsafe_code)]
-        unsafe {
-            FFT_TOTAL_TIME += duration;
-        }
+        // #[allow(unsafe_code)]
+        // unsafe {
+        //     FFT_TOTAL_TIME += duration;
+        // }
     }
 
     /// Get the size of the domain
@@ -1029,21 +1029,17 @@ fn test_fft() {
     let num_threads = multicore::current_num_threads();
 
     let mut a = input.clone();
-    #[cfg(feature = "profile")]
-    let start = start_measure(format!("best fft {} ({})", a.len(), num_threads), false);
+    // let start = start_measure(format!("best fft {} ({})", a.len(), num_threads), false);
     best_fft(&mut a, domain.omega, k);
-    #[cfg(feature = "profile")]
-    stop_measure(start);
+    // stop_measure(start);
 
-    let mut b = input;
-    #[cfg(feature = "profile")]
-    let start = start_measure(
-        format!("recursive fft {} ({})", a.len(), num_threads),
-        false,
-    );
+    let mut b = input.clone();
+    // let start = start_measure(
+    //     format!("recursive fft {} ({})", a.len(), num_threads),
+    //     false,
+    // );
     recursive_fft(&domain.fft_data, &mut b, false);
-    #[cfg(feature = "profile")]
-    stop_measure(start);
+    // stop_measure(start);
 
     for i in 0..n {
         //println!("{}: {} {}", i, a[i], b[i]);

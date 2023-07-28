@@ -6,7 +6,7 @@ use std::fmt;
 use std::iter;
 use std::ops::{Add, Mul, Neg, Range};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+// use std::time::{Duration, Instant};
 
 use blake2b_simd::blake2b;
 use ff::Field;
