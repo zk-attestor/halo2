@@ -1,7 +1,9 @@
 #![allow(clippy::many_single_char_names)]
 #![allow(clippy::op_ref)]
+#![allow(unused_macros)]
+#![allow(dead_code)]
 
-use assert_matches::assert_matches;
+// use assert_matches::assert_matches;
 use halo2_proofs::arithmetic::{Field, FieldExt};
 use halo2_proofs::circuit::{Cell, Layouter, SimpleFloorPlanner, Value};
 use halo2_proofs::dev::MockProver;

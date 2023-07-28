@@ -79,7 +79,7 @@ struct FFTData<F: FieldExt> {
 impl<F: FieldExt> FFTData<F> {
     /// Create FFT data
     pub fn new(n: usize, omega: F, omega_inv: F) -> Self {
-        let stages = get_stages(n as usize, vec![]);
+        let stages = get_stages(n, vec![]);
         let mut f_twiddles = vec![];
         let mut inv_twiddles = vec![];
         let mut scratch = vec![F::zero(); n];
@@ -99,7 +99,7 @@ impl<F: FieldExt> FFTData<F> {
             // Twiddles
             parallelize(twiddles, |twiddles, start| {
                 let w_m = o;
-                let mut w = o.pow_vartime(&[start as u64, 0, 0, 0]);
+                let mut w = o.pow_vartime([start as u64]);
                 for value in twiddles.iter_mut() {
                     *value = w;
                     w *= w_m;
@@ -168,9 +168,9 @@ fn butterfly_2_parallel<F: FieldExt>(
     num_threads: usize,
 ) {
     let n = out.len();
-    let mut chunk = (n as usize) / num_threads;
+    let mut chunk = n / num_threads;
     if chunk < num_threads {
-        chunk = n as usize;
+        chunk = n;
     }
 
     multicore::scope(|scope| {
@@ -257,9 +257,9 @@ pub fn butterfly_4_parallel<F: FieldExt>(
     let j = twiddles[twiddles.len() - 1];
 
     let n = out.len();
-    let mut chunk = (n as usize) / num_threads;
+    let mut chunk = n / num_threads;
     if chunk < num_threads {
-        chunk = n as usize;
+        chunk = n;
     }
     multicore::scope(|scope| {
         //let mut parts: Vec<&mut [F]> = out.chunks_mut(4).collect();
@@ -1016,7 +1016,7 @@ fn test_fft() {
     }
     let k = get_degree() as u32;
 
-    let mut domain = EvaluationDomain::<Scalar>::new(1, k);
+    let domain = EvaluationDomain::<Scalar>::new(1, k);
     let n = domain.n as usize;
 
     let input = vec![Scalar::random(OsRng); n];
@@ -1025,6 +1025,7 @@ fn test_fft() {
         input[i] = Scalar::random(OsRng);
     }*/
 
+    #[cfg(feature = "profile")]
     let num_threads = multicore::current_num_threads();
 
     let mut a = input.clone();
@@ -1037,7 +1038,7 @@ fn test_fft() {
     //     format!("recursive fft {} ({})", a.len(), num_threads),
     //     false,
     // );
-    recursive_fft(&mut domain.fft_data, &mut b, false);
+    recursive_fft(&domain.fft_data, &mut b, false);
     // stop_measure(start);
 
     for i in 0..n {

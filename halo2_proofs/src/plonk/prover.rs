@@ -11,7 +11,6 @@ use std::marker::PhantomData;
 use std::ops::RangeTo;
 use std::rc::Rc;
 use std::sync::atomic::AtomicUsize;
-// use std::time::Instant;
 use std::{collections::HashMap, iter, mem, sync::atomic::Ordering};
 
 use super::{
@@ -753,6 +752,7 @@ where
     #[cfg(feature = "profile")]
     let multiopen_time = start_timer!(|| "Phase 5: multiopen");
     let prover = P::new(params);
+    #[allow(clippy::let_and_return)]
     let multiopen_res = prover
         .create_proof(&mut rng, transcript, instances)
         .map_err(|_| Error::ConstraintSystemFailure);
