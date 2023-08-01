@@ -1,13 +1,14 @@
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use group::ff::Field;
+use serde::{Serialize, Deserialize};
 
 /// A value assigned to a cell within a circuit.
 ///
 /// Stored as a fraction, so the backend can use batch inversion.
 ///
 /// A denominator of zero maps to an assigned value of zero.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Assigned<F> {
     /// The field element zero.
     Zero,
