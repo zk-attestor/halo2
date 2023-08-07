@@ -509,7 +509,7 @@ impl TableColumn {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct Challenge {
     index: usize,
-    phase: sealed::Phase,
+    pub(crate) phase: sealed::Phase,
 }
 
 impl Challenge {

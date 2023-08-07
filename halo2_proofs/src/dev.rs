@@ -704,10 +704,11 @@ impl<'a, F: Field + Group> Assignment<F> for MockProver<'a, F> {
     }
 
     fn get_challenge(&self, challenge: Challenge) -> circuit::Value<F> {
-        match self.challenges.get(challenge.index()) {
-            None => circuit::Value::unknown(),
-            Some(v) => circuit::Value::known(*v),
+        if self.current_phase <= challenge.phase {
+            return circuit::Value::unknown();
         }
+
+        circuit::Value::known(self.challenges[challenge.index()])
     }
 
     fn push_namespace<NR, N>(&mut self, _: N)
