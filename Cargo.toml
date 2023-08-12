@@ -2,8 +2,6 @@
 members = [
     "halo2",
     "halo2_proofs",
-    "arithmetic/curves",
-    "primitives/poseidon"
 ]
 
 [profile.dev]
