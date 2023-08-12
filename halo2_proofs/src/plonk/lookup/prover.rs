@@ -412,7 +412,11 @@ fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: Rn
             table_expression,
         );
     }*/
-    permute_expression_pair_par(pk, params, domain, rng, input_expression, table_expression)
+    let start = std::time::Instant::now();
+    let res =
+        permute_expression_pair_par(pk, params, domain, rng, input_expression, table_expression);
+    dbg!(start.elapsed());
+    res
 }
 
 fn permute_expression_pair_par<'params, C: CurveAffine, P: Params<'params, C>, R: RngCore>(
