@@ -18,6 +18,7 @@ documentation = "https://docs.rs/halo2_proofs"
 readme = "README.md"
 categories = ["cryptography"]
 keywords = ["halo", "proofs", "zkp", "zkSNARKs"]
+autoexamples = false
 
 [package.metadata.docs.rs]
 all-features = true
@@ -93,5 +94,10 @@ circuit-params = []
 bench = false
 
 [[example]]
-name = "circuit-layout"
-required-features = ["dev-graph"]
+name = "serialization"
+
+[[example]]
+name = "shuffle"
+
+[[example]]
+name = "shuffle_api"
