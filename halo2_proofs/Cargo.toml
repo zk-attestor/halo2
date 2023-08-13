@@ -87,7 +87,7 @@ gadget-traces = ["backtrace"]
 sanity-checks = []
 batch = ["rand/getrandom"]
 profile = ["dep:ark-std"]
-asm = ["halo2curves/asm", "halo2curves/prefetch"]
+asm = ["halo2curves/asm"]
 circuit-params = []
 
 [lib]
