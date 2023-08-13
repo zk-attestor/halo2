@@ -82,7 +82,7 @@ getrandom = { version = "0.2", features = ["js"] }
 default = ["batch", "circuit-params"]
 dev-graph = ["plotters", "tabbycat"]
 gadget-traces = ["backtrace"]
-thread-safe-region = []
+# thread-safe-region = []
 sanity-checks = []
 batch = ["rand/getrandom"]
 profile = ["dep:ark-std"]
