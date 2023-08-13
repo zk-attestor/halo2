@@ -29,7 +29,7 @@ use crate::{
 ///
 /// let drawing_area = BitMapBackend::new("example-circuit-layout.png", (1024, 768))
 ///     .into_drawing_area();
-/// drawing_area.fill(&WHITE).unwrap();
+/// drawing_area.fill(WHITE).unwrap();
 /// let drawing_area = drawing_area
 ///     .titled("Example Circuit Layout", ("sans-serif", 60))
 ///     .unwrap();
@@ -184,7 +184,7 @@ impl CircuitLayout {
 
         root.draw(&Rectangle::new(
             [(0, 0), (total_columns, view_bottom)],
-            &BLACK,
+            BLACK,
         ))?;
 
         let draw_region = |root: &DrawingArea<_, _>, top_left, bottom_right| {
@@ -200,7 +200,7 @@ impl CircuitLayout {
                 [top_left, bottom_right],
                 ShapeStyle::from(&GREEN.mix(0.2)).filled(),
             ))?;
-            root.draw(&Rectangle::new([top_left, bottom_right], &BLACK))?;
+            root.draw(&Rectangle::new([top_left, bottom_right], BLACK))?;
             Ok(())
         };
 

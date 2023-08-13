@@ -1007,21 +1007,11 @@ fn test_fft() {
         input[i] = Scalar::random(OsRng);
     }*/
 
-    #[cfg(feature = "profile")]
-    let num_threads = multicore::current_num_threads();
-
     let mut a = input.clone();
-    // let start = start_measure(format!("best fft {} ({})", a.len(), num_threads), false);
     best_fft(&mut a, domain.omega, k);
-    // stop_measure(start);
 
     let mut b = input.clone();
-    // let start = start_measure(
-    //     format!("recursive fft {} ({})", a.len(), num_threads),
-    //     false,
-    // );
     recursive_fft(&domain.fft_data, &mut b, false);
-    // stop_measure(start);
 
     for i in 0..n {
         //println!("{}: {} {}", i, a[i], b[i]);
