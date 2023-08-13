@@ -2,12 +2,11 @@
 extern crate criterion;
 
 use group::ff::Field;
-use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::circuit::{Cell, Layouter, SimpleFloorPlanner, Value};
 use halo2_proofs::plonk::*;
 use halo2_proofs::poly::{commitment::ParamsProver, Rotation};
 use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
-use halo2curves::pasta::{EqAffine, Fp};
+use halo2curves::grumpkin::{Fr, G1Affine};
 use rand_core::OsRng;
 
 use halo2_proofs::{
@@ -43,7 +42,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         sm: Column<Fixed>,
     }
 
-    trait StandardCs<FF: FieldExt> {
+    trait StandardCs<FF: Field> {
         fn raw_multiply<F>(
             &self,
             layouter: &mut impl Layouter<FF>,
@@ -62,17 +61,17 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     #[derive(Clone)]
-    struct MyCircuit<F: FieldExt> {
+    struct MyCircuit<F: Field> {
         a: Value<F>,
         k: u32,
     }
 
-    struct StandardPlonk<F: FieldExt> {
+    struct StandardPlonk<F: Field> {
         config: PlonkConfig,
         _marker: PhantomData<F>,
     }
 
-    impl<FF: FieldExt> StandardPlonk<FF> {
+    impl<FF: Field> StandardPlonk<FF> {
         fn new(config: PlonkConfig) -> Self {
             StandardPlonk {
                 config,
@@ -81,7 +80,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         }
     }
 
-    impl<FF: FieldExt> StandardCs<FF> for StandardPlonk<FF> {
+    impl<FF: Field> StandardCs<FF> for StandardPlonk<FF> {
         fn raw_multiply<F>(
             &self,
             layouter: &mut impl Layouter<FF>,
@@ -93,7 +92,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             layouter.assign_region(
                 || "raw_multiply",
                 |mut region| {
-                    let mut value = None;
+                    let value;
                     let lhs = region.assign_advice(self.config.a, 0, {
                         value = Some(f());
                         value.unwrap().map(|v| v.0)
@@ -101,10 +100,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                     let rhs = region.assign_advice(self.config.b, 0, value.unwrap().map(|v| v.1));
                     let out = region.assign_advice(self.config.c, 0, value.unwrap().map(|v| v.2));
 
-                    region.assign_fixed(self.config.sa, 0, FF::zero());
-                    region.assign_fixed(self.config.sb, 0, FF::zero());
-                    region.assign_fixed(self.config.sc, 0, FF::one());
-                    region.assign_fixed(self.config.sm, 0, FF::one());
+                    region.assign_fixed(self.config.sa, 0, FF::ZERO);
+                    region.assign_fixed(self.config.sb, 0, FF::ZERO);
+                    region.assign_fixed(self.config.sc, 0, FF::ONE);
+                    region.assign_fixed(self.config.sm, 0, FF::ONE);
                     Ok((*lhs.cell(), *rhs.cell(), *out.cell()))
                 },
             )
@@ -128,10 +127,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                     let rhs = region.assign_advice(self.config.b, 0, value.unwrap().map(|v| v.1));
                     let out = region.assign_advice(self.config.c, 0, value.unwrap().map(|v| v.2));
 
-                    region.assign_fixed(self.config.sa, 0, FF::one());
-                    region.assign_fixed(self.config.sb, 0, FF::one());
-                    region.assign_fixed(self.config.sc, 0, FF::one());
-                    region.assign_fixed(self.config.sm, 0, FF::zero());
+                    region.assign_fixed(self.config.sa, 0, FF::ONE);
+                    region.assign_fixed(self.config.sb, 0, FF::ONE);
+                    region.assign_fixed(self.config.sc, 0, FF::ONE);
+                    region.assign_fixed(self.config.sm, 0, FF::ZERO);
                     Ok((*lhs.cell(), *rhs.cell(), *out.cell()))
                 },
             )
@@ -152,9 +151,11 @@ fn criterion_benchmark(c: &mut Criterion) {
         }
     }
 
-    impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+    impl<F: Field> Circuit<F> for MyCircuit<F> {
         type Config = PlonkConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self {
@@ -231,9 +232,9 @@ fn criterion_benchmark(c: &mut Criterion) {
         }
     }
 
-    fn keygen(k: u32) -> (ParamsIPA<EqAffine>, ProvingKey<EqAffine>) {
-        let params: ParamsIPA<EqAffine> = ParamsIPA::new(k);
-        let empty_circuit: MyCircuit<Fp> = MyCircuit {
+    fn keygen(k: u32) -> (ParamsIPA<G1Affine>, ProvingKey<G1Affine>) {
+        let params: ParamsIPA<G1Affine> = ParamsIPA::new(k);
+        let empty_circuit: MyCircuit<Fr> = MyCircuit {
             a: Value::unknown(),
             k,
         };
@@ -242,16 +243,16 @@ fn criterion_benchmark(c: &mut Criterion) {
         (params, pk)
     }
 
-    fn prover(k: u32, params: &ParamsIPA<EqAffine>, pk: &ProvingKey<EqAffine>) -> Vec<u8> {
+    fn prover(k: u32, params: &ParamsIPA<G1Affine>, pk: &ProvingKey<G1Affine>) -> Vec<u8> {
         let rng = OsRng;
 
-        let circuit: MyCircuit<Fp> = MyCircuit {
-            a: Value::known(Fp::random(rng)),
+        let circuit: MyCircuit<Fr> = MyCircuit {
+            a: Value::known(Fr::random(rng)),
             k,
         };
 
-        let mut transcript = Blake2bWrite::<_, _, Challenge255<EqAffine>>::init(vec![]);
-        create_proof::<IPACommitmentScheme<EqAffine>, ProverIPA<EqAffine>, _, _, _, _>(
+        let mut transcript = Blake2bWrite::<_, _, Challenge255<G1Affine>>::init(vec![]);
+        create_proof::<IPACommitmentScheme<G1Affine>, ProverIPA<G1Affine>, _, _, _, _>(
             params,
             pk,
             &[circuit],
@@ -263,7 +264,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         transcript.finalize()
     }
 
-    fn verifier(params: &ParamsIPA<EqAffine>, vk: &VerifyingKey<EqAffine>, proof: &[u8]) {
+    fn verifier(params: &ParamsIPA<G1Affine>, vk: &VerifyingKey<G1Affine>, proof: &[u8]) {
         let strategy = SingleStrategy::new(params);
         let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(proof);
         assert!(verify_proof(params, vk, strategy, &[&[]], &mut transcript).is_ok());

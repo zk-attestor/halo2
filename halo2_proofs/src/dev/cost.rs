@@ -11,7 +11,7 @@ use ff::{Field, PrimeField};
 use group::prime::PrimeGroup;
 
 use crate::{
-    circuit::Value,
+    circuit::{layouter::SyncDeps, Value},
     plonk::{
         Advice, Any, Assigned, Assignment, Challenge, Circuit, Column, ConstraintSystem, Error,
         Fixed, FloorPlanner, Instance, Selector,
@@ -45,6 +45,8 @@ pub struct CircuitCost<G: PrimeGroup, ConcreteCircuit: Circuit<G::Scalar>> {
 struct Assembly {
     selectors: Vec<Vec<bool>>,
 }
+
+impl SyncDeps for Assembly {}
 
 impl<F: Field> Assignment<F> for Assembly {
     fn enter_region<NR, N>(&mut self, _: N)
@@ -150,6 +152,9 @@ impl<G: PrimeGroup, ConcreteCircuit: Circuit<G::Scalar>> CircuitCost<G, Concrete
     pub fn measure(k: usize, circuit: &ConcreteCircuit) -> Self {
         // Collect the layout details.
         let mut cs = ConstraintSystem::default();
+        #[cfg(feature = "circuit-params")]
+        let config = ConcreteCircuit::configure_with_params(&mut cs, circuit.params());
+        #[cfg(not(feature = "circuit-params"))]
         let config = ConcreteCircuit::configure(&mut cs);
         let mut assembly = Assembly {
             selectors: vec![vec![false; 1 << k]; cs.num_selectors],

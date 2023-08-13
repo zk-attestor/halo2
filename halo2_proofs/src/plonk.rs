@@ -6,10 +6,9 @@
 //! [plonk]: https://eprint.iacr.org/2019/953
 
 use blake2b_simd::Params as Blake2bParams;
-use ff::PrimeField;
-use group::ff::Field;
+use group::ff::{Field, FromUniformBytes, PrimeField};
 
-use crate::arithmetic::{CurveAffine, FieldExt};
+use crate::arithmetic::CurveAffine;
 use crate::helpers::{
     polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice, SerdeCurveAffine,
     SerdePrimeField,
@@ -20,8 +19,6 @@ use crate::poly::{
 };
 use crate::transcript::{ChallengeScalar, EncodedChallenge, Transcript};
 use crate::SerdeFormat;
-#[cfg(feature = "profile")]
-use ark_std::perf_trace::{AtomicUsize, Ordering};
 
 mod assigned;
 mod circuit;
@@ -30,6 +27,7 @@ mod evaluation;
 mod keygen;
 mod lookup;
 pub mod permutation;
+mod shuffle;
 mod vanishing;
 
 mod prover;
@@ -45,108 +43,6 @@ pub use verifier::*;
 use evaluation::Evaluator;
 use std::env::var;
 use std::io;
-// use std::time::Instant;
-
-// /// Temp
-// #[allow(missing_debug_implementations)]
-// pub struct MeasurementInfo {
-//     /// Temp
-//     pub measure: bool,
-//     /// Temp
-//     pub time: Instant,
-//     /// Message
-//     pub message: String,
-//     /// Indent
-//     pub indent: usize,
-// }
-
-// /// TEMP
-// #[cfg(feature = "profile")]
-// pub static NUM_INDENT: AtomicUsize = AtomicUsize::new(0);
-
-// /// Temp
-// pub fn get_time() -> Instant {
-//     Instant::now()
-// }
-
-// /// Temp
-// pub fn get_duration(start: Instant) -> usize {
-//     let final_time = Instant::now() - start;
-//     let secs = final_time.as_secs() as usize;
-//     let millis = final_time.subsec_millis() as usize;
-//     let micros = (final_time.subsec_micros() % 1000) as usize;
-//     secs * 1000000 + millis * 1000 + micros
-// }
-
-/// Temp
-pub fn log_measurement(indent: Option<usize>, msg: String, duration: usize) {
-    let indent = indent.unwrap_or(0);
-    println!(
-        "{}{} ........ {}s",
-        "*".repeat(indent),
-        msg,
-        (duration as f32) / 1000000.0
-    );
-}
-
-/// Temp
-#[cfg(feature = "profile")]
-pub fn start_measure<S: AsRef<str>>(msg: S, always: bool) -> MeasurementInfo {
-    let measure: u32 = var("MEASURE")
-        .unwrap_or_else(|_| "0".to_string())
-        .parse()
-        .expect("Cannot parse MEASURE env var as u32");
-
-    let indent = NUM_INDENT.fetch_add(1, Ordering::Relaxed);
-
-    if always || measure == 1
-    /* || msg.starts_with("compressed_cosets")*/
-    {
-        MeasurementInfo {
-            measure: true,
-            time: get_time(),
-            message: msg.as_ref().to_string(),
-            indent,
-        }
-    } else {
-        MeasurementInfo {
-            measure: false,
-            time: get_time(),
-            message: "".to_string(),
-            indent,
-        }
-    }
-}
-#[cfg(not(feature = "profile"))]
-pub fn start_measure<S: AsRef<str>>(_: S, _: bool) {}
-
-/// Temp
-#[cfg(feature = "profile")]
-pub fn stop_measure(info: MeasurementInfo) -> usize {
-    NUM_INDENT.fetch_sub(1, Ordering::Relaxed);
-    let duration = get_duration(info.time);
-    if info.measure {
-        log_measurement(Some(info.indent), info.message, duration);
-    }
-    duration
-}
-#[cfg(not(feature = "profile"))]
-pub fn stop_measure(_: ()) {}
-
-/// Get env variable
-pub fn env_value(key: &str, default: usize) -> usize {
-    match var(key) {
-        Ok(val) => val.parse().unwrap(),
-        Err(_) => default,
-    }
-}
-
-/// Temp
-pub fn log_info(msg: String) {
-    if env_value("INFO", 0) != 0 {
-        println!("{}", msg);
-    }
-}
 
 /// This is a verifying key which allows for the verification of proofs for a
 /// particular circuit.
@@ -165,7 +61,7 @@ pub struct VerifyingKey<C: CurveAffine> {
 
 impl<C: SerdeCurveAffine> VerifyingKey<C>
 where
-    C::Scalar: SerdePrimeField,
+    C::Scalar: SerdePrimeField + FromUniformBytes<64>, // the FromUniformBytes<64> should not be necessary: currently serialization always stores a Blake2b hash of verifying key; this should be removed
 {
     /// Writes a verifying key to a buffer.
     ///
@@ -209,11 +105,16 @@ where
     pub fn read<R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
         reader: &mut R,
         format: SerdeFormat,
+        #[cfg(feature = "circuit-params")] params: ConcreteCircuit::Params,
     ) -> io::Result<Self> {
         let mut k = [0u8; 4];
         reader.read_exact(&mut k)?;
         let k = u32::from_be_bytes(k);
-        let (domain, cs, _) = keygen::create_domain::<C, ConcreteCircuit>(k);
+        let (domain, cs, _) = keygen::create_domain::<C, ConcreteCircuit>(
+            k,
+            #[cfg(feature = "circuit-params")]
+            params,
+        );
         let mut num_fixed_columns = [0u8; 4];
         reader.read_exact(&mut num_fixed_columns).unwrap();
         let num_fixed_columns = u32::from_be_bytes(num_fixed_columns);
@@ -258,8 +159,14 @@ where
     pub fn from_bytes<ConcreteCircuit: Circuit<C::Scalar>>(
         mut bytes: &[u8],
         format: SerdeFormat,
+        #[cfg(feature = "circuit-params")] params: ConcreteCircuit::Params,
     ) -> io::Result<Self> {
-        Self::read::<_, ConcreteCircuit>(&mut bytes, format)
+        Self::read::<_, ConcreteCircuit>(
+            &mut bytes,
+            format,
+            #[cfg(feature = "circuit-params")]
+            params,
+        )
     }
 }
 
@@ -271,7 +178,7 @@ impl<C: CurveAffine> VerifyingKey<C> {
                 * (self
                     .selectors
                     .get(0)
-                    .map(|selector| selector.len() / 8 + 1)
+                    .map(|selector| (selector.len() + 7) / 8)
                     .unwrap_or(0))
     }
 
@@ -281,7 +188,10 @@ impl<C: CurveAffine> VerifyingKey<C> {
         permutation: permutation::VerifyingKey<C>,
         cs: ConstraintSystem<C::Scalar>,
         selectors: Vec<Vec<bool>>,
-    ) -> Self {
+    ) -> Self
+    where
+        C::Scalar: FromUniformBytes<64>,
+    {
         // Compute cached values.
         let cs_degree = cs.degree();
 
@@ -292,7 +202,7 @@ impl<C: CurveAffine> VerifyingKey<C> {
             cs,
             cs_degree,
             // Temporary, this is not pinned.
-            transcript_repr: C::Scalar::zero(),
+            transcript_repr: C::Scalar::ZERO,
             selectors,
         };
 
@@ -307,7 +217,7 @@ impl<C: CurveAffine> VerifyingKey<C> {
         hasher.update(s.as_bytes());
 
         // Hash in final Blake2bState
-        vk.transcript_repr = C::Scalar::from_bytes_wide(hasher.finalize().as_array());
+        vk.transcript_repr = C::Scalar::from_uniform_bytes(hasher.finalize().as_array());
 
         vk
     }
@@ -378,7 +288,10 @@ pub struct ProvingKey<C: CurveAffine> {
     ev: Evaluator<C>,
 }
 
-impl<C: CurveAffine> ProvingKey<C> {
+impl<C: CurveAffine> ProvingKey<C>
+where
+    C::Scalar: FromUniformBytes<64>,
+{
     /// Get the underlying [`VerifyingKey`].
     pub fn get_vk(&self) -> &VerifyingKey<C> {
         &self.vk
@@ -399,7 +312,7 @@ impl<C: CurveAffine> ProvingKey<C> {
 
 impl<C: SerdeCurveAffine> ProvingKey<C>
 where
-    C::Scalar: SerdePrimeField,
+    C::Scalar: SerdePrimeField + FromUniformBytes<64>,
 {
     /// Writes a proving key to a buffer.
     ///
@@ -437,8 +350,15 @@ where
     pub fn read<R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
         reader: &mut R,
         format: SerdeFormat,
+        #[cfg(feature = "circuit-params")] params: ConcreteCircuit::Params,
     ) -> io::Result<Self> {
-        let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(reader, format).unwrap();
+        let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(
+            reader,
+            format,
+            #[cfg(feature = "circuit-params")]
+            params,
+        )
+        .unwrap();
         let l0 = Polynomial::read(reader, format);
         let l_last = Polynomial::read(reader, format);
         let l_active_row = Polynomial::read(reader, format);
@@ -471,8 +391,14 @@ where
     pub fn from_bytes<ConcreteCircuit: Circuit<C::Scalar>>(
         mut bytes: &[u8],
         format: SerdeFormat,
+        #[cfg(feature = "circuit-params")] params: ConcreteCircuit::Params,
     ) -> io::Result<Self> {
-        Self::read::<_, ConcreteCircuit>(&mut bytes, format)
+        Self::read::<_, ConcreteCircuit>(
+            &mut bytes,
+            format,
+            #[cfg(feature = "circuit-params")]
+            params,
+        )
     }
 }
 

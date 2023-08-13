@@ -6,8 +6,8 @@ use super::{
 use crate::poly::Error;
 use crate::transcript::{EncodedChallenge, TranscriptRead, TranscriptWrite};
 use ff::Field;
-use group::Curve;
-use halo2curves::{CurveAffine, CurveExt, FieldExt};
+use group::{prime::PrimeCurveAffine, Curve, Group};
+use halo2curves::{CurveAffine, CurveExt};
 use rand_core::RngCore;
 use std::{
     fmt::Debug,
@@ -18,7 +18,7 @@ use std::{
 /// Defines components of a commitment scheme.
 pub trait CommitmentScheme {
     /// Application field of this commitment scheme
-    type Scalar: FieldExt + halo2curves::Group;
+    type Scalar: Field;
 
     /// Elliptic curve used to commit the application and witnesses
     type Curve: CurveAffine<ScalarExt = Self::Scalar>;
@@ -101,7 +101,7 @@ pub trait ParamsVerifier<'params, C: CurveAffine>: Params<'params, C> {}
 /// Multi scalar multiplication engine
 pub trait MSM<C: CurveAffine>: Clone + Debug + Send + Sync {
     /// Add arbitrary term (the scalar and the point)
-    fn append_term(&mut self, scalar: C::Scalar, point: C::CurveExt);
+    fn append_term(&mut self, scalar: C::Scalar, point: C::Curve);
 
     /// Add another multiexp into this one
     fn add_msm(&mut self, other: &Self)
@@ -115,10 +115,10 @@ pub trait MSM<C: CurveAffine>: Clone + Debug + Send + Sync {
     fn check(&self) -> bool;
 
     /// Perform multiexp and return the result
-    fn eval(&self) -> C::CurveExt;
+    fn eval(&self) -> C::Curve;
 
     /// Return base points
-    fn bases(&self) -> Vec<C::CurveExt>;
+    fn bases(&self) -> Vec<C::Curve>;
 
     /// Scalars
     fn scalars(&self) -> Vec<C::Scalar>;
@@ -192,20 +192,20 @@ pub trait Verifier<'params, Scheme: CommitmentScheme> {
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Blind<F>(pub F);
 
-impl<F: FieldExt> Default for Blind<F> {
+impl<F: Field> Default for Blind<F> {
     fn default() -> Self {
-        Blind(F::one())
+        Blind(F::ONE)
     }
 }
 
-impl<F: FieldExt> Blind<F> {
+impl<F: Field> Blind<F> {
     /// Given `rng` creates new blinding scalar
     pub fn new<R: RngCore>(rng: &mut R) -> Self {
         Blind(F::random(rng))
     }
 }
 
-impl<F: FieldExt> Add for Blind<F> {
+impl<F: Field> Add for Blind<F> {
     type Output = Self;
 
     fn add(self, rhs: Blind<F>) -> Self {
@@ -213,7 +213,7 @@ impl<F: FieldExt> Add for Blind<F> {
     }
 }
 
-impl<F: FieldExt> Mul for Blind<F> {
+impl<F: Field> Mul for Blind<F> {
     type Output = Self;
 
     fn mul(self, rhs: Blind<F>) -> Self {
@@ -221,25 +221,25 @@ impl<F: FieldExt> Mul for Blind<F> {
     }
 }
 
-impl<F: FieldExt> AddAssign for Blind<F> {
+impl<F: Field> AddAssign for Blind<F> {
     fn add_assign(&mut self, rhs: Blind<F>) {
         self.0 += rhs.0;
     }
 }
 
-impl<F: FieldExt> MulAssign for Blind<F> {
+impl<F: Field> MulAssign for Blind<F> {
     fn mul_assign(&mut self, rhs: Blind<F>) {
         self.0 *= rhs.0;
     }
 }
 
-impl<F: FieldExt> AddAssign<F> for Blind<F> {
+impl<F: Field> AddAssign<F> for Blind<F> {
     fn add_assign(&mut self, rhs: F) {
         self.0 += rhs;
     }
 }
 
-impl<F: FieldExt> MulAssign<F> for Blind<F> {
+impl<F: Field> MulAssign<F> for Blind<F> {
     fn mul_assign(&mut self, rhs: F) {
         self.0 *= rhs;
     }

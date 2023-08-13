@@ -49,17 +49,18 @@ harness = false
 
 [dependencies]
 backtrace = { version = "0.3", optional = true }
-rayon = "1.5.1"
+rayon = "1.7"
 crossbeam = "0.8"
-ff = "0.12"
-group = "0.12"
-halo2curves = { path = "../arithmetic/curves" }
+ff = "0.13"
+group = "0.13"
+pairing = "0.23"
+halo2curves = { git = "https://github.com/axiom-crypto/halo2curves.git", branch = "main", features = ["bn256-table", "derive_serde"] } # these are already default features in axiom fork, but we add just in case
 rand = "0.8"
 rand_core = { version = "0.6", default-features = false}
 tracing = "0.1"
 blake2b_simd = "1"
-rustc-hash = "1.1.0"
-sha3 = "0.9.1"
+rustc-hash = "1.1"
+sha3 = "0.10"
 ark-std = { version = "0.3.0", features = ["print-trace"], optional = true }
 
 # Developer tooling dependencies
@@ -78,12 +79,15 @@ rand_chacha = "0.3.1"
 getrandom = { version = "0.2", features = ["js"] }
 
 [features]
-default = ["batch"]
+default = ["batch", "circuit-params"]
 dev-graph = ["plotters", "tabbycat"]
 gadget-traces = ["backtrace"]
+thread-safe-region = []
 sanity-checks = []
 batch = ["rand/getrandom"]
 profile = ["dep:ark-std"]
+asm = ["halo2curves/asm", "halo2curves/prefetch"]
+circuit-params = []
 
 [lib]
 bench = false

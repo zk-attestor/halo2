@@ -6,12 +6,12 @@ use crate::{
     poly::commitment::MSM,
 };
 use group::{Curve, Group};
-use halo2curves::pairing::{Engine, MillerLoopResult, MultiMillerLoop};
+use pairing::{Engine, MillerLoopResult, MultiMillerLoop};
 
 /// A multiscalar multiplication in the polynomial commitment scheme
 #[derive(Clone, Default, Debug)]
 pub struct MSMKZG<E: Engine> {
-    pub(crate) scalars: Vec<E::Scalar>,
+    pub(crate) scalars: Vec<E::Fr>,
     pub(crate) bases: Vec<E::G1>,
 }
 
@@ -25,9 +25,9 @@ impl<E: Engine> MSMKZG<E> {
     }
 
     /// Prepares all scalars in the MSM to linear combination
-    pub fn combine_with_base(&mut self, base: E::Scalar) {
+    pub fn combine_with_base(&mut self, base: E::Fr) {
         use ff::Field;
-        let mut acc = E::Scalar::one();
+        let mut acc = E::Fr::ONE;
         if !self.scalars.is_empty() {
             for scalar in self.scalars.iter_mut().rev() {
                 *scalar *= &acc;
@@ -37,8 +37,12 @@ impl<E: Engine> MSMKZG<E> {
     }
 }
 
-impl<E: Engine + Debug> MSM<E::G1Affine> for MSMKZG<E> {
-    fn append_term(&mut self, scalar: E::Scalar, point: E::G1) {
+impl<E> MSM<E::G1Affine> for MSMKZG<E>
+where
+    E: Engine + Debug,
+    E::G1Affine: CurveAffine<ScalarExt = E::Fr, CurveExt = E::G1>,
+{
+    fn append_term(&mut self, scalar: E::Fr, point: E::G1) {
         self.scalars.push(scalar);
         self.bases.push(point);
     }
@@ -48,7 +52,7 @@ impl<E: Engine + Debug> MSM<E::G1Affine> for MSMKZG<E> {
         self.bases.extend(other.bases().iter());
     }
 
-    fn scale(&mut self, factor: E::Scalar) {
+    fn scale(&mut self, factor: E::Fr) {
         if !self.scalars.is_empty() {
             parallelize(&mut self.scalars, |scalars, _| {
                 for other_scalar in scalars {
@@ -73,7 +77,7 @@ impl<E: Engine + Debug> MSM<E::G1Affine> for MSMKZG<E> {
         self.bases.clone()
     }
 
-    fn scalars(&self) -> Vec<E::Scalar> {
+    fn scalars(&self) -> Vec<E::Fr> {
         self.scalars.clone()
     }
 }
@@ -134,9 +138,14 @@ impl<'a, E: MultiMillerLoop + Debug> DualMSM<'a, E> {
             right: MSMKZG::new(),
         }
     }
+}
 
+impl<'a, E: MultiMillerLoop + Debug> DualMSM<'a, E>
+where
+    E::G1Affine: CurveAffine<ScalarExt = E::Fr, CurveExt = E::G1>,
+{
     /// Scale all scalars in the MSM by some scaling factor
-    pub fn scale(&mut self, e: E::Scalar) {
+    pub fn scale(&mut self, e: E::Fr) {
         self.left.scale(e);
         self.right.scale(e);
     }

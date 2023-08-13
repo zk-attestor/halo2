@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt::{self, Debug};
 
 use group::ff::Field;
-use halo2curves::FieldExt;
 
 use super::metadata::{DebugColumn, DebugVirtualCell};
 use super::MockProver;
@@ -12,11 +11,9 @@ use super::{
     Region,
 };
 use crate::dev::metadata::Constraint;
-use crate::dev::{AdviceCellValue, CellValue};
-use crate::plonk::Assigned;
 use crate::{
-    dev::{Instance, Value},
-    plonk::{Any, Column, ConstraintSystem, Expression, Gate},
+    dev::{AdviceCellValue, CellValue, Instance, Value},
+    plonk::{Any, Assigned, Column, ConstraintSystem, Expression, Gate},
     poly::Rotation,
 };
 
@@ -73,9 +70,9 @@ impl FailureLocation {
                 expression.evaluate(
                     &|_| vec![],
                     &|_| panic!("virtual selectors are removed during optimization"),
-                    &|query| vec![cs.fixed_queries[query.index].0.into()],
-                    &|query| vec![cs.advice_queries[query.index].0.into()],
-                    &|query| vec![cs.instance_queries[query.index].0.into()],
+                    &|query| vec![cs.fixed_queries[query.index.unwrap()].0.into()],
+                    &|query| vec![cs.advice_queries[query.index.unwrap()].0.into()],
+                    &|query| vec![cs.instance_queries[query.index.unwrap()].0.into()],
                     &|_| vec![],
                     &|a| a,
                     &|mut a, mut b| {
@@ -162,11 +159,33 @@ pub enum VerifyFailure {
     /// A lookup input did not exist in its corresponding table.
     Lookup {
         /// The name of the lookup that is not satisfied.
-        name: &'static str,
+        name: String,
         /// The index of the lookup that is not satisfied. These indices are assigned in
         /// the order in which `ConstraintSystem::lookup` is called during
         /// `Circuit::configure`.
         lookup_index: usize,
+        /// The location at which the lookup is not satisfied.
+        ///
+        /// `FailureLocation::InRegion` is most common, and may be due to the intentional
+        /// use of a lookup (if its inputs are conditional on a complex selector), or an
+        /// unintentional lookup constraint that overlaps the region (indicating that the
+        /// lookup's inputs should be made conditional).
+        ///
+        /// `FailureLocation::OutsideRegion` is uncommon, and could mean that:
+        /// - The input expressions do not correctly constrain a default value that exists
+        ///   in the table when the lookup is not being used.
+        /// - The input expressions use a column queried at a non-zero `Rotation`, and the
+        ///   lookup is active on a row adjacent to an unrelated region.
+        location: FailureLocation,
+    },
+    /// A shuffle input did not exist in its corresponding map.
+    Shuffle {
+        /// The name of the lookup that is not satisfied.
+        name: String,
+        /// The index of the lookup that is not satisfied. These indices are assigned in
+        /// the order in which `ConstraintSystem::lookup` is called during
+        /// `Circuit::configure`.
+        shuffle_index: usize,
         /// The location at which the lookup is not satisfied.
         ///
         /// `FailureLocation::InRegion` is most common, and may be due to the intentional
@@ -244,6 +263,17 @@ impl fmt::Display for VerifyFailure {
                     name, lookup_index, location
                 )
             }
+            Self::Shuffle {
+                name,
+                shuffle_index,
+                location,
+            } => {
+                write!(
+                    f,
+                    "Shuffle {}(index: {}) is not satisfied {}",
+                    name, shuffle_index, location
+                )
+            }
             Self::Permutation { column, location } => {
                 write!(
                     f,
@@ -280,7 +310,7 @@ impl Debug for VerifyFailure {
                 };
 
                 let debug = ConstraintCaseDebug {
-                    constraint: *constraint,
+                    constraint: constraint.clone(),
                     location: location.clone(),
                     cell_values: cell_values
                         .iter()
@@ -446,7 +476,7 @@ fn render_constraint_not_satisfied<F: Field>(
 ///     |   x0 = 0x5
 ///     |   x1 = 1
 /// ```
-fn render_lookup<F: FieldExt>(
+fn render_lookup<F: Field>(
     prover: &MockProver<F>,
     name: &str,
     lookup_index: usize,
@@ -512,7 +542,7 @@ fn render_lookup<F: FieldExt>(
         )
     });
 
-    fn cell_value<'a, F: FieldExt, Q: Into<AnyQuery> + Copy>(
+    fn cell_value<'a, F: Field, Q: Into<AnyQuery> + Copy>(
         load: impl Fn(Q) -> Value<F> + 'a,
     ) -> impl Fn(Q) -> BTreeMap<metadata::VirtualCell, String> + 'a {
         move |query| {
@@ -555,10 +585,7 @@ fn render_lookup<F: FieldExt>(
             advice
                 .iter()
                 .map(|rc| match rc {
-                    AdviceCellValue::Assigned(a) => CellValue::Assigned(match a.as_ref() {
-                        Assigned::Trivial(a) => *a,
-                        _ => unreachable!(),
-                    }),
+                    AdviceCellValue::Assigned(a) => CellValue::Assigned(a.evaluate()),
                     AdviceCellValue::Poison(i) => CellValue::Poison(*i),
                 })
                 .collect::<Vec<_>>()
@@ -630,9 +657,187 @@ fn render_lookup<F: FieldExt>(
     }
 }
 
+fn render_shuffle<F: Field>(
+    prover: &MockProver<F>,
+    name: &str,
+    shuffle_index: usize,
+    location: &FailureLocation,
+) {
+    let n = prover.n as i32;
+    let cs = &prover.cs;
+    let shuffle = &cs.shuffles[shuffle_index];
+
+    // Get the absolute row on which the shuffle's inputs are being queried, so we can
+    // fetch the input values.
+    let row = match location {
+        FailureLocation::InRegion { region, offset } => {
+            prover.regions[region.index].rows.unwrap().0 + offset
+        }
+        FailureLocation::OutsideRegion { row } => *row,
+    } as i32;
+
+    let shuffle_columns = shuffle.shuffle_expressions.iter().map(|expr| {
+        expr.evaluate(
+            &|f| format! {"Const: {:#?}", f},
+            &|s| format! {"S{}", s.0},
+            &|query| {
+                format!(
+                    "{:?}",
+                    prover
+                        .cs
+                        .general_column_annotations
+                        .get(&metadata::Column::from((Any::Fixed, query.column_index)))
+                        .cloned()
+                        .unwrap_or_else(|| format!("F{}", query.column_index()))
+                )
+            },
+            &|query| {
+                format!(
+                    "{:?}",
+                    prover
+                        .cs
+                        .general_column_annotations
+                        .get(&metadata::Column::from((Any::advice(), query.column_index)))
+                        .cloned()
+                        .unwrap_or_else(|| format!("A{}", query.column_index()))
+                )
+            },
+            &|query| {
+                format!(
+                    "{:?}",
+                    prover
+                        .cs
+                        .general_column_annotations
+                        .get(&metadata::Column::from((Any::Instance, query.column_index)))
+                        .cloned()
+                        .unwrap_or_else(|| format!("I{}", query.column_index()))
+                )
+            },
+            &|challenge| format! {"C{}", challenge.index()},
+            &|query| format! {"-{}", query},
+            &|a, b| format! {"{} + {}", a,b},
+            &|a, b| format! {"{} * {}", a,b},
+            &|a, b| format! {"{} * {:?}", a, b},
+        )
+    });
+
+    fn cell_value<'a, F: Field, Q: Into<AnyQuery> + Copy>(
+        load: impl Fn(Q) -> Value<F> + 'a,
+    ) -> impl Fn(Q) -> BTreeMap<metadata::VirtualCell, String> + 'a {
+        move |query| {
+            let AnyQuery {
+                column_type,
+                column_index,
+                rotation,
+                ..
+            } = query.into();
+            Some((
+                ((column_type, column_index).into(), rotation.0).into(),
+                match load(query) {
+                    Value::Real(v) => util::format_value(v),
+                    Value::Poison => unreachable!(),
+                },
+            ))
+            .into_iter()
+            .collect()
+        }
+    }
+
+    eprintln!("error: input does not exist in shuffle");
+    eprint!("  (");
+    for i in 0..shuffle.input_expressions.len() {
+        eprint!("{}L{}", if i == 0 { "" } else { ", " }, i);
+    }
+    eprint!(") <-> (");
+    for (i, column) in shuffle_columns.enumerate() {
+        eprint!("{}{}", if i == 0 { "" } else { ", " }, column);
+    }
+    eprintln!(")");
+
+    eprintln!();
+    eprintln!("  Shuffle '{}' inputs:", name);
+    let advice = prover
+        .advice
+        .iter()
+        .map(|advice| {
+            advice
+                .iter()
+                .map(|rc| match rc {
+                    AdviceCellValue::Assigned(a) => CellValue::Assigned(a.evaluate()),
+                    AdviceCellValue::Poison(i) => CellValue::Poison(*i),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    for (i, input) in shuffle.input_expressions.iter().enumerate() {
+        // Fetch the cell values (since we don't store them in VerifyFailure::Shuffle).
+        let cell_values = input.evaluate(
+            &|_| BTreeMap::default(),
+            &|_| panic!("virtual selectors are removed during optimization"),
+            &cell_value(&util::load(n, row, &cs.fixed_queries, &prover.fixed)),
+            &cell_value(&util::load(n, row, &cs.advice_queries, &advice)),
+            &cell_value(&util::load_instance(
+                n,
+                row,
+                &cs.instance_queries,
+                &prover.instance,
+            )),
+            &|_| BTreeMap::default(),
+            &|a| a,
+            &|mut a, mut b| {
+                a.append(&mut b);
+                a
+            },
+            &|mut a, mut b| {
+                a.append(&mut b);
+                a
+            },
+            &|a, _| a,
+        );
+
+        // Collect the necessary rendering information:
+        // - The columns involved in this constraint.
+        // - How many cells are in each column.
+        // - The grid of cell values, indexed by rotation.
+        let mut columns = BTreeMap::<metadata::Column, usize>::default();
+        let mut layout = BTreeMap::<i32, BTreeMap<metadata::Column, _>>::default();
+        for (i, (cell, _)) in cell_values.iter().enumerate() {
+            *columns.entry(cell.column).or_default() += 1;
+            layout
+                .entry(cell.rotation)
+                .or_default()
+                .entry(cell.column)
+                .or_insert(format!("x{}", i));
+        }
+
+        if i != 0 {
+            eprintln!();
+        }
+        eprintln!(
+            "    Sh{} = {}",
+            i,
+            emitter::expression_to_string(input, &layout)
+        );
+        eprintln!("    ^");
+
+        emitter::render_cell_layout("    | ", location, &columns, &layout, |_, rotation| {
+            if rotation == 0 {
+                eprint!(" <--{{ Shuffle '{}' inputs queried here", name);
+            }
+        });
+
+        // Print the map from local variables to assigned values.
+        eprintln!("    |");
+        eprintln!("    | Assigned cell values:");
+        for (i, (_, value)) in cell_values.iter().enumerate() {
+            eprintln!("    |   x{} = {}", i, value);
+        }
+    }
+}
+
 impl VerifyFailure {
     /// Emits this failure in pretty-printed format to stderr.
-    pub(super) fn emit<F: FieldExt>(&self, prover: &MockProver<F>) {
+    pub(super) fn emit<F: Field>(&self, prover: &MockProver<F>) {
         match self {
             Self::CellNotAssigned {
                 gate,
@@ -660,6 +865,11 @@ impl VerifyFailure {
                 lookup_index,
                 location,
             } => render_lookup(prover, name, *lookup_index, location),
+            Self::Shuffle {
+                name,
+                shuffle_index,
+                location,
+            } => render_shuffle(prover, name, *shuffle_index, location),
             _ => eprintln!("{}", self),
         }
     }

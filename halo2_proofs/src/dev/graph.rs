@@ -22,6 +22,9 @@ pub fn circuit_dot_graph<F: Field, ConcreteCircuit: Circuit<F>>(
 ) -> String {
     // Collect the graph details.
     let mut cs = ConstraintSystem::default();
+    #[cfg(feature = "circuit-params")]
+    let config = ConcreteCircuit::configure_with_params(&mut cs, circuit.params());
+    #[cfg(not(feature = "circuit-params"))]
     let config = ConcreteCircuit::configure(&mut cs);
     let mut graph = Graph::default();
     ConcreteCircuit::FloorPlanner::synthesize(&mut graph, circuit, config, cs.constants).unwrap();
@@ -76,6 +79,8 @@ struct Graph {
     /// The current namespace, as indices into `nodes`.
     current_namespace: Vec<usize>,
 }
+
+impl crate::dev::SyncDeps for Graph {}
 
 impl<F: Field> Assignment<F> for Graph {
     fn enter_region<NR, N>(&mut self, _: N)

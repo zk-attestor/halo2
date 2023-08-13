@@ -15,6 +15,17 @@ pub struct Column {
     pub(super) index: usize,
 }
 
+impl Column {
+    /// Return the column type.
+    pub fn column_type(&self) -> Any {
+        self.column_type
+    }
+    /// Return the column index.
+    pub fn index(&self) -> usize {
+        self.index
+    }
+}
+
 impl fmt::Display for Column {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Column('{:?}', {})", self.column_type, self.index)
@@ -75,7 +86,7 @@ impl fmt::Display for DebugColumn {
 /// within a custom gate.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VirtualCell {
-    name: &'static str,
+    name: String,
     pub(super) column: Column,
     pub(super) rotation: i32,
 }
@@ -83,17 +94,17 @@ pub struct VirtualCell {
 impl From<(Column, i32)> for VirtualCell {
     fn from((column, rotation): (Column, i32)) -> Self {
         VirtualCell {
-            name: "",
+            name: "".to_string(),
             column,
             rotation,
         }
     }
 }
 
-impl From<(&'static str, Column, i32)> for VirtualCell {
-    fn from((name, column, rotation): (&'static str, Column, i32)) -> Self {
+impl<S: AsRef<str>> From<(S, Column, i32)> for VirtualCell {
+    fn from((name, column, rotation): (S, Column, i32)) -> Self {
         VirtualCell {
-            name,
+            name: name.as_ref().to_string(),
             column,
             rotation,
         }
@@ -103,7 +114,7 @@ impl From<(&'static str, Column, i32)> for VirtualCell {
 impl From<plonk::VirtualCell> for VirtualCell {
     fn from(c: plonk::VirtualCell) -> Self {
         VirtualCell {
-            name: "",
+            name: "".to_string(),
             column: c.column.into(),
             rotation: c.rotation.0,
         }
@@ -114,7 +125,7 @@ impl fmt::Display for VirtualCell {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}@{}", self.column, self.rotation)?;
         if !self.name.is_empty() {
-            write!(f, "({})", self.name)?;
+            write!(f, "({})", self.name.as_str())?;
         }
         Ok(())
     }
@@ -123,7 +134,7 @@ impl fmt::Display for VirtualCell {
 /// Helper structure used to be able to inject Column annotations inside a `Display` or `Debug` call.
 #[derive(Clone, Debug)]
 pub(super) struct DebugVirtualCell {
-    name: &'static str,
+    name: String,
     column: DebugColumn,
     rotation: i32,
 }
@@ -131,7 +142,7 @@ pub(super) struct DebugVirtualCell {
 impl From<(&VirtualCell, Option<&HashMap<Column, String>>)> for DebugVirtualCell {
     fn from(info: (&VirtualCell, Option<&HashMap<Column, String>>)) -> Self {
         DebugVirtualCell {
-            name: info.0.name,
+            name: info.0.name.clone(),
             column: DebugColumn::from((info.0.column, info.1)),
             rotation: info.0.rotation,
         }
@@ -149,30 +160,33 @@ impl fmt::Display for DebugVirtualCell {
 }
 
 /// Metadata about a configured gate within a circuit.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Gate {
     /// The index of the active gate. These indices are assigned in the order in which
     /// `ConstraintSystem::create_gate` is called during `Circuit::configure`.
     pub(super) index: usize,
     /// The name of the active gate. These are specified by the gate creator (such as
     /// a chip implementation), and is not enforced to be unique.
-    pub(super) name: &'static str,
+    pub(super) name: String,
 }
 
 impl fmt::Display for Gate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Gate {} ('{}')", self.index, self.name)
+        write!(f, "Gate {} ('{}')", self.index, self.name.as_str())
     }
 }
 
-impl From<(usize, &'static str)> for Gate {
-    fn from((index, name): (usize, &'static str)) -> Self {
-        Gate { index, name }
+impl<S: AsRef<str>> From<(usize, S)> for Gate {
+    fn from((index, name): (usize, S)) -> Self {
+        Gate {
+            index,
+            name: name.as_ref().to_string(),
+        }
     }
 }
 
 /// Metadata about a configured constraint within a circuit.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Constraint {
     /// The gate containing the constraint.
     pub(super) gate: Gate,
@@ -182,7 +196,7 @@ pub struct Constraint {
     pub(super) index: usize,
     /// The name of the constraint. This is specified by the gate creator (such as a chip
     /// implementation), and is not enforced to be unique.
-    pub(super) name: &'static str,
+    pub(super) name: String,
 }
 
 impl fmt::Display for Constraint {
@@ -194,7 +208,7 @@ impl fmt::Display for Constraint {
             if self.name.is_empty() {
                 String::new()
             } else {
-                format!(" ('{}')", self.name)
+                format!(" ('{}')", self.name.as_str())
             },
             self.gate.index,
             self.gate.name,
@@ -202,9 +216,13 @@ impl fmt::Display for Constraint {
     }
 }
 
-impl From<(Gate, usize, &'static str)> for Constraint {
-    fn from((gate, index, name): (Gate, usize, &'static str)) -> Self {
-        Constraint { gate, index, name }
+impl<S: AsRef<str>> From<(Gate, usize, S)> for Constraint {
+    fn from((gate, index, name): (Gate, usize, S)) -> Self {
+        Constraint {
+            gate,
+            index,
+            name: name.as_ref().to_string(),
+        }
     }
 }
 
@@ -250,7 +268,7 @@ impl Debug for Region {
 
 impl fmt::Display for Region {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Region {} ('{}')", self.index, self.name)
+        write!(f, "Region {} ('{}')", self.index, self.name.as_str())
     }
 }
 

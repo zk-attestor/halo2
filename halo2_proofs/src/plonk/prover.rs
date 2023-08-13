@@ -1,6 +1,6 @@
 #[cfg(feature = "profile")]
 use ark_std::{end_timer, start_timer};
-use ff::Field;
+use ff::{Field, FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
 use group::Curve;
 use halo2curves::CurveExt;
 use rand_core::RngCore;
@@ -19,17 +19,12 @@ use super::{
         Advice, Any, Assignment, Challenge, Circuit, Column, ConstraintSystem, FirstPhase, Fixed,
         FloorPlanner, Instance, Selector,
     },
-    lookup, permutation, vanishing, ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX,
-    ChallengeY, Error, Expression, ProvingKey,
+    lookup, permutation, shuffle, vanishing, ChallengeBeta, ChallengeGamma, ChallengeTheta,
+    ChallengeX, ChallengeY, Error, Expression, ProvingKey,
 };
-use crate::arithmetic::MULTIEXP_TOTAL_TIME;
-use crate::plonk::{start_measure, stop_measure};
-use crate::poly::batch_invert_assigned_ref;
-use crate::poly::commitment::ParamsProver;
-use crate::poly::FFT_TOTAL_TIME;
-use crate::transcript::Transcript;
+use crate::circuit::layouter::SyncDeps;
 use crate::{
-    arithmetic::{eval_polynomial, CurveAffine, FieldExt},
+    arithmetic::{eval_polynomial, CurveAffine},
     circuit::Value,
     plonk::Assigned,
     poly::{
@@ -66,14 +61,8 @@ pub fn create_proof<
     mut transcript: &'a mut T,
 ) -> Result<(), Error>
 where
-    Scheme::Scalar: Hash,
+    Scheme::Scalar: Hash + WithSmallOrderMulGroup<3>,
 {
-    #[allow(unsafe_code)]
-    unsafe {
-        FFT_TOTAL_TIME = 0;
-        MULTIEXP_TOTAL_TIME = 0;
-    }
-
     for instance in instances.iter() {
         if instance.len() != pk.vk.cs.num_instance_columns {
             return Err(Error::InvalidInstances);
@@ -85,6 +74,9 @@ where
 
     let domain = &pk.vk.domain;
     let mut meta = ConstraintSystem::default();
+    #[cfg(feature = "circuit-params")]
+    let config = ConcreteCircuit::configure_with_params(&mut meta, circuits[0].params());
+    #[cfg(not(feature = "circuit-params"))]
     let config = ConcreteCircuit::configure(&mut meta);
 
     // Selector optimizations cannot be applied here; use the ConstraintSystem
@@ -160,10 +152,23 @@ where
         _marker: PhantomData<(P, E)>,
     }
 
+    impl<'params, 'a, 'b, F, Scheme, P, C, E, R, T> SyncDeps
+        for WitnessCollection<'params, 'a, 'b, Scheme, P, C, E, R, T>
+    where
+        F: Field,
+        Scheme: CommitmentScheme<Curve = C>,
+        P: Prover<'params, Scheme>,
+        C: CurveAffine<ScalarExt = F>,
+        E: EncodedChallenge<C>,
+        R: RngCore,
+        T: TranscriptWrite<C, E>,
+    {
+    }
+
     impl<'params, 'a, 'b, F, Scheme, P, C, E, R, T> Assignment<F>
         for WitnessCollection<'params, 'a, 'b, Scheme, P, C, E, R, T>
     where
-        F: FieldExt,
+        F: Field,
         Scheme: CommitmentScheme<Curve = C>,
         P: Prover<'params, Scheme>,
         C: CurveAffine<ScalarExt = F>,
@@ -325,12 +330,12 @@ where
                 }
             }
             // Commit the advice columns in the current phase
-            let mut advice_values = batch_invert_assigned_ref::<F>(
+            let mut advice_values = batch_invert_assigned(
                 self.column_indices
                     .get(phase)
                     .expect("The API only supports 3 phases right now")
                     .iter()
-                    .map(|column_index| &self.advice[*column_index])
+                    .map(|column_index| &self.advice[*column_index][..])
                     .collect(),
             );
             // Add blinding factors to advice columns
@@ -552,6 +557,40 @@ where
     end_timer!(phase3b_time);
 
     #[cfg(feature = "profile")]
+    let shuffle_time = start_timer!(|| "Shuffles");
+    let shuffles: Vec<Vec<shuffle::prover::Committed<Scheme::Curve>>> = instance
+        .iter()
+        .zip(advice.iter())
+        .map(|(instance, advice)| -> Vec<_> {
+            // Compress expressions for each shuffle
+            pk.vk
+                .cs
+                .shuffles
+                .iter()
+                .map(|shuffle| {
+                    shuffle
+                        .commit_product(
+                            pk,
+                            params,
+                            domain,
+                            theta,
+                            gamma,
+                            &advice.advice_polys,
+                            &pk.fixed_values,
+                            &instance.instance_values,
+                            &challenges,
+                            &mut rng,
+                            transcript,
+                        )
+                        .unwrap()
+                })
+                .collect()
+        })
+        .collect();
+    #[cfg(feature = "profile")]
+    end_timer!(shuffle_time);
+
+    #[cfg(feature = "profile")]
     let vanishing_time = start_timer!(|| "Commit to vanishing argument's random poly");
     // Commit to the vanishing argument's random polynomial for blinding h(x_3)
     let vanishing = vanishing::Argument::commit(params, domain, &mut rng, transcript).unwrap();
@@ -604,6 +643,7 @@ where
         *gamma,
         *theta,
         &lookups,
+        &shuffles,
         &permutations,
     );
     #[cfg(feature = "profile")]
@@ -701,12 +741,24 @@ where
     #[cfg(feature = "profile")]
     end_timer!(eval_time);
 
+    // Evaluate the shuffles, if any, at omega^i x.
+    let shuffles: Vec<Vec<shuffle::prover::Evaluated<Scheme::Curve>>> = shuffles
+        .into_iter()
+        .map(|shuffles| -> Result<Vec<_>, _> {
+            shuffles
+                .into_iter()
+                .map(|p| p.evaluate(pk, x, transcript))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     let instances = instance
         .iter()
         .zip(advice.iter())
         .zip(permutations.iter())
         .zip(lookups.iter())
-        .flat_map(|(((instance, advice), permutation), lookups)| {
+        .zip(shuffles.iter())
+        .flat_map(|((((instance, advice), permutation), lookups), shuffles)| {
             iter::empty()
                 .chain(
                     P::QUERY_INSTANCE
@@ -733,6 +785,7 @@ where
                 )
                 .chain(permutation.open(pk, x))
                 .chain(lookups.iter().flat_map(move |p| p.open(pk, x)).into_iter())
+                .chain(shuffles.iter().flat_map(move |p| p.open(pk, x)).into_iter())
         })
         .chain(
             pk.vk

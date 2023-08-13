@@ -6,7 +6,6 @@ use super::ChallengeY;
 use super::{construct_intermediate_sets, ChallengeU, ChallengeV};
 use crate::arithmetic::{
     eval_polynomial, evaluate_vanishing_polynomial, lagrange_interpolate, powers, CurveAffine,
-    FieldExt,
 };
 use crate::helpers::SerdeCurveAffine;
 use crate::poly::commitment::Verifier;
@@ -23,9 +22,9 @@ use crate::poly::{
     Error,
 };
 use crate::transcript::{EncodedChallenge, TranscriptRead};
-use ff::Field;
+use ff::{Field, PrimeField};
 use group::Group;
-use halo2curves::pairing::{Engine, MillerLoopResult, MultiMillerLoop};
+use pairing::{Engine, MillerLoopResult, MultiMillerLoop};
 use rand_core::OsRng;
 use std::ops::MulAssign;
 
@@ -38,9 +37,9 @@ pub struct VerifierSHPLONK<'params, E: Engine> {
 impl<'params, E> Verifier<'params, KZGCommitmentScheme<E>> for VerifierSHPLONK<'params, E>
 where
     E: MultiMillerLoop + Debug,
-    E::G1Affine: SerdeCurveAffine,
+    E::G1Affine: SerdeCurveAffine<ScalarExt = E::Fr, CurveExt = E::G1>,
     E::G2Affine: SerdeCurveAffine,
-    E::Scalar: Hash,
+    E::Fr: Hash,
 {
     type Guard = GuardKZG<'params, E>;
     type MSMAccumulator = DualMSM<'params, E>;
@@ -79,10 +78,10 @@ where
         let u: ChallengeU<_> = transcript.squeeze_challenge_scalar();
         let h2 = transcript.read_point().map_err(|_| Error::SamplingError)?;
 
-        let (mut z_0_diff_inverse, mut z_0) = (E::Scalar::zero(), E::Scalar::zero());
-        let (mut outer_msm, mut r_outer_acc) = (PreMSM::<E>::new(), E::Scalar::zero());
+        let (mut z_0_diff_inverse, mut z_0) = (E::Fr::ZERO, E::Fr::ZERO);
+        let (mut outer_msm, mut r_outer_acc) = (PreMSM::<E>::new(), E::Fr::ZERO);
         for (i, (rotation_set, power_of_v)) in rotation_sets.iter().zip(powers(*v)).enumerate() {
-            let diffs: Vec<E::Scalar> = super_point_set
+            let diffs: Vec<E::Fr> = super_point_set
                 .iter()
                 .filter(|point| !rotation_set.points.contains(point))
                 .copied()
@@ -93,7 +92,7 @@ where
             if i == 0 {
                 z_0 = evaluate_vanishing_polynomial(&rotation_set.points[..], *u);
                 z_0_diff_inverse = z_diff_i.invert().unwrap();
-                z_diff_i = E::Scalar::one();
+                z_diff_i = E::Fr::ONE;
             } else {
                 z_diff_i.mul_assign(z_0_diff_inverse);
             }
@@ -139,9 +138,7 @@ where
         outer_msm.append_term(-z_0, h1.into());
         outer_msm.append_term(*u, h2.into());
 
-        msm_accumulator
-            .left
-            .append_term(E::Scalar::one(), h2.into());
+        msm_accumulator.left.append_term(E::Fr::ONE, h2.into());
 
         msm_accumulator.right.add_msm(&outer_msm);
 
