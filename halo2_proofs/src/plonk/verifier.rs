@@ -325,45 +325,39 @@ where
                             gamma,
                             x,
                         ))
-                        .chain(
-                            lookups
-                                .iter()
-                                .zip(vk.cs.lookups.iter())
-                                .flat_map(move |(p, argument)| {
-                                    p.expressions(
-                                        l_0,
-                                        l_last,
-                                        l_blind,
-                                        argument,
-                                        theta,
-                                        beta,
-                                        gamma,
-                                        advice_evals,
-                                        fixed_evals,
-                                        instance_evals,
-                                        challenges,
-                                    )
-                                }),
-                        )
-                        .chain(
-                            shuffles
-                                .iter()
-                                .zip(vk.cs.shuffles.iter())
-                                .flat_map(move |(p, argument)| {
-                                    p.expressions(
-                                        l_0,
-                                        l_last,
-                                        l_blind,
-                                        argument,
-                                        theta,
-                                        gamma,
-                                        advice_evals,
-                                        fixed_evals,
-                                        instance_evals,
-                                        challenges,
-                                    )
-                                }),
-                        )
+                        .chain(lookups.iter().zip(vk.cs.lookups.iter()).flat_map(
+                            move |(p, argument)| {
+                                p.expressions(
+                                    l_0,
+                                    l_last,
+                                    l_blind,
+                                    argument,
+                                    theta,
+                                    beta,
+                                    gamma,
+                                    advice_evals,
+                                    fixed_evals,
+                                    instance_evals,
+                                    challenges,
+                                )
+                            },
+                        ))
+                        .chain(shuffles.iter().zip(vk.cs.shuffles.iter()).flat_map(
+                            move |(p, argument)| {
+                                p.expressions(
+                                    l_0,
+                                    l_last,
+                                    l_blind,
+                                    argument,
+                                    theta,
+                                    gamma,
+                                    advice_evals,
+                                    fixed_evals,
+                                    instance_evals,
+                                    challenges,
+                                )
+                            },
+                        ))
                 },
             );
 
@@ -417,16 +411,8 @@ where
                         },
                     ))
                     .chain(permutation.queries(vk, x))
-                    .chain(
-                        lookups
-                            .iter()
-                            .flat_map(move |p| p.queries(vk, x)),
-                    )
-                    .chain(
-                        shuffles
-                            .iter()
-                            .flat_map(move |p| p.queries(vk, x)),
-                    )
+                    .chain(lookups.iter().flat_map(move |p| p.queries(vk, x)))
+                    .chain(shuffles.iter().flat_map(move |p| p.queries(vk, x)))
             },
         )
         .chain(
