@@ -108,7 +108,7 @@ fn plonk_api() {
             layouter.assign_region(
                 || "raw_multiply",
                 |mut region| {
-                    let mut value = None;
+                    let value;
                     let lhs = region.assign_advice(self.config.a, 0, {
                         value = Some(f());
                         value.unwrap().map(|v| v.0)
@@ -145,7 +145,7 @@ fn plonk_api() {
             layouter.assign_region(
                 || "raw_add",
                 |mut region| {
-                    let mut value = None;
+                    let value;
                     let lhs = region.assign_advice(self.config.a, 0, {
                         value = Some(f());
                         value.unwrap().map(|v| v.0)
@@ -475,7 +475,7 @@ fn plonk_api() {
         Scheme::Scalar: Ord + WithSmallOrderMulGroup<3> + FromUniformBytes<64>,
     {
         let (_, instance, _) = common!(Scheme);
-        let pubinputs = vec![instance];
+        let pubinputs = [instance];
 
         let mut transcript = T::init(proof);
 

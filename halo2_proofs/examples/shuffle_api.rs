@@ -1,6 +1,6 @@
 use std::{hash::Hash, marker::PhantomData, vec};
 
-use ff::FromUniformBytes;
+use ff::{FromUniformBytes, WithSmallOrderMulGroup};
 use halo2_proofs::{
     arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -8,21 +8,21 @@ use halo2_proofs::{
         create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Circuit, Column,
         ConstraintSystem, Error, Fixed, Selector,
     },
-    poly::Rotation,
     poly::{
         commitment::ParamsProver,
-        ipa::{
-            commitment::{IPACommitmentScheme, ParamsIPA},
-            multiopen::{ProverIPA, VerifierIPA},
-            strategy::AccumulatorStrategy,
+        kzg::{
+            commitment::{KZGCommitmentScheme, ParamsKZG},
+            multiopen::{ProverSHPLONK, VerifierSHPLONK},
+            strategy::SingleStrategy,
         },
-        VerificationStrategy,
+        Rotation,
     },
     transcript::{
         Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
 };
-use halo2curves::{grumpkin::G1Affine, pasta::EqAffine, CurveAffine};
+use halo2curves::{bn256::Bn256, serde::SerdeObject, CurveAffine};
+use pairing::MultiMillerLoop;
 use rand_core::OsRng;
 
 struct ShuffleChip<F: Field> {
@@ -93,7 +93,7 @@ impl<F: Field> Circuit<F> for MyCircuit<F> {
     type Config = ShuffleConfig;
     type FloorPlanner = SimpleFloorPlanner;
     #[cfg(feature = "circuit-params")]
-    type Params = ();
+    fn params(&self) -> Self::Params {}
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -114,7 +114,7 @@ impl<F: Field> Circuit<F> for MyCircuit<F> {
     ) -> Result<(), Error> {
         let ch = ShuffleChip::<F>::construct(config);
         layouter.assign_region(
-            || "load inputs",
+            || "load inputs & shuffles",
             |mut region| {
                 for (i, (input_0, input_1)) in
                     self.input_0.iter().zip(self.input_1.iter()).enumerate()
@@ -123,12 +123,7 @@ impl<F: Field> Circuit<F> for MyCircuit<F> {
                     region.assign_fixed(ch.config.input_1, i, *input_1);
                     ch.config.s_input.enable(&mut region, i)?;
                 }
-                Ok(())
-            },
-        )?;
-        layouter.assign_region(
-            || "load shuffles",
-            |mut region| {
+
                 for (i, (shuffle_0, shuffle_1)) in
                     self.shuffle_0.iter().zip(self.shuffle_1.iter()).enumerate()
                 {
@@ -143,18 +138,20 @@ impl<F: Field> Circuit<F> for MyCircuit<F> {
     }
 }
 
-fn test_prover<C: CurveAffine>(k: u32, circuit: MyCircuit<C::Scalar>, expected: bool)
+fn test_prover<E: MultiMillerLoop>(k: u32, circuit: MyCircuit<E::Fr>, expected: bool)
 where
-    C::Scalar: Hash + FromUniformBytes<64>,
+    E::Fr: Hash + FromUniformBytes<64> + WithSmallOrderMulGroup<3>,
+    E::G1Affine: CurveAffine<ScalarExt = E::Fr, CurveExt = E::G1> + SerdeObject,
+    E::G2Affine: CurveAffine + SerdeObject,
 {
-    let params = ParamsIPA::<C>::new(k);
+    let params = ParamsKZG::<E>::new(k);
     let vk = keygen_vk(&params, &circuit).unwrap();
     let pk = keygen_pk(&params, vk, &circuit).unwrap();
 
     let proof = {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
-        create_proof::<IPACommitmentScheme<C>, ProverIPA<C>, _, _, _, _>(
+        create_proof::<KZGCommitmentScheme<E>, ProverSHPLONK<E>, _, _, _, _>(
             &params,
             &pk,
             &[circuit],
@@ -168,18 +165,17 @@ where
     };
 
     let accepted = {
-        let strategy = AccumulatorStrategy::new(&params);
+        let strategy = SingleStrategy::new(&params);
         let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
-        verify_proof::<IPACommitmentScheme<C>, VerifierIPA<C>, _, _, _>(
+        verify_proof::<KZGCommitmentScheme<E>, VerifierSHPLONK<E>, _, _, _>(
             &params,
             pk.get_vk(),
             strategy,
             &[&[]],
             &mut transcript,
         )
-        .map(|strategy| strategy.finalize())
-        .unwrap_or_default()
+        .is_ok()
     };
 
     assert_eq!(accepted, expected);
@@ -187,7 +183,7 @@ where
 
 fn main() {
     use halo2_proofs::dev::MockProver;
-    use halo2curves::grumpkin::Fr;
+    use halo2curves::bn256::Fr;
     const K: u32 = 4;
     let input_0 = [1, 2, 4, 1]
         .map(|e: u64| Value::known(Fr::from(e)))
@@ -207,5 +203,5 @@ fn main() {
     };
     let prover = MockProver::run(K, &circuit, vec![]).unwrap();
     prover.assert_satisfied();
-    test_prover::<G1Affine>(K, circuit, true);
+    test_prover::<Bn256>(K, circuit, true);
 }

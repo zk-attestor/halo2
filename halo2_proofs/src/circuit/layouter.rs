@@ -69,8 +69,8 @@ pub trait RegionLayouter<F: Field>: fmt::Debug + SyncDeps {
     );
 
     /// Assign an advice column value (witness)
-    fn assign_advice<'b, 'v>(
-        &'b mut self,
+    fn assign_advice<'v>(
+        &mut self,
         // annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,

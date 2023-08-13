@@ -291,8 +291,8 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a + SyncDeps> RegionLayouter<F>
         self.layouter.cs.annotate_column(annotation, column);
     }
 
-    fn assign_advice<'b, 'v>(
-        &'b mut self,
+    fn assign_advice<'v>(
+        &mut self,
         // annotation: &'v (dyn Fn() -> String + 'v),
         column: Column<Advice>,
         offset: usize,

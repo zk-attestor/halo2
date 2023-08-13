@@ -119,7 +119,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             layouter.assign_region(
                 || "raw_add",
                 |mut region| {
-                    let mut value = None;
+                    let value;
                     let lhs = region.assign_advice(self.config.a, 0, {
                         value = Some(f());
                         value.unwrap().map(|v| v.0)

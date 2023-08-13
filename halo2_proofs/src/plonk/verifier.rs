@@ -188,7 +188,7 @@ where
             })
             .collect::<Result<Vec<_>, _>>()?
     } else {
-        let xn = x.pow(&[params.n(), 0, 0, 0]);
+        let xn = x.pow([params.n(), 0, 0, 0]);
         let (min_rotation, max_rotation) =
             vk.cs
                 .instance_queries
@@ -267,7 +267,7 @@ where
     // commitments open to the correct values.
     let vanishing = {
         // x^n
-        let xn = x.pow(&[params.n(), 0, 0, 0]);
+        let xn = x.pow([params.n(), 0, 0, 0]);
 
         let blinding_factors = vk.cs.blinding_factors();
         let l_evals = vk
@@ -343,8 +343,7 @@ where
                                         instance_evals,
                                         challenges,
                                     )
-                                })
-                                .into_iter(),
+                                }),
                         )
                         .chain(
                             shuffles
@@ -363,8 +362,7 @@ where
                                         instance_evals,
                                         challenges,
                                     )
-                                })
-                                .into_iter(),
+                                }),
                         )
                 },
             );
@@ -422,14 +420,12 @@ where
                     .chain(
                         lookups
                             .iter()
-                            .flat_map(move |p| p.queries(vk, x))
-                            .into_iter(),
+                            .flat_map(move |p| p.queries(vk, x)),
                     )
                     .chain(
                         shuffles
                             .iter()
-                            .flat_map(move |p| p.queries(vk, x))
-                            .into_iter(),
+                            .flat_map(move |p| p.queries(vk, x)),
                     )
             },
         )

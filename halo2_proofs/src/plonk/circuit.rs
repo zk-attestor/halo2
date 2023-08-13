@@ -666,8 +666,8 @@ pub trait Assignment<F: Field> {
     fn query_instance(&self, column: Column<Instance>, row: usize) -> Result<Value<F>, Error>;
 
     /// Assign an advice column value (witness)
-    fn assign_advice<'r, 'v>(
-        &'r mut self,
+    fn assign_advice<'v>(
+        &mut self,
         column: Column<Advice>,
         row: usize,
         to: Value<Assigned<F>>,
@@ -1484,7 +1484,7 @@ impl<F: Field, C: Into<Constraint<F>>, Iter: IntoIterator<Item = C>> IntoIterato
 
     fn into_iter(self) -> Self::IntoIter {
         std::iter::repeat(self.selector)
-            .zip(self.constraints.into_iter())
+            .zip(self.constraints)
             .map(apply_selector_to_constraint)
     }
 }
@@ -1963,7 +1963,7 @@ impl<F: Field> ConstraintSystem<F> {
         let (polys, selector_assignment) = compress_selectors::process(
             selectors
                 .into_iter()
-                .zip(degrees.into_iter())
+                .zip(degrees)
                 .enumerate()
                 .map(
                     |(i, (activations, max_degree))| compress_selectors::SelectorDescription {

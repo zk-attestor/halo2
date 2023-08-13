@@ -1,9 +1,8 @@
 use ff::{BatchInvert, FromUniformBytes};
 use halo2_proofs::{
-    arithmetic::{CurveAffine, Field},
+    arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    dev::{metadata, FailureLocation, MockProver, VerifyFailure},
-    halo2curves::pasta::EqAffine,
+    dev::{metadata, FailureLocation, MockProver},
     plonk::*,
     poly::{
         commitment::ParamsProver,
@@ -12,13 +11,12 @@ use halo2_proofs::{
             multiopen::{ProverSHPLONK, VerifierSHPLONK},
             strategy::SingleStrategy,
         },
-        VerificationStrategy,
     },
     transcript::{
         Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
 };
-use halo2curves::bn256::{Bn256, Fr, G1Affine};
+use halo2curves::bn256::{Bn256, Fr};
 use rand_core::{OsRng, RngCore};
 use std::iter;
 
@@ -157,7 +155,7 @@ impl<F: Field, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W, H>
                 }
 
                 // First phase
-                for (idx, (&column, values)) in config
+                for (_idx, (&column, values)) in config
                     .original
                     .iter()
                     .zip(self.original.transpose_array().iter())
@@ -167,7 +165,7 @@ impl<F: Field, const W: usize, const H: usize> Circuit<F> for MyCircuit<F, W, H>
                         region.assign_advice(column, offset, value);
                     }
                 }
-                for (idx, (&column, values)) in config
+                for (_idx, (&column, values)) in config
                     .shuffled
                     .iter()
                     .zip(self.shuffled.transpose_array().iter())
@@ -241,7 +239,7 @@ fn test_mock_prover<F: Ord + FromUniformBytes<64>, const W: usize, const H: usiz
     let prover = MockProver::run(k, &circuit, vec![]).unwrap();
     match (prover.verify(), expected) {
         (Ok(_), Ok(_)) => {}
-        (Err(err), Err(expected)) => {
+        (Err(_err), Err(_expected)) => {
             /*assert_eq!(
                 err.into_iter()
                     .map(|failure| match failure {
