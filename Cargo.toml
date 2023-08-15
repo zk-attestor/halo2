@@ -2,9 +2,8 @@
 members = [
     "halo2",
     "halo2_proofs",
-    "arithmetic/curves",
-    "primitives/poseidon"
 ]
+resolver = "2"
 
 [profile.dev]
 opt-level = 3

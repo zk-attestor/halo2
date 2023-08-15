@@ -15,12 +15,10 @@ use crate::{
     },
     transcript::{EncodedChallenge, TranscriptRead},
 };
-use ff::Field;
+use ff::{Field, PrimeField};
 use group::Group;
-use halo2curves::{
-    pairing::{Engine, MillerLoopResult, MultiMillerLoop},
-    CurveAffine,
-};
+use halo2curves::CurveAffine;
+use pairing::{Engine, MillerLoopResult, MultiMillerLoop};
 use rand_core::OsRng;
 
 /// Wrapper for linear verification accumulator
@@ -33,7 +31,7 @@ pub struct GuardKZG<'params, E: MultiMillerLoop + Debug> {
 impl<'params, E> Guard<KZGCommitmentScheme<E>> for GuardKZG<'params, E>
 where
     E: MultiMillerLoop + Debug,
-    E::G1Affine: SerdeCurveAffine,
+    E::G1Affine: SerdeCurveAffine<ScalarExt = E::Fr, CurveExt = E::G1>,
     E::G2Affine: SerdeCurveAffine,
 {
     type MSMAccumulator = DualMSM<'params, E>;
@@ -92,7 +90,7 @@ impl<
         >,
     > VerificationStrategy<'params, KZGCommitmentScheme<E>, V> for AccumulatorStrategy<'params, E>
 where
-    E::G1Affine: SerdeCurveAffine,
+    E::G1Affine: SerdeCurveAffine<ScalarExt = E::Fr, CurveExt = E::G1>,
     E::G2Affine: SerdeCurveAffine,
 {
     type Output = Self;
@@ -105,7 +103,7 @@ where
         mut self,
         f: impl FnOnce(V::MSMAccumulator) -> Result<V::Guard, Error>,
     ) -> Result<Self::Output, Error> {
-        self.msm_accumulator.scale(E::Scalar::random(OsRng));
+        self.msm_accumulator.scale(E::Fr::random(OsRng));
 
         // Guard is updated with new msm contributions
         let guard = f(self.msm_accumulator)?;
@@ -130,7 +128,7 @@ impl<
         >,
     > VerificationStrategy<'params, KZGCommitmentScheme<E>, V> for SingleStrategy<'params, E>
 where
-    E::G1Affine: SerdeCurveAffine,
+    E::G1Affine: SerdeCurveAffine<ScalarExt = E::Fr, CurveExt = E::G1>,
     E::G2Affine: SerdeCurveAffine,
 {
     type Output = ();

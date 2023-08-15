@@ -15,14 +15,14 @@ use crate::{
 
 #[derive(Debug)]
 struct Constraint {
-    name: &'static str,
+    name: String,
     expression: String,
     queries: BTreeSet<String>,
 }
 
 #[derive(Debug)]
 struct Gate {
-    name: &'static str,
+    name: String,
     constraints: Vec<Constraint>,
 }
 
@@ -49,6 +49,8 @@ struct Gate {
 /// impl<F: Field> Circuit<F> for MyCircuit {
 ///     type Config = MyConfig;
 ///     type FloorPlanner = SimpleFloorPlanner;
+///     #[cfg(feature = "circuit-params")]
+///     type Params = ();
 ///
 ///     fn without_witnesses(&self) -> Self {
 ///         Self::default()
@@ -79,6 +81,9 @@ struct Gate {
 ///     }
 /// }
 ///
+/// #[cfg(feature = "circuit-params")]
+/// let gates = CircuitGates::collect::<pallas::Base, MyCircuit>(());
+/// #[cfg(not(feature = "circuit-params"))]
 /// let gates = CircuitGates::collect::<pallas::Base, MyCircuit>();
 /// assert_eq!(
 ///     format!("{}", gates),
@@ -103,22 +108,27 @@ pub struct CircuitGates {
 
 impl CircuitGates {
     /// Collects the gates from within the circuit.
-    pub fn collect<F: PrimeField, C: Circuit<F>>() -> Self {
+    pub fn collect<F: PrimeField, C: Circuit<F>>(
+        #[cfg(feature = "circuit-params")] params: C::Params,
+    ) -> Self {
         // Collect the graph details.
         let mut cs = ConstraintSystem::default();
+        #[cfg(feature = "circuit-params")]
+        let _ = C::configure_with_params(&mut cs, params);
+        #[cfg(not(feature = "circuit-params"))]
         let _ = C::configure(&mut cs);
 
         let gates = cs
             .gates
             .iter()
             .map(|gate| Gate {
-                name: gate.name(),
+                name: gate.name().to_string(),
                 constraints: gate
                     .polynomials()
                     .iter()
                     .enumerate()
                     .map(|(i, constraint)| Constraint {
-                        name: gate.constraint_name(i),
+                        name: gate.constraint_name(i).to_string(),
                         expression: constraint.evaluate(
                             &util::format_value,
                             &|selector| format!("S{}", selector.0),

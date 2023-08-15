@@ -29,7 +29,7 @@ use crate::{
 ///
 /// let drawing_area = BitMapBackend::new("example-circuit-layout.png", (1024, 768))
 ///     .into_drawing_area();
-/// drawing_area.fill(&WHITE).unwrap();
+/// drawing_area.fill(WHITE).unwrap();
 /// let drawing_area = drawing_area
 ///     .titled("Example Circuit Layout", ("sans-serif", 60))
 ///     .unwrap();
@@ -97,6 +97,9 @@ impl CircuitLayout {
         let n = 1 << k;
         // Collect the layout details.
         let mut cs = ConstraintSystem::default();
+        #[cfg(feature = "circuit-params")]
+        let config = ConcreteCircuit::configure_with_params(&mut cs, circuit.params());
+        #[cfg(not(feature = "circuit-params"))]
         let config = ConcreteCircuit::configure(&mut cs);
         let mut layout = Layout::new(k, n, cs.num_selectors);
         ConcreteCircuit::FloorPlanner::synthesize(
@@ -181,7 +184,7 @@ impl CircuitLayout {
 
         root.draw(&Rectangle::new(
             [(0, 0), (total_columns, view_bottom)],
-            &BLACK,
+            BLACK,
         ))?;
 
         let draw_region = |root: &DrawingArea<_, _>, top_left, bottom_right| {
@@ -197,7 +200,7 @@ impl CircuitLayout {
                 [top_left, bottom_right],
                 ShapeStyle::from(&GREEN.mix(0.2)).filled(),
             ))?;
-            root.draw(&Rectangle::new([top_left, bottom_right], &BLACK))?;
+            root.draw(&Rectangle::new([top_left, bottom_right], BLACK))?;
             Ok(())
         };
 
@@ -352,6 +355,8 @@ struct Layout {
     selectors: Vec<Vec<bool>>,
 }
 
+impl crate::dev::SyncDeps for Layout {}
+
 impl Layout {
     fn new(k: u32, n: usize, num_selectors: usize) -> Self {
         Layout {
@@ -436,49 +441,22 @@ impl<F: Field> Assignment<F> for Layout {
         Ok(Value::unknown())
     }
 
-    fn assign_advice<V, VR, A, AR>(
+    fn assign_advice<'v>(
         &mut self,
-        _: A,
         column: Column<Advice>,
         row: usize,
-        _: V,
-    ) -> Result<(), Error>
-    where
-        V: FnOnce() -> Value<VR>,
-        VR: Into<Assigned<F>>,
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-    {
+        _: Value<Assigned<F>>,
+    ) -> Value<&'v Assigned<F>> {
         self.update(Column::<Any>::from(column).into(), row);
-        Ok(())
+        Value::unknown()
     }
 
-    fn assign_fixed<V, VR, A, AR>(
-        &mut self,
-        _: A,
-        column: Column<Fixed>,
-        row: usize,
-        _: V,
-    ) -> Result<(), Error>
-    where
-        V: FnOnce() -> Value<VR>,
-        VR: Into<Assigned<F>>,
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-    {
+    fn assign_fixed(&mut self, column: Column<Fixed>, row: usize, _: Assigned<F>) {
         self.update(Column::<Any>::from(column).into(), row);
-        Ok(())
     }
 
-    fn copy(
-        &mut self,
-        l_col: Column<Any>,
-        l_row: usize,
-        r_col: Column<Any>,
-        r_row: usize,
-    ) -> Result<(), crate::plonk::Error> {
+    fn copy(&mut self, l_col: Column<Any>, l_row: usize, r_col: Column<Any>, r_row: usize) {
         self.equality.push((l_col, l_row, r_col, r_row));
-        Ok(())
     }
 
     fn fill_from_row(

@@ -21,6 +21,21 @@ jobs:
           command: test
           args: --verbose --release --all --all-features
 
+  example:
+    name: Examples on ubuntu
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          override: false
+      - name: Run examples
+        run:
+          cargo run --example serialization
+          cargo run --example shuffle
+          cargo run --example shuffle_api
+
   fmt:
     name: Rustfmt
     timeout-minutes: 30

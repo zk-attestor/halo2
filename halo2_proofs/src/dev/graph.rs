@@ -22,6 +22,9 @@ pub fn circuit_dot_graph<F: Field, ConcreteCircuit: Circuit<F>>(
 ) -> String {
     // Collect the graph details.
     let mut cs = ConstraintSystem::default();
+    #[cfg(feature = "circuit-params")]
+    let config = ConcreteCircuit::configure_with_params(&mut cs, circuit.params());
+    #[cfg(not(feature = "circuit-params"))]
     let config = ConcreteCircuit::configure(&mut cs);
     let mut graph = Graph::default();
     ConcreteCircuit::FloorPlanner::synthesize(&mut graph, circuit, config, cs.constants).unwrap();
@@ -77,6 +80,8 @@ struct Graph {
     current_namespace: Vec<usize>,
 }
 
+impl crate::dev::SyncDeps for Graph {}
+
 impl<F: Field> Assignment<F> for Graph {
     fn enter_region<NR, N>(&mut self, _: N)
     where
@@ -111,49 +116,24 @@ impl<F: Field> Assignment<F> for Graph {
         Ok(Value::unknown())
     }
 
-    fn assign_advice<V, VR, A, AR>(
+    fn assign_advice<'v>(
+        //V, VR, A, AR>(
         &mut self,
-        _: A,
+        //_: A,
         _: Column<Advice>,
         _: usize,
-        _: V,
-    ) -> Result<(), Error>
-    where
-        V: FnOnce() -> Value<VR>,
-        VR: Into<Assigned<F>>,
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-    {
+        _: Value<Assigned<F>>,
+    ) -> Value<&'v Assigned<F>> {
         // Do nothing; we don't care about cells in this context.
-        Ok(())
+        Value::unknown()
     }
 
-    fn assign_fixed<V, VR, A, AR>(
-        &mut self,
-        _: A,
-        _: Column<Fixed>,
-        _: usize,
-        _: V,
-    ) -> Result<(), Error>
-    where
-        V: FnOnce() -> Value<VR>,
-        VR: Into<Assigned<F>>,
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-    {
+    fn assign_fixed(&mut self, _: Column<Fixed>, _: usize, _: Assigned<F>) {
         // Do nothing; we don't care about cells in this context.
-        Ok(())
     }
 
-    fn copy(
-        &mut self,
-        _: Column<Any>,
-        _: usize,
-        _: Column<Any>,
-        _: usize,
-    ) -> Result<(), crate::plonk::Error> {
+    fn copy(&mut self, _: Column<Any>, _: usize, _: Column<Any>, _: usize) {
         // Do nothing; we don't care about permutations in this context.
-        Ok(())
     }
 
     fn fill_from_row(

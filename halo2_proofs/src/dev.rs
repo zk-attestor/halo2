@@ -1,5 +1,6 @@
 //! Tools for developing circuits.
 
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
@@ -10,10 +11,12 @@ use std::sync::Arc;
 
 use blake2b_simd::blake2b;
 use ff::Field;
+use ff::FromUniformBytes;
+use group::Group;
 
+use crate::circuit::layouter::SyncDeps;
 use crate::plonk::permutation::keygen::Assembly;
 use crate::{
-    arithmetic::{FieldExt, Group},
     circuit,
     plonk::{
         permutation,
@@ -89,7 +92,7 @@ impl Region {
 
 /// The value of a particular cell within the circuit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CellValue<F: Group + Field> {
+pub enum CellValue<F: Field> {
     /// An unassigned cell.
     Unassigned,
     /// A cell that has been assigned a value.
@@ -100,7 +103,7 @@ pub enum CellValue<F: Group + Field> {
 
 /// The value of a particular cell within the circuit.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AdviceCellValue<F: Group + Field> {
+pub enum AdviceCellValue<F: Field> {
     // A cell that has been assigned a value.
     Assigned(Arc<Assigned<F>>),
     // A unique poisoned cell.
@@ -109,23 +112,32 @@ pub enum AdviceCellValue<F: Group + Field> {
 
 /// A value within an expression.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
-enum Value<F: Group + Field> {
+enum Value<F: Field> {
     Real(F),
     Poison,
 }
 
-impl<F: Group + Field> From<CellValue<F>> for Value<F> {
+impl<F: Field> From<CellValue<F>> for Value<F> {
     fn from(value: CellValue<F>) -> Self {
         match value {
             // Cells that haven't been explicitly assigned to, default to zero.
-            CellValue::Unassigned => Value::Real(F::zero()),
+            CellValue::Unassigned => Value::Real(F::ZERO),
             CellValue::Assigned(v) => Value::Real(v),
             CellValue::Poison(_) => Value::Poison,
         }
     }
 }
 
-impl<F: Group + Field> Neg for Value<F> {
+impl<F: Field> From<AdviceCellValue<F>> for Value<F> {
+    fn from(value: AdviceCellValue<F>) -> Self {
+        match value {
+            AdviceCellValue::Assigned(v) => Value::Real(v.evaluate()),
+            AdviceCellValue::Poison(_) => Value::Poison,
+        }
+    }
+}
+
+impl<F: Field> Neg for Value<F> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
@@ -136,7 +148,7 @@ impl<F: Group + Field> Neg for Value<F> {
     }
 }
 
-impl<F: Group + Field> Add for Value<F> {
+impl<F: Field> Add for Value<F> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -147,7 +159,7 @@ impl<F: Group + Field> Add for Value<F> {
     }
 }
 
-impl<F: Group + Field> Mul for Value<F> {
+impl<F: Field> Mul for Value<F> {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -158,14 +170,14 @@ impl<F: Group + Field> Mul for Value<F> {
             (Value::Real(x), Value::Poison) | (Value::Poison, Value::Real(x))
                 if x.is_zero_vartime() =>
             {
-                Value::Real(F::zero())
+                Value::Real(F::ZERO)
             }
             _ => Value::Poison,
         }
     }
 }
 
-impl<F: Group + Field> Mul<F> for Value<F> {
+impl<F: Field> Mul<F> for Value<F> {
     type Output = Self;
 
     fn mul(self, rhs: F) -> Self::Output {
@@ -173,7 +185,7 @@ impl<F: Group + Field> Mul<F> for Value<F> {
             Value::Real(lhs) => Value::Real(lhs * rhs),
             // If poison is multiplied by zero, then we treat the poison as unconstrained
             // and we don't propagate it.
-            Value::Poison if rhs.is_zero_vartime() => Value::Real(F::zero()),
+            Value::Poison if rhs.is_zero_vartime() => Value::Real(F::ZERO),
             _ => Value::Poison,
         }
     }
@@ -191,12 +203,12 @@ impl<F: Group + Field> Mul<F> for Value<F> {
 ///
 /// ```
 /// use halo2_proofs::{
-///     arithmetic::FieldExt,
 ///     circuit::{Layouter, SimpleFloorPlanner, Value},
 ///     dev::{FailureLocation, MockProver, VerifyFailure},
 ///     plonk::{Advice, Any, Circuit, Column, ConstraintSystem, Error, Selector},
 ///     poly::Rotation,
 /// };
+/// use ff::PrimeField;
 /// use halo2curves::pasta::Fp;
 /// const K: u32 = 5;
 ///
@@ -214,9 +226,11 @@ impl<F: Group + Field> Mul<F> for Value<F> {
 ///     b: Value<u64>,
 /// }
 ///
-/// impl<F: FieldExt> Circuit<F> for MyCircuit {
+/// impl<F: PrimeField> Circuit<F> for MyCircuit {
 ///     type Config = MyConfig;
 ///     type FloorPlanner = SimpleFloorPlanner;
+///     #[cfg(feature = "circuit-params")]
+///     type Params = ();
 ///
 ///     fn without_witnesses(&self) -> Self {
 ///         Self::default()
@@ -244,15 +258,9 @@ impl<F: Group + Field> Mul<F> for Value<F> {
 ///     fn synthesize(&self, config: MyConfig, mut layouter: impl Layouter<F>) -> Result<(), Error> {
 ///         layouter.assign_region(|| "Example region", |mut region| {
 ///             config.s.enable(&mut region, 0)?;
-///             region.assign_advice(|| "a", config.a, 0, || {
-///                 self.a.map(F::from)
-///             })?;
-///             region.assign_advice(|| "b", config.b, 0, || {
-///                 self.b.map(F::from)
-///             })?;
-///             region.assign_advice(|| "c", config.c, 0, || {
-///                 (self.a * self.b).map(F::from)
-///             })?;
+///             region.assign_advice(config.a, 0, self.a.map(F::from));
+///             region.assign_advice(config.b, 0, self.b.map(F::from));
+///             region.assign_advice(config.c, 0, (self.a * self.b).map(F::from));
 ///             Ok(())
 ///         })
 ///     }
@@ -272,10 +280,7 @@ impl<F: Group + Field> Mul<F> for Value<F> {
 ///     prover.verify(),
 ///     Err(vec![VerifyFailure::ConstraintNotSatisfied {
 ///         constraint: ((0, "R1CS constraint").into(), 0, "buggy R1CS").into(),
-///         location: FailureLocation::InRegion {
-///             region: (0, "Example region").into(),
-///             offset: 0,
-///         },
+///         location: FailureLocation::OutsideRegion { row: 0 },
 ///         cell_values: vec![
 ///             (((Any::advice(), 0).into(), 0).into(), "0x2".to_string()),
 ///             (((Any::advice(), 1).into(), 0).into(), "0x4".to_string()),
@@ -295,7 +300,7 @@ impl<F: Group + Field> Mul<F> for Value<F> {
 /// );
 /// ```
 #[derive(Debug)]
-pub struct MockProver<F: Group + Field> {
+pub struct MockProver<F: Field> {
     k: u32,
     n: u32,
     cs: ConstraintSystem<F>,
@@ -325,13 +330,13 @@ pub struct MockProver<F: Group + Field> {
     current_phase: sealed::Phase,
 }
 
-impl<F: Field + Group> MockProver<F> {
+impl<F: Field> MockProver<F> {
     fn in_phase<P: Phase>(&self, phase: P) -> bool {
         self.current_phase == phase.to_sealed()
     }
 }
 
-impl<F: Field + Group> Assignment<F> for MockProver<F> {
+impl<F: Field> Assignment<F> for MockProver<F> {
     fn enter_region<NR, N>(&mut self, name: N)
     where
         NR: Into<String>,
@@ -429,9 +434,9 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
             .expect("bound failure"))
     }
 
-    fn assign_advice<'r, 'v>(
+    fn assign_advice<'v>(
         //<V, VR, A, AR>(
-        &'r mut self,
+        &mut self,
         //_: A,
         column: Column<Advice>,
         row: usize,
@@ -579,7 +584,7 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
     }
 }
 
-impl<F: FieldExt> MockProver<F> {
+impl<F: FromUniformBytes<64> + Ord> MockProver<F> {
     /// Runs a synthetic keygen-and-prove operation on the given circuit, collecting data
     /// about the constraints and their assignments.
     pub fn run<ConcreteCircuit: Circuit<F>>(
@@ -590,6 +595,9 @@ impl<F: FieldExt> MockProver<F> {
         let n = 1 << k;
 
         let mut cs = ConstraintSystem::default();
+        #[cfg(feature = "circuit-params")]
+        let config = ConcreteCircuit::configure_with_params(&mut cs, circuit.params());
+        #[cfg(not(feature = "circuit-params"))]
         let config = ConcreteCircuit::configure(&mut cs);
         let cs = cs;
 
@@ -614,7 +622,7 @@ impl<F: FieldExt> MockProver<F> {
                     cs.blinding_factors()
                 );
 
-                instance.resize(n, F::zero());
+                instance.resize(n, F::ZERO);
                 instance
             })
             .collect::<Vec<_>>();
@@ -630,7 +638,7 @@ impl<F: FieldExt> MockProver<F> {
                 // let mut column = vec![AdviceCellValue::Unassigned; n];
                 // Assign advice to 0 by default so we can have gates that query unassigned rotations to minimize number of distinct rotation sets, for SHPLONK optimization
                 let mut column =
-                    vec![AdviceCellValue::Assigned(Arc::new(Assigned::Trivial(F::zero()))); n];
+                    vec![AdviceCellValue::Assigned(Arc::new(Assigned::Trivial(F::ZERO))); n];
                 // Poison unusable rows.
                 for (i, cell) in column.iter_mut().enumerate().skip(usable_rows) {
                     *cell = AdviceCellValue::Poison(i);
@@ -647,7 +655,7 @@ impl<F: FieldExt> MockProver<F> {
             let mut hash: [u8; 64] = blake2b(b"Halo2-MockProver").as_bytes().try_into().unwrap();
             iter::repeat_with(|| {
                 hash = blake2b(&hash).as_bytes().try_into().unwrap();
-                F::from_bytes_wide(&hash)
+                F::from_uniform_bytes(&hash)
             })
             .take(cs.num_challenges)
             .collect()
@@ -688,6 +696,9 @@ impl<F: FieldExt> MockProver<F> {
             }
             v
         }));
+
+        #[cfg(feature = "thread-safe-region")]
+        prover.permutation.build_ordered_mapping();
 
         Ok(prover)
     }
@@ -789,7 +800,7 @@ impl<F: FieldExt> MockProver<F> {
                         AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a.as_ref() {
                             Assigned::Trivial(a) => *a,
                             Assigned::Rational(a, b) => *a * b.invert().unwrap(),
-                            _ => F::zero(),
+                            _ => F::ZERO,
                         }),
                         AdviceCellValue::Poison(i) => CellValue::Poison(i),
                     })
@@ -806,11 +817,7 @@ impl<F: FieldExt> MockProver<F> {
                 .flat_map(|(gate_index, gate)| {
                     let blinding_rows =
                         (self.n as usize - (self.cs.blinding_factors() + 1))..(self.n as usize);
-                    (gate_row_ids
-                        .clone()
-                        .into_iter()
-                        .chain(blinding_rows.into_iter()))
-                    .flat_map(move |row| {
+                    (gate_row_ids.clone().chain(blinding_rows)).flat_map(move |row| {
                         let row = row as i32 + n;
                         gate.polynomials().iter().enumerate().filter_map(
                             move |(poly_index, poly)| match poly.evaluate_lazy(
@@ -829,7 +836,7 @@ impl<F: FieldExt> MockProver<F> {
                                 &|a, b| a + b,
                                 &|a, b| a * b,
                                 &|a, scalar| a * scalar,
-                                &Value::Real(F::zero()),
+                                &Value::Real(F::ZERO),
                             ) {
                                 Value::Real(x) if x.is_zero_vartime() => None,
                                 Value::Real(_) => Some(VerifyFailure::ConstraintNotSatisfied {
@@ -871,6 +878,43 @@ impl<F: FieldExt> MockProver<F> {
                     })
                 });
 
+        let load = |expression: &Expression<F>, row| {
+            expression.evaluate_lazy(
+                &|scalar| Value::Real(scalar),
+                &|_| panic!("virtual selectors are removed during optimization"),
+                &|query| {
+                    let query = self.cs.fixed_queries[query.index.unwrap()];
+                    let column_index = query.0.index();
+                    let rotation = query.1 .0;
+                    self.fixed[column_index][(row as i32 + n + rotation) as usize % n as usize]
+                        .into()
+                },
+                &|query| {
+                    let query = self.cs.advice_queries[query.index.unwrap()];
+                    let column_index = query.0.index();
+                    let rotation = query.1 .0;
+                    self.advice[column_index][(row as i32 + n + rotation) as usize % n as usize]
+                        .clone()
+                        .into()
+                },
+                &|query| {
+                    let query = self.cs.instance_queries[query.index.unwrap()];
+                    let column_index = query.0.index();
+                    let rotation = query.1 .0;
+                    Value::Real(
+                        self.instance[column_index]
+                            [(row as i32 + n + rotation) as usize % n as usize],
+                    )
+                },
+                &|challenge| Value::Real(self.challenges[challenge.index()]),
+                &|a| -a,
+                &|a, b| a + b,
+                &|a, b| a * b,
+                &|a, scalar| a * scalar,
+                &Value::Real(F::ZERO),
+            )
+        };
+
         let mut cached_table = Vec::new();
         let mut cached_table_identifier = Vec::new();
         // Check that all lookups exist in their respective tables.
@@ -880,44 +924,6 @@ impl<F: FieldExt> MockProver<F> {
                 .iter()
                 .enumerate()
                 .flat_map(|(lookup_index, lookup)| {
-                    let load = |expression: &Expression<F>, row| {
-                        expression.evaluate_lazy(
-                            &|scalar| Value::Real(scalar),
-                            &|_| panic!("virtual selectors are removed during optimization"),
-                            &|query| {
-                                let query = self.cs.fixed_queries[query.index];
-                                let column_index = query.0.index();
-                                let rotation = query.1 .0;
-                                self.fixed[column_index]
-                                    [(row as i32 + n + rotation) as usize % n as usize]
-                                    .into()
-                            },
-                            &|query| {
-                                let query = self.cs.advice_queries[query.index];
-                                let column_index = query.0.index();
-                                let rotation = query.1 .0;
-                                advice[column_index]
-                                    [(row as i32 + n + rotation) as usize % n as usize]
-                                    .into()
-                            },
-                            &|query| {
-                                let query = self.cs.instance_queries[query.index];
-                                let column_index = query.0.index();
-                                let rotation = query.1 .0;
-                                Value::Real(
-                                    self.instance[column_index]
-                                        [(row as i32 + n + rotation) as usize % n as usize],
-                                )
-                            },
-                            &|challenge| Value::Real(self.challenges[challenge.index()]),
-                            &|a| -a,
-                            &|a, b| a + b,
-                            &|a, b| a * b,
-                            &|a, scalar| a * scalar,
-                            &Value::Real(F::zero()),
-                        )
-                    };
-
                     assert!(lookup.table_expressions.len() == lookup.input_expressions.len());
                     assert!(self.usable_rows.end > 0);
 
@@ -966,7 +972,6 @@ impl<F: FieldExt> MockProver<F> {
 
                     let mut inputs: Vec<(Vec<_>, usize)> = lookup_input_row_ids
                         .clone()
-                        .into_iter()
                         .filter_map(|input_row| {
                             let t = lookup
                                 .input_expressions
@@ -995,7 +1000,7 @@ impl<F: FieldExt> MockProver<F> {
                                 assert!(table.binary_search(input).is_err());
 
                                 Some(VerifyFailure::Lookup {
-                                    name: lookup.name,
+                                    name: lookup.name.clone(),
                                     lookup_index,
                                     location: FailureLocation::find_expressions(
                                         &self.cs,
@@ -1011,6 +1016,67 @@ impl<F: FieldExt> MockProver<F> {
                         .collect::<Vec<_>>()
                 });
 
+        let shuffle_errors =
+            self.cs
+                .shuffles
+                .iter()
+                .enumerate()
+                .flat_map(|(shuffle_index, shuffle)| {
+                    assert!(shuffle.shuffle_expressions.len() == shuffle.input_expressions.len());
+                    assert!(self.usable_rows.end > 0);
+
+                    let mut shuffle_rows: Vec<Vec<Value<F>>> = self
+                        .usable_rows
+                        .clone()
+                        .map(|row| {
+                            let t = shuffle
+                                .shuffle_expressions
+                                .iter()
+                                .map(move |c| load(c, row))
+                                .collect();
+                            t
+                        })
+                        .collect();
+                    shuffle_rows.sort();
+
+                    let mut input_rows: Vec<(Vec<Value<F>>, usize)> = self
+                        .usable_rows
+                        .clone()
+                        .map(|input_row| {
+                            let t = shuffle
+                                .input_expressions
+                                .iter()
+                                .map(move |c| load(c, input_row))
+                                .collect();
+
+                            (t, input_row)
+                        })
+                        .collect();
+                    input_rows.sort();
+
+                    input_rows
+                        .iter()
+                        .zip(shuffle_rows.iter())
+                        .filter_map(|((input_value, row), shuffle_value)| {
+                            if shuffle_value != input_value {
+                                Some(VerifyFailure::Shuffle {
+                                    name: shuffle.name.clone(),
+                                    shuffle_index,
+                                    location: FailureLocation::find_expressions(
+                                        &self.cs,
+                                        &self.regions,
+                                        *row,
+                                        shuffle.input_expressions.iter(),
+                                    ),
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+        let mapping = self.permutation.mapping();
         // Check that permutations preserve the original values of the cells.
         let perm_errors = {
             // Original values of columns involved in the permutation.
@@ -1028,14 +1094,12 @@ impl<F: FieldExt> MockProver<F> {
             };
 
             // Iterate over each column of the permutation
-            self.permutation
-                .mapping()
-                .iter()
-                .enumerate()
-                .flat_map(move |(column, values)| {
-                    // Iterate over each row of the column to check that the cell's
-                    // value is preserved by the mapping.
-                    values.iter().enumerate().filter_map(move |(row, cell)| {
+            mapping.enumerate().flat_map(move |(column, values)| {
+                // Iterate over each row of the column to check that the cell's
+                // value is preserved by the mapping.
+                values
+                    .enumerate()
+                    .filter_map(move |(row, cell)| {
                         let original_cell = original(column, row);
                         let permuted_cell = original(cell.0, cell.1);
                         if original_cell == permuted_cell {
@@ -1053,7 +1117,8 @@ impl<F: FieldExt> MockProver<F> {
                             })
                         }
                     })
-                })
+                    .collect::<Vec<_>>()
+            })
         };
 
         let mut errors: Vec<_> = iter::empty()
@@ -1061,6 +1126,7 @@ impl<F: FieldExt> MockProver<F> {
             .chain(gate_errors)
             .chain(lookup_errors)
             .chain(perm_errors)
+            .chain(shuffle_errors)
             .collect();
         if errors.is_empty() {
             Ok(())
@@ -1177,7 +1243,7 @@ impl<F: FieldExt> MockProver<F> {
                         AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a.as_ref() {
                             Assigned::Trivial(a) => *a,
                             Assigned::Rational(a, b) => *a * b.invert().unwrap(),
-                            _ => F::zero(),
+                            _ => F::ZERO,
                         }),
                         AdviceCellValue::Poison(i) => CellValue::Poison(i),
                     })
@@ -1220,7 +1286,7 @@ impl<F: FieldExt> MockProver<F> {
                                 &|a, b| a + b,
                                 &|a, b| a * b,
                                 &|a, scalar| a * scalar,
-                                &Value::Real(F::zero()),
+                                &Value::Real(F::ZERO),
                             ) {
                                 Value::Real(x) if x.is_zero_vartime() => None,
                                 Value::Real(_) => Some(VerifyFailure::ConstraintNotSatisfied {
@@ -1264,6 +1330,36 @@ impl<F: FieldExt> MockProver<F> {
                 .collect::<Vec<_>>()
             });
 
+        let load = |expression: &Expression<F>, row| {
+            expression.evaluate_lazy(
+                &|scalar| Value::Real(scalar),
+                &|_| panic!("virtual selectors are removed during optimization"),
+                &|query| {
+                    self.fixed[query.column_index]
+                        [(row as i32 + n + query.rotation.0) as usize % n as usize]
+                        .into()
+                },
+                &|query| {
+                    self.advice[query.column_index]
+                        [(row as i32 + n + query.rotation.0) as usize % n as usize]
+                        .clone()
+                        .into()
+                },
+                &|query| {
+                    Value::Real(
+                        self.instance[query.column_index]
+                            [(row as i32 + n + query.rotation.0) as usize % n as usize],
+                    )
+                },
+                &|challenge| Value::Real(self.challenges[challenge.index()]),
+                &|a| -a,
+                &|a, b| a + b,
+                &|a, b| a * b,
+                &|a, scalar| a * scalar,
+                &Value::Real(F::ZERO),
+            )
+        };
+
         let mut cached_table = Vec::new();
         let mut cached_table_identifier = Vec::new();
         // Check that all lookups exist in their respective tables.
@@ -1273,35 +1369,6 @@ impl<F: FieldExt> MockProver<F> {
                 .iter()
                 .enumerate()
                 .flat_map(|(lookup_index, lookup)| {
-                    let load = |expression: &Expression<F>, row| {
-                        expression.evaluate_lazy(
-                            &|scalar| Value::Real(scalar),
-                            &|_| panic!("virtual selectors are removed during optimization"),
-                            &|query| {
-                                self.fixed[query.column_index]
-                                    [(row as i32 + n + query.rotation.0) as usize % n as usize]
-                                    .into()
-                            },
-                            &|query| {
-                                advice[query.column_index]
-                                    [(row as i32 + n + query.rotation.0) as usize % n as usize]
-                                    .into()
-                            },
-                            &|query| {
-                                Value::Real(
-                                    self.instance[query.column_index]
-                                        [(row as i32 + n + query.rotation.0) as usize % n as usize],
-                                )
-                            },
-                            &|challenge| Value::Real(self.challenges[challenge.index()]),
-                            &|a| -a,
-                            &|a, b| a + b,
-                            &|a, b| a * b,
-                            &|a, scalar| a * scalar,
-                            &Value::Real(F::zero()),
-                        )
-                    };
-
                     assert!(lookup.table_expressions.len() == lookup.input_expressions.len());
                     assert!(self.usable_rows.end > 0);
 
@@ -1374,7 +1441,7 @@ impl<F: FieldExt> MockProver<F> {
                         .filter_map(move |(input, input_row)| {
                             if table.binary_search(input).is_err() {
                                 Some(VerifyFailure::Lookup {
-                                    name: lookup.name,
+                                    name: lookup.name.clone(),
                                     lookup_index,
                                     location: FailureLocation::find_expressions(
                                         &self.cs,
@@ -1390,6 +1457,67 @@ impl<F: FieldExt> MockProver<F> {
                         .collect::<Vec<_>>()
                 });
 
+        let shuffle_errors =
+            self.cs
+                .shuffles
+                .iter()
+                .enumerate()
+                .flat_map(|(shuffle_index, shuffle)| {
+                    assert!(shuffle.shuffle_expressions.len() == shuffle.input_expressions.len());
+                    assert!(self.usable_rows.end > 0);
+
+                    let mut shuffle_rows: Vec<Vec<Value<F>>> = self
+                        .usable_rows
+                        .clone()
+                        .map(|row| {
+                            let t = shuffle
+                                .shuffle_expressions
+                                .iter()
+                                .map(move |c| load(c, row))
+                                .collect();
+                            t
+                        })
+                        .collect();
+                    shuffle_rows.sort();
+
+                    let mut input_rows: Vec<(Vec<Value<F>>, usize)> = self
+                        .usable_rows
+                        .clone()
+                        .map(|input_row| {
+                            let t = shuffle
+                                .input_expressions
+                                .iter()
+                                .map(move |c| load(c, input_row))
+                                .collect();
+
+                            (t, input_row)
+                        })
+                        .collect();
+                    input_rows.sort();
+
+                    input_rows
+                        .iter()
+                        .zip(shuffle_rows.iter())
+                        .filter_map(|((input_value, row), shuffle_value)| {
+                            if shuffle_value != input_value {
+                                Some(VerifyFailure::Shuffle {
+                                    name: shuffle.name.clone(),
+                                    shuffle_index,
+                                    location: FailureLocation::find_expressions(
+                                        &self.cs,
+                                        &self.regions,
+                                        *row,
+                                        shuffle.input_expressions.iter(),
+                                    ),
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+        let mapping = self.permutation.mapping();
         // Check that permutations preserve the original values of the cells.
         let perm_errors = {
             // Original values of columns involved in the permutation.
@@ -1407,36 +1535,31 @@ impl<F: FieldExt> MockProver<F> {
             };
 
             // Iterate over each column of the permutation
-            self.permutation
-                .mapping()
-                .iter()
-                .enumerate()
-                .flat_map(move |(column, values)| {
-                    // Iterate over each row of the column to check that the cell's
-                    // value is preserved by the mapping.
-                    values
-                        .par_iter()
-                        .enumerate()
-                        .filter_map(move |(row, cell)| {
-                            let original_cell = original(column, row);
-                            let permuted_cell = original(cell.0, cell.1);
-                            if original_cell == permuted_cell {
-                                None
-                            } else {
-                                let columns = self.cs.permutation.get_columns();
-                                let column = columns.get(column).unwrap();
-                                Some(VerifyFailure::Permutation {
-                                    column: (*column).into(),
-                                    location: FailureLocation::find(
-                                        &self.regions,
-                                        row,
-                                        Some(column).into_iter().cloned().collect(),
-                                    ),
-                                })
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                })
+            mapping.enumerate().flat_map(move |(column, values)| {
+                // Iterate over each row of the column to check that the cell's
+                // value is preserved by the mapping.
+                values
+                    .enumerate()
+                    .filter_map(move |(row, cell)| {
+                        let original_cell = original(column, row);
+                        let permuted_cell = original(cell.0, cell.1);
+                        if original_cell == permuted_cell {
+                            None
+                        } else {
+                            let columns = self.cs.permutation.get_columns();
+                            let column = columns.get(column).unwrap();
+                            Some(VerifyFailure::Permutation {
+                                column: (*column).into(),
+                                location: FailureLocation::find(
+                                    &self.regions,
+                                    row,
+                                    Some(column).into_iter().cloned().collect(),
+                                ),
+                            })
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
         };
 
         let mut errors: Vec<_> = iter::empty()
@@ -1444,6 +1567,7 @@ impl<F: FieldExt> MockProver<F> {
             .chain(gate_errors)
             .chain(lookup_errors)
             .chain(perm_errors)
+            .chain(shuffle_errors)
             .collect();
         if errors.is_empty() {
             Ok(())
@@ -1568,6 +1692,8 @@ mod tests {
         impl Circuit<Fp> for FaultyCircuit {
             type Config = FaultyCircuitConfig;
             type FloorPlanner = SimpleFloorPlanner;
+            #[cfg(feature = "circuit-params")]
+            fn params(&self) {}
 
             fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
                 let a = meta.advice_column();
@@ -1614,6 +1740,12 @@ mod tests {
                         // Name Column b
                         region.name_column(|| "This is also annotated!", config.b);
 
+                        // Name Column a
+                        region.name_column(|| "This is annotated!", config.a);
+
+                        // Name Column b
+                        region.name_column(|| "This is also annotated!", config.b);
+
                         // BUG: Forget to assign b = 0! This could go unnoticed during
                         // development, because cell values default to zero, which in this
                         // case is fine, but for other assignments would be broken.
@@ -1626,18 +1758,19 @@ mod tests {
         let prover = MockProver::run(K, &FaultyCircuit {}, vec![]).unwrap();
         assert_eq!(
             prover.verify(),
-            Err(vec![VerifyFailure::CellNotAssigned {
-                gate: (0, "Equality check").into(),
-                region: (0, "Faulty synthesis".to_owned()).into(),
-                gate_offset: 1,
-                column: Column::new(
-                    1,
-                    Any::Advice(Advice {
-                        phase: FirstPhase.to_sealed()
-                    })
-                ),
-                offset: 1,
-            }])
+            Ok(()) // Axiom mock prover default assigns 0, so there is no bug
+                   /*Err(vec![VerifyFailure::CellNotAssigned {
+                       gate: (0, "Equality check").into(),
+                       region: (0, "Faulty synthesis".to_owned()).into(),
+                       gate_offset: 1,
+                       column: Column::new(
+                           1,
+                           Any::Advice(Advice {
+                               phase: FirstPhase.to_sealed()
+                           })
+                       ),
+                       offset: 1,
+                   }])*/
         );
     }
 
@@ -1709,8 +1842,9 @@ mod tests {
                 // No assignment needed for the table as is an Instance Column.
 
                 layouter.assign_region(
-                    || "Good synthesis",
+                    || "Bad synthesis",
                     |mut region| {
+                        // == Good synthesis ==
                         // Enable the lookup on rows 0 and 1.
                         config.q.enable(&mut region, 0)?;
                         config.q.enable(&mut region, 1)?;
@@ -1730,33 +1864,16 @@ mod tests {
                         region.assign_advice(config.a, 0, Value::known(Fp::from(2)));
                         region.assign_advice(config.a, 1, Value::known(Fp::from(6)));
 
-                        Ok(())
-                    },
-                )?;
-
-                layouter.assign_region(
-                    || "Faulty synthesis",
-                    |mut region| {
+                        // == Faulty synthesis ==
                         // Enable the lookup on rows 0 and 1.
-                        config.q.enable(&mut region, 0)?;
-                        config.q.enable(&mut region, 1)?;
-
-                        for i in 0..4 {
-                            // Load Advice lookup table with Instance lookup table values.
-                            region.assign_advice_from_instance(
-                                || "Advice from instance tables",
-                                config.table,
-                                i,
-                                config.advice_table,
-                                i,
-                            )?;
-                        }
+                        config.q.enable(&mut region, 2)?;
+                        config.q.enable(&mut region, 3)?;
 
                         // Assign a = 4.
-                        region.assign_advice(config.a, 0, Value::known(Fp::from(4)));
+                        region.assign_advice(config.a, 2, Value::known(Fp::from(4)));
 
                         // BUG: Assign a = 5, which doesn't exist in the table!
-                        region.assign_advice(config.a, 1, Value::known(Fp::from(5)));
+                        region.assign_advice(config.a, 3, Value::known(Fp::from(5)));
 
                         region.name_column(|| "Witness example", config.a);
 
@@ -1781,12 +1898,9 @@ mod tests {
         assert_eq!(
             prover.verify(),
             Err(vec![VerifyFailure::Lookup {
-                name: "lookup",
+                name: "lookup".to_string(),
                 lookup_index: 0,
-                location: FailureLocation::InRegion {
-                    region: (1, "Faulty synthesis").into(),
-                    offset: 1,
-                }
+                location: FailureLocation::OutsideRegion { row: 3 }
             }])
         );
     }
@@ -1807,6 +1921,8 @@ mod tests {
         impl Circuit<Fp> for FaultyCircuit {
             type Config = FaultyCircuitConfig;
             type FloorPlanner = SimpleFloorPlanner;
+            #[cfg(feature = "circuit-params")]
+            type Params = ();
 
             fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
                 let a = meta.advice_column();
@@ -1849,13 +1965,14 @@ mod tests {
                                     || Value::known(Fp::from(2 * i as u64)),
                                 )
                             })
-                            .fold(Ok(()), |acc, res| acc.and(res))
+                            .try_fold((), |_, res| res)
                     },
                 )?;
 
                 layouter.assign_region(
-                    || "Good synthesis",
+                    || "Fauly synthesis",
                     |mut region| {
+                        // == Good synhesis ==
                         // Enable the lookup on rows 0 and 1.
                         config.q.enable(&mut region, 0)?;
                         config.q.enable(&mut region, 1)?;
@@ -1874,32 +1991,26 @@ mod tests {
                             Value::known(Assigned::Trivial(Fp::from(6))),
                         );
 
-                        Ok(())
-                    },
-                )?;
-
-                layouter.assign_region(
-                    || "Faulty synthesis",
-                    |mut region| {
-                        // Enable the lookup on rows 0 and 1.
-                        config.q.enable(&mut region, 0)?;
-                        config.q.enable(&mut region, 1)?;
+                        // == Faulty synthesis ==
+                        // Enable the lookup on rows 2 and 3.
+                        config.q.enable(&mut region, 2)?;
+                        config.q.enable(&mut region, 3)?;
 
                         // Assign a = 4.
                         region.assign_advice(
-                            // || "a = 4",
                             config.a,
-                            0,
+                            2,
                             Value::known(Assigned::Trivial(Fp::from(4))),
                         );
 
                         // BUG: Assign a = 5, which doesn't exist in the table!
                         region.assign_advice(
-                            // || "a = 5",
                             config.a,
-                            1,
+                            3,
                             Value::known(Assigned::Trivial(Fp::from(5))),
                         );
+
+                        region.name_column(|| "Witness example", config.a);
 
                         region.name_column(|| "Witness example", config.a);
 
@@ -1913,12 +2024,9 @@ mod tests {
         assert_eq!(
             prover.verify(),
             Err(vec![VerifyFailure::Lookup {
-                name: "lookup",
+                name: "lookup".to_string(),
                 lookup_index: 0,
-                location: FailureLocation::InRegion {
-                    region: (2, "Faulty synthesis").into(),
-                    offset: 1,
-                }
+                location: FailureLocation::OutsideRegion { row: 3 }
             }])
         );
     }
@@ -1973,8 +2081,9 @@ mod tests {
                 mut layouter: impl Layouter<Fp>,
             ) -> Result<(), Error> {
                 layouter.assign_region(
-                    || "Correct synthesis",
+                    || "Wrong synthesis",
                     |mut region| {
+                        // == Correct synthesis ==
                         // Enable the equality gate.
                         config.q.enable(&mut region, 0)?;
 
@@ -1988,20 +2097,16 @@ mod tests {
                         region.assign_advice(config.c, 0, Value::known(Fp::from(5u64)));
                         // Assign d = 7.
                         region.assign_fixed(config.d, 0, Fp::from(7u64));
-                        Ok(())
-                    },
-                )?;
-                layouter.assign_region(
-                    || "Wrong synthesis",
-                    |mut region| {
+
+                        // == Wrong synthesis ==
                         // Enable the equality gate.
-                        config.q.enable(&mut region, 0)?;
+                        config.q.enable(&mut region, 1)?;
 
                         // Assign a = 1.
-                        region.assign_advice(config.a, 0, Value::known(Fp::one()));
+                        region.assign_advice(config.a, 1, Value::known(Fp::one()));
 
                         // Assign b = 0.
-                        region.assign_advice(config.b, 0, Value::known(Fp::zero()));
+                        region.assign_advice(config.b, 1, Value::known(Fp::zero()));
 
                         // Name Column a
                         region.name_column(|| "This is Advice!", config.a);
@@ -2009,9 +2114,9 @@ mod tests {
                         region.name_column(|| "This is Advice too!", config.b);
 
                         // Assign c = 5.
-                        region.assign_advice(config.c, 0, Value::known(Fp::from(5u64)));
+                        region.assign_advice(config.c, 1, Value::known(Fp::from(5u64)));
                         // Assign d = 7.
-                        region.assign_fixed(config.d, 0, Fp::from(7u64));
+                        region.assign_fixed(config.d, 1, Fp::from(7u64));
 
                         // Name Column c
                         region.name_column(|| "Another one!", config.c);
@@ -2032,8 +2137,8 @@ mod tests {
             Err(vec![VerifyFailure::ConstraintNotSatisfied {
                 constraint: ((0, "Equality check").into(), 0, "").into(),
                 location: FailureLocation::InRegion {
-                    region: (1, "Wrong synthesis").into(),
-                    offset: 0,
+                    region: (0, "Wrong synthesis").into(),
+                    offset: 1,
                 },
                 cell_values: vec![
                     (
@@ -2084,3 +2189,5 @@ mod tests {
         )
     }
 }
+
+impl<F: Field> SyncDeps for MockProver<F> {}

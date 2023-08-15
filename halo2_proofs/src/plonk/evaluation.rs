@@ -4,7 +4,7 @@ use crate::plonk::permutation::Argument;
 use crate::plonk::{lookup, permutation, AdviceQuery, Any, FixedQuery, InstanceQuery, ProvingKey};
 use crate::poly::Basis;
 use crate::{
-    arithmetic::{eval_polynomial, parallelize, CurveAffine, FieldExt},
+    arithmetic::{eval_polynomial, parallelize, CurveAffine},
     poly::{
         commitment::Params, Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff,
         Polynomial, ProverQuery, Rotation,
@@ -13,7 +13,7 @@ use crate::{
 };
 use group::prime::PrimeCurve;
 use group::{
-    ff::{BatchInvert, Field},
+    ff::{BatchInvert, Field, PrimeField, WithSmallOrderMulGroup},
     Curve,
 };
 use std::any::TypeId;
@@ -26,7 +26,7 @@ use std::{
     ops::{Index, Mul, MulAssign},
 };
 
-use super::{start_measure, stop_measure, ConstraintSystem, Expression};
+use super::{shuffle, ConstraintSystem, Expression};
 
 /// Return the index in the polynomial of size `isize` after rotation `rot`.
 fn get_rotation_idx(idx: usize, rot: i32, rot_scale: i32, isize: i32) -> usize {
@@ -186,6 +186,8 @@ pub struct Evaluator<C: CurveAffine> {
     pub custom_gates: GraphEvaluator<C>,
     ///  Lookups evalution
     pub lookups: Vec<GraphEvaluator<C>>,
+    ///  Shuffle evalution
+    pub shuffles: Vec<GraphEvaluator<C>>,
 }
 
 /// GraphEvaluator
@@ -273,6 +275,39 @@ impl<C: CurveAffine> Evaluator<C> {
             ev.lookups.push(graph);
         }
 
+        // Shuffles
+        for shuffle in cs.shuffles.iter() {
+            let evaluate_lc = |expressions: &Vec<Expression<_>>, graph: &mut GraphEvaluator<C>| {
+                let parts = expressions
+                    .iter()
+                    .map(|expr| graph.add_expression(expr))
+                    .collect();
+                graph.add_calculation(Calculation::Horner(
+                    ValueSource::Constant(0),
+                    parts,
+                    ValueSource::Theta(),
+                ))
+            };
+
+            let mut graph_input = GraphEvaluator::default();
+            let compressed_input_coset = evaluate_lc(&shuffle.input_expressions, &mut graph_input);
+            let _ = graph_input.add_calculation(Calculation::Add(
+                compressed_input_coset,
+                ValueSource::Gamma(),
+            ));
+
+            let mut graph_shuffle = GraphEvaluator::default();
+            let compressed_shuffle_coset =
+                evaluate_lc(&shuffle.shuffle_expressions, &mut graph_shuffle);
+            let _ = graph_shuffle.add_calculation(Calculation::Add(
+                compressed_shuffle_coset,
+                ValueSource::Gamma(),
+            ));
+
+            ev.shuffles.push(graph_input);
+            ev.shuffles.push(graph_shuffle);
+        }
+
         ev
     }
 
@@ -288,6 +323,7 @@ impl<C: CurveAffine> Evaluator<C> {
         gamma: C::ScalarExt,
         theta: C::ScalarExt,
         lookups: &[Vec<lookup::prover::Committed<C>>],
+        shuffles: &[Vec<shuffle::prover::Committed<C>>],
         permutations: &[permutation::prover::Committed<C>],
     ) -> Polynomial<C::ScalarExt, ExtendedLagrangeCoeff> {
         let domain = &pk.vk.domain;
@@ -296,15 +332,13 @@ impl<C: CurveAffine> Evaluator<C> {
         let fixed = &pk.fixed_cosets[..];
         let extended_omega = domain.get_extended_omega();
         let isize = size as i32;
-        let one = C::ScalarExt::one();
+        let one = C::ScalarExt::ONE;
         let l0 = &pk.l0;
         let l_last = &pk.l_last;
         let l_active_row = &pk.l_active_row;
         let p = &pk.vk.cs.permutation;
 
         // Calculate the advice and instance cosets
-        #[cfg(feature = "profile")]
-        let start = start_measure("cosets", false);
         let advice: Vec<Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>> = advice_polys
             .iter()
             .map(|advice_polys| {
@@ -323,20 +357,19 @@ impl<C: CurveAffine> Evaluator<C> {
                     .collect()
             })
             .collect();
-        // stop_measure(start);
 
         let mut values = domain.empty_extended();
 
         // Core expression evaluations
         let num_threads = multicore::current_num_threads();
-        for (((advice, instance), lookups), permutation) in advice
+        for ((((advice, instance), lookups), shuffles), permutation) in advice
             .iter()
             .zip(instance.iter())
             .zip(lookups.iter())
+            .zip(shuffles.iter())
             .zip(permutations.iter())
         {
             // Custom gates
-            // let start = start_measure("custom gates", false);
             multicore::scope(|scope| {
                 let chunk_size = (size + num_threads - 1) / num_threads;
                 for (thread_idx, values) in values.chunks_mut(chunk_size).enumerate() {
@@ -364,12 +397,8 @@ impl<C: CurveAffine> Evaluator<C> {
                     });
                 }
             });
-            #[cfg(feature = "profile")]
-            stop_measure(start);
 
             // Permutations
-            #[cfg(feature = "profile")]
-            let start = start_measure("permutations", false);
             let sets = &permutation.sets;
             if !sets.is_empty() {
                 let blinding_factors = pk.vk.cs.blinding_factors();
@@ -450,12 +479,8 @@ impl<C: CurveAffine> Evaluator<C> {
                     }
                 });
             }
-            #[cfg(feature = "profile")]
-            stop_measure(start);
 
             // Lookups
-            #[cfg(feature = "profile")]
-            let start = start_measure("lookups", false);
             for (n, lookup) in lookups.iter().enumerate() {
                 // Polynomials required for this lookup.
                 // Calculated here so these only have to be kept in memory for the short time
@@ -483,7 +508,7 @@ impl<C: CurveAffine> Evaluator<C> {
                             &gamma,
                             &theta,
                             &y,
-                            &C::ScalarExt::zero(),
+                            &C::ScalarExt::ZERO,
                             idx,
                             rot_scale,
                             isize,
@@ -525,8 +550,68 @@ impl<C: CurveAffine> Evaluator<C> {
                     }
                 });
             }
-            #[cfg(feature = "profile")]
-            stop_measure(start);
+
+            // Shuffle constraints
+            for (n, shuffle) in shuffles.iter().enumerate() {
+                let product_coset = pk.vk.domain.coeff_to_extended(&shuffle.product_poly);
+
+                // Shuffle constraints
+                parallelize(&mut values, |values, start| {
+                    let input_evaluator = &self.shuffles[2 * n];
+                    let shuffle_evaluator = &self.shuffles[2 * n + 1];
+                    let mut eval_data_input = shuffle_evaluator.instance();
+                    let mut eval_data_shuffle = shuffle_evaluator.instance();
+                    for (i, value) in values.iter_mut().enumerate() {
+                        let idx = start + i;
+
+                        let input_value = input_evaluator.evaluate(
+                            &mut eval_data_input,
+                            fixed,
+                            advice,
+                            instance,
+                            challenges,
+                            &beta,
+                            &gamma,
+                            &theta,
+                            &y,
+                            &C::ScalarExt::ZERO,
+                            idx,
+                            rot_scale,
+                            isize,
+                        );
+
+                        let shuffle_value = shuffle_evaluator.evaluate(
+                            &mut eval_data_shuffle,
+                            fixed,
+                            advice,
+                            instance,
+                            challenges,
+                            &beta,
+                            &gamma,
+                            &theta,
+                            &y,
+                            &C::ScalarExt::ZERO,
+                            idx,
+                            rot_scale,
+                            isize,
+                        );
+
+                        let r_next = get_rotation_idx(idx, 1, rot_scale, isize);
+
+                        // l_0(X) * (1 - z(X)) = 0
+                        *value = *value * y + ((one - product_coset[idx]) * l0[idx]);
+                        // l_last(X) * (z(X)^2 - z(X)) = 0
+                        *value = *value * y
+                            + ((product_coset[idx] * product_coset[idx] - product_coset[idx])
+                                * l_last[idx]);
+                        // (1 - (l_last(X) + l_blind(X))) * (z(\omega X) (s(X) + \gamma) - z(X) (a(X) + \gamma)) = 0
+                        *value = *value * y
+                            + l_active_row[idx]
+                                * (product_coset[r_next] * shuffle_value
+                                    - product_coset[idx] * input_value)
+                    }
+                });
+            }
         }
         values
     }
@@ -537,8 +622,8 @@ impl<C: CurveAffine> Default for GraphEvaluator<C> {
         Self {
             // Fixed positions to allow easy access
             constants: vec![
-                C::ScalarExt::zero(),
-                C::ScalarExt::one(),
+                C::ScalarExt::ZERO,
+                C::ScalarExt::ONE,
                 C::ScalarExt::from(2u64),
             ],
             rotations: Vec::new(),
@@ -686,9 +771,9 @@ impl<C: CurveAffine> GraphEvaluator<C> {
                 }
             }
             Expression::Scaled(a, f) => {
-                if *f == C::ScalarExt::zero() {
+                if *f == C::ScalarExt::ZERO {
                     ValueSource::Constant(0)
-                } else if *f == C::ScalarExt::one() {
+                } else if *f == C::ScalarExt::ONE {
                     self.add_expression(a)
                 } else {
                     let cst = self.add_constant(f);
@@ -702,7 +787,7 @@ impl<C: CurveAffine> GraphEvaluator<C> {
     /// Creates a new evaluation structure
     pub fn instance(&self) -> EvaluationData<C> {
         EvaluationData {
-            intermediates: vec![C::ScalarExt::zero(); self.num_intermediates],
+            intermediates: vec![C::ScalarExt::ZERO; self.num_intermediates],
             rotations: vec![0usize; self.rotations.len()],
         }
     }
@@ -750,13 +835,13 @@ impl<C: CurveAffine> GraphEvaluator<C> {
         if let Some(calc) = self.calculations.last() {
             data.intermediates[calc.target]
         } else {
-            C::ScalarExt::zero()
+            C::ScalarExt::ZERO
         }
     }
 }
 
 /// Simple evaluation of an expression
-pub fn evaluate<F: FieldExt, B: Basis>(
+pub fn evaluate<F: Field, B: Basis>(
     expression: &Expression<F>,
     size: usize,
     rot_scale: i32,
@@ -765,7 +850,7 @@ pub fn evaluate<F: FieldExt, B: Basis>(
     instance: &[Polynomial<F, B>],
     challenges: &[F],
 ) -> Vec<F> {
-    let mut values = vec![F::zero(); size];
+    let mut values = vec![F::ZERO; size];
     let isize = size as i32;
     parallelize(&mut values, |values, start| {
         for (i, value) in values.iter_mut().enumerate() {

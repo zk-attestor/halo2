@@ -2,6 +2,11 @@
 //! various forms, including computing commitments to them and provably opening
 //! the committed polynomials at arbitrary points.
 
+use std::fmt::Debug;
+use std::io;
+use std::marker::PhantomData;
+use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, Range, RangeFrom, RangeFull, Sub};
+
 use crate::arithmetic::parallelize;
 use crate::helpers::SerdePrimeField;
 use crate::plonk::Assigned;
@@ -9,11 +14,7 @@ use crate::SerdeFormat;
 
 use ff::PrimeField;
 use group::ff::{BatchInvert, Field};
-use halo2curves::FieldExt;
-use std::fmt::Debug;
-use std::io;
-use std::marker::PhantomData;
-use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, Range, RangeFrom, RangeFull, Sub};
+use rayon::prelude::*;
 
 /// Generic commitment scheme structures
 pub mod commitment;
@@ -185,17 +186,20 @@ impl<F: SerdePrimeField, B> Polynomial<F, B> {
 }
 
 /// Invert each polynomial in place for memory efficiency
-pub(crate) fn batch_invert_assigned_ref<F: FieldExt>(
-    assigned: Vec<&Polynomial<Assigned<F>, LagrangeCoeff>>,
-) -> Vec<Polynomial<F, LagrangeCoeff>> {
+pub(crate) fn batch_invert_assigned<F: Field, PA>(
+    assigned: Vec<PA>,
+) -> Vec<Polynomial<F, LagrangeCoeff>>
+where
+    PA: Deref<Target = [Assigned<F>]> + Sync,
+{
     if assigned.is_empty() {
         return vec![];
     }
-    let n = assigned[0].num_coeffs();
+    let n = assigned[0].as_ref().len();
     // 1d vector better for memory allocation
     let mut assigned_denominators: Vec<_> = assigned
         .iter()
-        .flat_map(|f| f.iter().map(|value| value.denominator()))
+        .flat_map(|f| f.as_ref().iter().map(|value| value.denominator()))
         .collect();
 
     assigned_denominators
@@ -206,56 +210,25 @@ pub(crate) fn batch_invert_assigned_ref<F: FieldExt>(
         .batch_invert();
 
     assigned
-        .iter()
-        .zip(assigned_denominators.chunks(n))
+        .par_iter()
+        .zip(assigned_denominators.par_chunks(n))
         .map(|(poly, inv_denoms)| {
-            debug_assert_eq!(inv_denoms.len(), poly.values.len());
+            debug_assert_eq!(inv_denoms.len(), poly.as_ref().len());
             Polynomial {
                 values: poly
-                    .values
+                    .as_ref()
                     .iter()
                     .zip(inv_denoms.iter())
-                    .map(|(a, inv_den)| a.numerator() * inv_den.unwrap_or(F::one()))
+                    .map(|(a, inv_den)| a.numerator() * inv_den.unwrap_or(F::ONE))
                     .collect(),
-                _marker: poly._marker,
+                _marker: PhantomData,
             }
         })
         .collect()
 }
 
-pub(crate) fn batch_invert_assigned<F: FieldExt>(
-    assigned: Vec<Polynomial<Assigned<F>, LagrangeCoeff>>,
-) -> Vec<Polynomial<F, LagrangeCoeff>> {
-    let mut assigned_denominators: Vec<_> = assigned
-        .iter()
-        .map(|f| {
-            f.iter()
-                .map(|value| value.denominator())
-                .collect::<Vec<_>>()
-        })
-        .collect();
-
-    assigned_denominators
-        .iter_mut()
-        .flat_map(|f| {
-            f.iter_mut()
-                // If the denominator is trivial, we can skip it, reducing the
-                // size of the batch inversion.
-                .filter_map(|d| d.as_mut())
-        })
-        .batch_invert();
-
-    assigned
-        .iter()
-        .zip(assigned_denominators.into_iter())
-        .map(|(poly, inv_denoms)| {
-            poly.invert(inv_denoms.into_iter().map(|d| d.unwrap_or_else(F::one)))
-        })
-        .collect()
-}
-
 impl<F: Field> Polynomial<Assigned<F>, LagrangeCoeff> {
-    pub(crate) fn invert(
+    pub fn invert(
         &self,
         inv_denoms: impl Iterator<Item = F> + ExactSizeIterator,
     ) -> Polynomial<F, LagrangeCoeff> {
@@ -264,7 +237,7 @@ impl<F: Field> Polynomial<Assigned<F>, LagrangeCoeff> {
             values: self
                 .values
                 .iter()
-                .zip(inv_denoms.into_iter())
+                .zip(inv_denoms)
                 .map(|(a, inv_den)| a.numerator() * inv_den)
                 .collect(),
             _marker: self._marker,
@@ -320,13 +293,13 @@ impl<F: Field, B: Basis> Mul<F> for Polynomial<F, B> {
     type Output = Polynomial<F, B>;
 
     fn mul(mut self, rhs: F) -> Polynomial<F, B> {
-        if rhs == F::zero() {
+        if rhs == F::ZERO {
             return Polynomial {
-                values: vec![F::zero(); self.len()],
+                values: vec![F::ZERO; self.len()],
                 _marker: PhantomData,
             };
         }
-        if rhs == F::one() {
+        if rhs == F::ONE {
             return self;
         }
 

@@ -2,19 +2,19 @@
 //! domain that is of a suitable size for the application.
 
 use crate::{
-    arithmetic::{best_fft, parallelize, parallelize_count, FieldExt, Group},
+    arithmetic::{best_fft, parallelize, parallelize_count},
     multicore,
-    plonk::{Assigned},
+    plonk::Assigned,
 };
 
 use super::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation};
 
-use group::ff::{BatchInvert, Field, PrimeField};
+use group::{
+    ff::{BatchInvert, Field, PrimeField, WithSmallOrderMulGroup},
+    Group,
+};
 
 use std::{env::var, marker::PhantomData};
-
-/// TEMP
-pub static mut FFT_TOTAL_TIME: usize = 0;
 
 fn get_fft_mode() -> usize {
     var("FFT_MODE")
@@ -66,7 +66,7 @@ pub fn get_stages(size: usize, radixes: Vec<usize>) -> Vec<FFTStage> {
 
 /// FFTData
 #[derive(Clone, Debug)]
-struct FFTData<F: FieldExt> {
+struct FFTData<F: Field> {
     n: usize,
 
     stages: Vec<FFTStage>,
@@ -76,13 +76,13 @@ struct FFTData<F: FieldExt> {
     //scratch: Vec<F>,
 }
 
-impl<F: FieldExt> FFTData<F> {
+impl<F: Field> FFTData<F> {
     /// Create FFT data
     pub fn new(n: usize, omega: F, omega_inv: F) -> Self {
         let stages = get_stages(n, vec![]);
         let mut f_twiddles = vec![];
         let mut inv_twiddles = vec![];
-        let mut scratch = vec![F::zero(); n];
+        let mut scratch = vec![F::ONE; n];
 
         // Generate stage twiddles
         for inv in 0..2 {
@@ -114,7 +114,7 @@ impl<F: FieldExt> FFTData<F> {
                 let stage_length = stages[l].length;
 
                 let num_twiddles = stage_length * (radix - 1);
-                stage_twiddles[l].resize(num_twiddles + 1, F::zero());
+                stage_twiddles[l].resize(num_twiddles + 1, F::ZERO);
 
                 // Set j
                 stage_twiddles[l][num_twiddles] = twiddles[(twiddles.len() * 3) / 4];
@@ -141,7 +141,7 @@ impl<F: FieldExt> FFTData<F> {
 }
 
 /// Radix 2 butterfly
-pub fn butterfly_2<F: FieldExt>(out: &mut [F], twiddles: &[F], stage_length: usize) {
+pub fn butterfly_2<F: Field>(out: &mut [F], twiddles: &[F], stage_length: usize) {
     let mut out_offset = 0;
     let mut out_offset2 = stage_length;
 
@@ -161,7 +161,7 @@ pub fn butterfly_2<F: FieldExt>(out: &mut [F], twiddles: &[F], stage_length: usi
 }
 
 /// Radix 2 butterfly
-fn butterfly_2_parallel<F: FieldExt>(
+fn butterfly_2_parallel<F: Field>(
     out: &mut [F],
     twiddles: &[F],
     _stage_length: usize,
@@ -193,7 +193,7 @@ fn butterfly_2_parallel<F: FieldExt>(
 }
 
 /// Radix 4 butterfly
-pub fn butterfly_4<F: FieldExt>(out: &mut [F], twiddles: &[F], stage_length: usize) {
+pub fn butterfly_4<F: Field>(out: &mut [F], twiddles: &[F], stage_length: usize) {
     let j = twiddles[twiddles.len() - 1];
     let mut tw = 0;
 
@@ -248,7 +248,7 @@ pub fn butterfly_4<F: FieldExt>(out: &mut [F], twiddles: &[F], stage_length: usi
 }
 
 /// Radix 4 butterfly
-pub fn butterfly_4_parallel<F: FieldExt>(
+pub fn butterfly_4_parallel<F: Field>(
     out: &mut [F],
     twiddles: &[F],
     _stage_length: usize,
@@ -301,7 +301,7 @@ pub fn butterfly_4_parallel<F: FieldExt>(
 }
 
 /// Inner recursion
-fn recursive_fft_inner<F: FieldExt>(
+fn recursive_fft_inner<F: Field>(
     data_in: &[F],
     data_out: &mut [F],
     twiddles: &Vec<Vec<F>>,
@@ -375,13 +375,13 @@ fn recursive_fft_inner<F: FieldExt>(
     }
 }
 
-fn recursive_fft<F: FieldExt>(data: &FFTData<F>, data_in: &mut Vec<F>, inverse: bool) {
+fn recursive_fft<F: Field>(data: &FFTData<F>, data_in: &mut Vec<F>, inverse: bool) {
     let num_threads = multicore::current_num_threads();
     //let start = start_measure(format!("recursive fft {} ({})", data_in.len(), num_threads), false);
 
     // TODO: reuse scratch buffer between FFTs
     //let start_mem = start_measure(format!("alloc"), false);
-    let mut scratch = vec![F::zero(); data_in.len()];
+    let mut scratch = vec![F::ZERO; data_in.len()];
     //stop_measure(start_mem);
 
     recursive_fft_inner(
@@ -398,40 +398,37 @@ fn recursive_fft<F: FieldExt>(data: &FFTData<F>, data_in: &mut Vec<F>, inverse: 
         0,
         num_threads,
     );
-    //let duration = stop_measure(start);
 
-    //let start = start_measure(format!("copy"), false);
     // Will simply swap the vector's buffer, no data is actually copied
     std::mem::swap(data_in, &mut /*data.*/scratch);
-    //stop_measure(start);
 }
 
 /// This structure contains precomputed constants and other details needed for
 /// performing operations on an evaluation domain of size $2^k$ and an extended
 /// domain of size $2^{k} * j$ with $j \neq 0$.
 #[derive(Clone, Debug)]
-pub struct EvaluationDomain<G: Group> {
+pub struct EvaluationDomain<F: Field> {
     n: u64,
     k: u32,
     extended_k: u32,
-    omega: G::Scalar,
-    omega_inv: G::Scalar,
-    extended_omega: G::Scalar,
-    extended_omega_inv: G::Scalar,
-    g_coset: G::Scalar,
-    g_coset_inv: G::Scalar,
+    omega: F,
+    omega_inv: F,
+    extended_omega: F,
+    extended_omega_inv: F,
+    g_coset: F,
+    g_coset_inv: F,
     quotient_poly_degree: u64,
-    ifft_divisor: G::Scalar,
-    extended_ifft_divisor: G::Scalar,
-    t_evaluations: Vec<G::Scalar>,
-    barycentric_weight: G::Scalar,
+    ifft_divisor: F,
+    extended_ifft_divisor: F,
+    t_evaluations: Vec<F>,
+    barycentric_weight: F,
 
     // Recursive stuff
-    fft_data: FFTData<G::Scalar>,
-    extended_fft_data: FFTData<G::Scalar>,
+    fft_data: FFTData<F>,
+    extended_fft_data: FFTData<F>,
 }
 
-impl<G: Group> EvaluationDomain<G> {
+impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     /// This constructs a new evaluation domain object based on the provided
     /// values $j, k$.
     pub fn new(j: u32, k: u32) -> Self {
@@ -448,14 +445,15 @@ impl<G: Group> EvaluationDomain<G> {
         while (1 << extended_k) < (n * quotient_poly_degree) {
             extended_k += 1;
         }
+        #[cfg(feature = "profile")]
         println!("k: {}, extended_k: {}", k, extended_k);
 
-        let mut extended_omega = G::Scalar::root_of_unity();
+        let mut extended_omega = F::ROOT_OF_UNITY;
 
         // Get extended_omega, the 2^{extended_k}'th root of unity
         // The loop computes extended_omega = omega^{2 ^ (S - extended_k)}
         // Notice that extended_omega ^ {2 ^ extended_k} = omega ^ {2^S} = 1.
-        for _ in extended_k..G::Scalar::S {
+        for _ in extended_k..F::S {
             extended_omega = extended_omega.square();
         }
         let extended_omega = extended_omega;
@@ -477,14 +475,14 @@ impl<G: Group> EvaluationDomain<G> {
         // already.
         // The coset evaluation domain is:
         // zeta {1, extended_omega, extended_omega^2, ..., extended_omega^{(2^extended_k) - 1}}
-        let g_coset = G::Scalar::ZETA;
+        let g_coset = F::ZETA;
         let g_coset_inv = g_coset.square();
 
         let mut t_evaluations = Vec::with_capacity(1 << (extended_k - k));
         {
             // Compute the evaluations of t(X) = X^n - 1 in the coset evaluation domain.
             // We don't have to compute all of them, because it will repeat.
-            let orig = G::Scalar::ZETA.pow_vartime([n]);
+            let orig = F::ZETA.pow_vartime([n]);
             let step = extended_omega.pow_vartime([n]);
             let mut cur = orig;
             loop {
@@ -498,19 +496,19 @@ impl<G: Group> EvaluationDomain<G> {
 
             // Subtract 1 from each to give us t_evaluations[i] = t(zeta * extended_omega^i)
             for coeff in &mut t_evaluations {
-                *coeff -= &G::Scalar::one();
+                *coeff -= &F::ONE;
             }
 
             // Invert, because we're dividing by this polynomial.
             // We invert in a batch, below.
         }
 
-        let mut ifft_divisor = G::Scalar::from(1 << k); // Inversion computed later
-        let mut extended_ifft_divisor = G::Scalar::from(1 << extended_k); // Inversion computed later
+        let mut ifft_divisor = F::from(1 << k); // Inversion computed later
+        let mut extended_ifft_divisor = F::from(1 << extended_k); // Inversion computed later
 
         // The barycentric weight of 1 over the evaluation domain
         // 1 / \prod_{i != 0} (1 - omega^i)
-        let mut barycentric_weight = G::Scalar::from(n); // Inversion computed later
+        let mut barycentric_weight = F::from(n); // Inversion computed later
 
         // Compute batch inversion
         t_evaluations
@@ -537,8 +535,8 @@ impl<G: Group> EvaluationDomain<G> {
             extended_ifft_divisor,
             t_evaluations,
             barycentric_weight,
-            fft_data: FFTData::<G::Scalar>::new(n as usize, omega, omega_inv),
-            extended_fft_data: FFTData::<G::Scalar>::new(
+            fft_data: FFTData::<F>::new(n as usize, omega, omega_inv),
+            extended_fft_data: FFTData::<F>::new(
                 (1 << extended_k) as usize,
                 extended_omega,
                 extended_omega_inv,
@@ -549,7 +547,7 @@ impl<G: Group> EvaluationDomain<G> {
     /// Obtains a polynomial in Lagrange form when given a vector of Lagrange
     /// coefficients of size `n`; panics if the provided vector is the wrong
     /// length.
-    pub fn lagrange_from_vec(&self, values: Vec<G>) -> Polynomial<G, LagrangeCoeff> {
+    pub fn lagrange_from_vec(&self, values: Vec<F>) -> Polynomial<F, LagrangeCoeff> {
         assert_eq!(values.len(), self.n as usize);
 
         Polynomial {
@@ -560,8 +558,8 @@ impl<G: Group> EvaluationDomain<G> {
 
     pub fn lagrange_assigned_from_vec(
         &self,
-        values: Vec<Assigned<G>>,
-    ) -> Polynomial<Assigned<G>, LagrangeCoeff> {
+        values: Vec<Assigned<F>>,
+    ) -> Polynomial<Assigned<F>, LagrangeCoeff> {
         assert_eq!(values.len(), self.n as usize);
 
         Polynomial {
@@ -573,7 +571,7 @@ impl<G: Group> EvaluationDomain<G> {
     /// Obtains a polynomial in coefficient form when given a vector of
     /// coefficients of size `n`; panics if the provided vector is the wrong
     /// length.
-    pub fn coeff_from_vec(&self, values: Vec<G>) -> Polynomial<G, Coeff> {
+    pub fn coeff_from_vec(&self, values: Vec<F>) -> Polynomial<F, Coeff> {
         assert_eq!(values.len(), self.n as usize);
 
         Polynomial {
@@ -583,35 +581,32 @@ impl<G: Group> EvaluationDomain<G> {
     }
 
     /// Returns an empty (zero) polynomial in the coefficient basis
-    pub fn empty_coeff(&self) -> Polynomial<G, Coeff> {
+    pub fn empty_coeff(&self) -> Polynomial<F, Coeff> {
         Polynomial {
-            values: vec![G::group_zero(); self.n as usize],
+            values: vec![F::ZERO; self.n as usize],
             _marker: PhantomData,
         }
     }
 
     /// Returns an empty (zero) polynomial in the Lagrange coefficient basis
-    pub fn empty_lagrange(&self) -> Polynomial<G, LagrangeCoeff> {
+    pub fn empty_lagrange(&self) -> Polynomial<F, LagrangeCoeff> {
         Polynomial {
-            values: vec![G::group_zero(); self.n as usize],
+            values: vec![F::ZERO; self.n as usize],
             _marker: PhantomData,
         }
     }
 
     /// Returns an empty (zero) polynomial in the Lagrange coefficient basis, with
     /// deferred inversions.
-    pub(crate) fn empty_lagrange_assigned(&self) -> Polynomial<Assigned<G>, LagrangeCoeff>
-    where
-        G: Field,
-    {
+    pub(crate) fn empty_lagrange_assigned(&self) -> Polynomial<Assigned<F>, LagrangeCoeff> {
         Polynomial {
-            values: vec![G::group_zero().into(); self.n as usize],
+            values: vec![F::ZERO.into(); self.n as usize],
             _marker: PhantomData,
         }
     }
 
     /// Returns a constant polynomial in the Lagrange coefficient basis
-    pub fn constant_lagrange(&self, scalar: G) -> Polynomial<G, LagrangeCoeff> {
+    pub fn constant_lagrange(&self, scalar: F) -> Polynomial<F, LagrangeCoeff> {
         Polynomial {
             values: vec![scalar; self.n as usize],
             _marker: PhantomData,
@@ -620,16 +615,16 @@ impl<G: Group> EvaluationDomain<G> {
 
     /// Returns an empty (zero) polynomial in the extended Lagrange coefficient
     /// basis
-    pub fn empty_extended(&self) -> Polynomial<G, ExtendedLagrangeCoeff> {
+    pub fn empty_extended(&self) -> Polynomial<F, ExtendedLagrangeCoeff> {
         Polynomial {
-            values: vec![G::group_zero(); self.extended_len()],
+            values: vec![F::ZERO; self.extended_len()],
             _marker: PhantomData,
         }
     }
 
     /// Returns a constant polynomial in the extended Lagrange coefficient
     /// basis
-    pub fn constant_extended(&self, scalar: G) -> Polynomial<G, ExtendedLagrangeCoeff> {
+    pub fn constant_extended(&self, scalar: F) -> Polynomial<F, ExtendedLagrangeCoeff> {
         Polynomial {
             values: vec![scalar; self.extended_len()],
             _marker: PhantomData,
@@ -640,10 +635,7 @@ impl<G: Group> EvaluationDomain<G> {
     ///
     /// This function will panic if the provided vector is not the correct
     /// length.
-    pub fn lagrange_to_coeff(
-        &self,
-        mut a: Polynomial<G::Scalar, LagrangeCoeff>,
-    ) -> Polynomial<G::Scalar, Coeff> {
+    pub fn lagrange_to_coeff(&self, mut a: Polynomial<F, LagrangeCoeff>) -> Polynomial<F, Coeff> {
         assert_eq!(a.values.len(), 1 << self.k);
 
         // Perform inverse FFT to obtain the polynomial in coefficient form
@@ -659,15 +651,15 @@ impl<G: Group> EvaluationDomain<G> {
     /// evaluation domain, rotating by `rotation` if desired.
     pub fn coeff_to_extended(
         &self,
-        p: &Polynomial<G::Scalar, Coeff>,
-    ) -> Polynomial<G::Scalar, ExtendedLagrangeCoeff> {
+        p: &Polynomial<F, Coeff>,
+    ) -> Polynomial<F, ExtendedLagrangeCoeff> {
         assert_eq!(p.values.len(), 1 << self.k);
 
         let mut a = Vec::with_capacity(self.extended_len());
         a.extend(&p.values);
 
         self.distribute_powers_zeta(&mut a, true);
-        a.resize(self.extended_len(), G::Scalar::zero());
+        a.resize(self.extended_len(), F::ZERO);
         self.fft_inner(&mut a, self.extended_omega, self.extended_k, false);
 
         Polynomial {
@@ -679,9 +671,9 @@ impl<G: Group> EvaluationDomain<G> {
     /// Rotate the extended domain polynomial over the original domain.
     pub fn rotate_extended(
         &self,
-        poly: &Polynomial<G, ExtendedLagrangeCoeff>,
+        poly: &Polynomial<F, ExtendedLagrangeCoeff>,
         rotation: Rotation,
-    ) -> Polynomial<G, ExtendedLagrangeCoeff> {
+    ) -> Polynomial<F, ExtendedLagrangeCoeff> {
         let new_rotation = ((1 << (self.extended_k - self.k)) * rotation.0.abs()) as usize;
 
         let mut poly = poly.clone();
@@ -701,10 +693,7 @@ impl<G: Group> EvaluationDomain<G> {
     /// This function will panic if the provided vector is not the correct
     /// length.
     // TODO/FIXME: caller should be responsible for truncating
-    pub fn extended_to_coeff(
-        &self,
-        mut a: Polynomial<G::Scalar, ExtendedLagrangeCoeff>,
-    ) -> Vec<G::Scalar> {
+    pub fn extended_to_coeff(&self, mut a: Polynomial<F, ExtendedLagrangeCoeff>) -> Vec<F> {
         assert_eq!(a.values.len(), self.extended_len());
 
         // Inverse FFT
@@ -732,15 +721,15 @@ impl<G: Group> EvaluationDomain<G> {
     /// polynomial of the $2^k$ size domain.
     pub fn divide_by_vanishing_poly(
         &self,
-        mut a: Polynomial<G, ExtendedLagrangeCoeff>,
-    ) -> Polynomial<G, ExtendedLagrangeCoeff> {
+        mut a: Polynomial<F, ExtendedLagrangeCoeff>,
+    ) -> Polynomial<F, ExtendedLagrangeCoeff> {
         assert_eq!(a.values.len(), self.extended_len());
 
         // Divide to obtain the quotient polynomial in the coset evaluation
         // domain.
         parallelize(&mut a.values, |h, mut index| {
             for h in h {
-                h.group_scale(&self.t_evaluations[index % self.t_evaluations.len()]);
+                *h *= &self.t_evaluations[index % self.t_evaluations.len()];
                 index += 1;
             }
         });
@@ -758,7 +747,7 @@ impl<G: Group> EvaluationDomain<G> {
     ///
     /// `into_coset` should be set to `true` when moving into the coset,
     /// and `false` when moving out. This toggles the choice of `zeta`.
-    fn distribute_powers_zeta(&self, a: &mut [G::Scalar], into_coset: bool) {
+    fn distribute_powers_zeta(&self, a: &mut [F], into_coset: bool) {
         let coset_powers = if into_coset {
             [self.g_coset, self.g_coset_inv]
         } else {
@@ -769,25 +758,24 @@ impl<G: Group> EvaluationDomain<G> {
                 // Distribute powers to move into/from coset
                 let i = index % (coset_powers.len() + 1);
                 if i != 0 {
-                    a.group_scale(&coset_powers[i - 1]);
+                    *a *= &coset_powers[i - 1];
                 }
                 index += 1;
             }
         });
     }
 
-    fn ifft(&self, a: &mut Vec<G::Scalar>, omega_inv: G::Scalar, log_n: u32, divisor: G::Scalar) {
+    fn ifft(&self, a: &mut Vec<F>, omega_inv: F, log_n: u32, divisor: F) {
         self.fft_inner(a, omega_inv, log_n, true);
         parallelize(a, |a, _| {
             for a in a {
                 // Finish iFFT
-                a.group_scale(&divisor);
+                *a *= &divisor;
             }
         });
     }
 
-    fn fft_inner(&self, a: &mut Vec<G::Scalar>, omega: G::Scalar, log_n: u32, inverse: bool) {
-        // let start = get_time();
+    fn fft_inner(&self, a: &mut Vec<F>, omega: F, log_n: u32, inverse: bool) {
         if get_fft_mode() == 1 {
             let fft_data = if a.len() == self.fft_data.n {
                 &self.fft_data
@@ -798,12 +786,6 @@ impl<G: Group> EvaluationDomain<G> {
         } else {
             best_fft(a, omega, log_n);
         }
-        // let duration = get_duration(start);
-
-        // #[allow(unsafe_code)]
-        // unsafe {
-        //     FFT_TOTAL_TIME += duration;
-        // }
     }
 
     /// Get the size of the domain
@@ -822,24 +804,24 @@ impl<G: Group> EvaluationDomain<G> {
     }
 
     /// Get $\omega$, the generator of the $2^k$ order multiplicative subgroup.
-    pub fn get_omega(&self) -> G::Scalar {
+    pub fn get_omega(&self) -> F {
         self.omega
     }
 
     /// Get $\omega^{-1}$, the inverse of the generator of the $2^k$ order
     /// multiplicative subgroup.
-    pub fn get_omega_inv(&self) -> G::Scalar {
+    pub fn get_omega_inv(&self) -> F {
         self.omega_inv
     }
 
     /// Get the generator of the extended domain's multiplicative subgroup.
-    pub fn get_extended_omega(&self) -> G::Scalar {
+    pub fn get_extended_omega(&self) -> F {
         self.extended_omega
     }
 
     /// Multiplies a value by some power of $\omega$, essentially rotating over
     /// the domain.
-    pub fn rotate_omega(&self, value: G::Scalar, rotation: Rotation) -> G::Scalar {
+    pub fn rotate_omega(&self, value: F, rotation: Rotation) -> F {
         let mut point = value;
         if rotation.0 >= 0 {
             point *= &self.get_omega().pow_vartime([rotation.0 as u64]);
@@ -880,23 +862,23 @@ impl<G: Group> EvaluationDomain<G> {
     /// which is the barycentric weight of $\omega^i$.
     pub fn l_i_range<I: IntoIterator<Item = i32> + Clone>(
         &self,
-        x: G::Scalar,
-        xn: G::Scalar,
+        x: F,
+        xn: F,
         rotations: I,
-    ) -> Vec<G::Scalar> {
+    ) -> Vec<F> {
         let mut results;
         {
             let rotations = rotations.clone().into_iter();
             results = Vec::with_capacity(rotations.size_hint().1.unwrap_or(0));
             for rotation in rotations {
                 let rotation = Rotation(rotation);
-                let result = x - self.rotate_omega(G::Scalar::one(), rotation);
+                let result = x - self.rotate_omega(F::ONE, rotation);
                 results.push(result);
             }
             results.iter_mut().batch_invert();
         }
 
-        let common = (xn - G::Scalar::one()) * self.barycentric_weight;
+        let common = (xn - F::ONE) * self.barycentric_weight;
         for (rotation, result) in rotations.into_iter().zip(results.iter_mut()) {
             let rotation = Rotation(rotation);
             *result = self.rotate_omega(*result * common, rotation);
@@ -913,7 +895,7 @@ impl<G: Group> EvaluationDomain<G> {
     /// Obtain a pinned version of this evaluation domain; a structure with the
     /// minimal parameters needed to determine the rest of the evaluation
     /// domain.
-    pub fn pinned(&self) -> PinnedEvaluationDomain<'_, G> {
+    pub fn pinned(&self) -> PinnedEvaluationDomain<'_, F> {
         PinnedEvaluationDomain {
             k: &self.k,
             extended_k: &self.extended_k,
@@ -925,10 +907,10 @@ impl<G: Group> EvaluationDomain<G> {
 /// Represents the minimal parameters that determine an `EvaluationDomain`.
 #[allow(dead_code)]
 #[derive(Debug)]
-pub struct PinnedEvaluationDomain<'a, G: Group> {
+pub struct PinnedEvaluationDomain<'a, F: Field> {
     k: &'a u32,
     extended_k: &'a u32,
-    omega: &'a G::Scalar,
+    omega: &'a F,
 }
 
 #[test]
@@ -983,17 +965,17 @@ fn test_l_i() {
     let mut l = vec![];
     let mut points = vec![];
     for i in 0..8 {
-        points.push(domain.omega.pow(&[i, 0, 0, 0]));
+        points.push(domain.omega.pow([i, 0, 0, 0]));
     }
     for i in 0..8 {
         let mut l_i = vec![Scalar::zero(); 8];
-        l_i[i] = Scalar::one();
+        l_i[i] = Scalar::ONE;
         let l_i = lagrange_interpolate(&points[..], &l_i[..]);
         l.push(l_i);
     }
 
     let x = Scalar::random(OsRng);
-    let xn = x.pow(&[8, 0, 0, 0]);
+    let xn = x.pow([8, 0, 0, 0]);
 
     let evaluations = domain.l_i_range(x, xn, -7..=7);
     for i in 0..8 {
@@ -1025,21 +1007,11 @@ fn test_fft() {
         input[i] = Scalar::random(OsRng);
     }*/
 
-    #[cfg(feature = "profile")]
-    let num_threads = multicore::current_num_threads();
-
     let mut a = input.clone();
-    // let start = start_measure(format!("best fft {} ({})", a.len(), num_threads), false);
     best_fft(&mut a, domain.omega, k);
-    // stop_measure(start);
 
     let mut b = input.clone();
-    // let start = start_measure(
-    //     format!("recursive fft {} ({})", a.len(), num_threads),
-    //     false,
-    // );
     recursive_fft(&domain.fft_data, &mut b, false);
-    // stop_measure(start);
 
     for i in 0..n {
         //println!("{}: {} {}", i, a[i], b[i]);
