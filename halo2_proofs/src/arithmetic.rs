@@ -1,6 +1,8 @@
 //! This module provides common utilities, traits and structures for group,
 //! field and polynomial arithmetic.
 
+use std::cmp;
+
 use super::multicore;
 pub use ff::Field;
 use group::{
@@ -25,6 +27,7 @@ where
 {
 }
 
+// ASSUMES C::Scalar::Repr is little endian
 fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut C::Curve) {
     let coeffs: Vec<_> = coeffs.iter().map(|a| a.to_repr()).collect();
 
@@ -36,6 +39,7 @@ fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut 
         (f64::from(bases.len() as u32)).ln().ceil() as usize
     };
 
+    // Group `bytes` into bits and take the `segment`th chunk of `c` bits
     fn get_at<F: PrimeField>(segment: usize, c: usize, bytes: &F::Repr) -> usize {
         let skip_bits = segment * c;
         let skip_bytes = skip_bits / 8;
@@ -58,7 +62,32 @@ fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut 
 
     let segments = (256 / c) + 1;
 
-    for current_segment in (0..segments).rev() {
+    // this can be optimized
+    let mut coeffs_in_segments = Vec::with_capacity(segments);
+    // track what is the last segment where we actually have nonzero bits, so we completely skip buckets where the scalar bits for all coeffs are 0
+    let mut max_nonzero_segment = None;
+    for current_segment in 0..segments {
+        let coeff_segments: Vec<_> = coeffs
+            .iter()
+            .map(|coeff| {
+                let c_bits = get_at::<C::Scalar>(current_segment, c, coeff);
+                if c_bits != 0 {
+                    max_nonzero_segment = Some(current_segment);
+                }
+                c_bits
+            })
+            .collect();
+        coeffs_in_segments.push(coeff_segments);
+    }
+
+    if max_nonzero_segment.is_none() {
+        return;
+    }
+    for coeffs_seg in coeffs_in_segments
+        .into_iter()
+        .take(max_nonzero_segment.unwrap() + 1)
+        .rev()
+    {
         for _ in 0..c {
             *acc = acc.double();
         }
@@ -96,8 +125,7 @@ fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut 
 
         let mut buckets: Vec<Bucket<C>> = vec![Bucket::None; (1 << c) - 1];
 
-        for (coeff, base) in coeffs.iter().zip(bases.iter()) {
-            let coeff = get_at::<C::Scalar>(current_segment, c, coeff);
+        for (coeff, base) in coeffs_seg.into_iter().zip(bases.iter()) {
             if coeff != 0 {
                 buckets[coeff - 1].add_assign(base);
             }
