@@ -130,7 +130,7 @@ fn plonk_api() {
                     region.assign_fixed(self.config.sb, 0, FF::ZERO);
                     region.assign_fixed(self.config.sc, 0, FF::ONE);
                     region.assign_fixed(self.config.sm, 0, FF::ONE);
-                    Ok((*lhs.cell(), *rhs.cell(), *out.cell()))
+                    Ok((lhs.cell(), rhs.cell(), out.cell()))
                 },
             )
         }
@@ -167,7 +167,7 @@ fn plonk_api() {
                     region.assign_fixed(self.config.sb, 0, FF::ONE);
                     region.assign_fixed(self.config.sc, 0, FF::ONE);
                     region.assign_fixed(self.config.sm, 0, FF::ZERO);
-                    Ok((*lhs.cell(), *rhs.cell(), *out.cell()))
+                    Ok((lhs.cell(), rhs.cell(), out.cell()))
                 },
             )
         }
@@ -180,8 +180,8 @@ fn plonk_api() {
             layouter.assign_region(
                 || "copy",
                 |mut region| {
-                    region.constrain_equal(&left, &right);
-                    region.constrain_equal(&left, &right);
+                    region.constrain_equal(left, right);
+                    region.constrain_equal(left, right);
                     Ok(())
                 },
             )
@@ -196,7 +196,7 @@ fn plonk_api() {
                     let value = region.assign_advice(self.config.a, 0, f());
                     region.assign_fixed(self.config.sp, 0, FF::ONE);
 
-                    Ok(*value.cell())
+                    Ok(value.cell())
                 },
             )
         }

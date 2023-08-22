@@ -120,8 +120,8 @@ impl<V, F: Field> AssignedCell<V, F> {
     }
 
     /// Returns the cell.
-    pub fn cell(&self) -> &Cell {
-        &self.cell
+    pub fn cell(&self) -> Cell {
+        self.cell
     }
 
     pub fn row_offset(&self) -> usize {
@@ -169,7 +169,7 @@ impl<'v, F: Field> AssignedCell<&'v Assigned<F>, F> {
         offset: usize,
     ) -> AssignedCell<&'_ Assigned<F>, F> {
         let assigned_cell = region.assign_advice(column, offset, self.value.map(|v| *v));
-        region.constrain_equal(&assigned_cell.cell, &self.cell);
+        region.constrain_equal(assigned_cell.cell, self.cell);
         assigned_cell
     }
 }
@@ -352,7 +352,7 @@ impl<'r, F: Field> Region<'r, F> {
     ///
     /// Returns an error if either of the cells are in columns where equality
     /// has not been enabled.
-    pub fn constrain_equal(&mut self, left: &Cell, right: &Cell) {
+    pub fn constrain_equal(&mut self, left: Cell, right: Cell) {
         self.region.constrain_equal(left, right);
     }
 

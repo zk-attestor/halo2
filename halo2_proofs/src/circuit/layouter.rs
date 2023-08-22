@@ -121,7 +121,7 @@ pub trait RegionLayouter<F: Field>: fmt::Debug + SyncDeps {
     /// Constraint two cells to have the same value.
     ///
     /// Returns an error if either of the cells is not within the given permutation.
-    fn constrain_equal(&mut self, left: &Cell, right: &Cell);
+    fn constrain_equal(&mut self, left: Cell, right: Cell);
 
     /// Queries the value of the given challenge.
     ///
