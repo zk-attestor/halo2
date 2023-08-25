@@ -89,20 +89,9 @@ pub struct Cell {
     /// Identifies the region in which this cell resides.
     // region_index: RegionIndex,
     /// The relative offset of this cell within its region.
-    row_offset: usize,
+    pub row_offset: usize,
     /// The column of this cell.
-    column: Column<Any>,
-}
-
-impl Cell {
-    /// Returns row offset
-    pub fn row_offset(&self) -> usize {
-        self.row_offset
-    }
-    /// Returns reference to column
-    pub fn column(&self) -> &Column<Any> {
-        &self.column
-    }
+    pub column: Column<Any>,
 }
 
 /// An assigned cell.
