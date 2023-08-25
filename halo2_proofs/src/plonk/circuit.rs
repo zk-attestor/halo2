@@ -588,7 +588,8 @@ pub struct TableColumn {
 }
 
 impl TableColumn {
-    pub(crate) fn inner(&self) -> Column<Fixed> {
+    /// Returns inner column
+    pub fn inner(&self) -> Column<Fixed> {
         self.inner
     }
 }
