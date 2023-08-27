@@ -377,7 +377,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a + SyncDeps> RegionLayouter<F>
         Ok(())
     }
 
-    fn constrain_equal(&mut self, left: &Cell, right: &Cell) {
+    fn constrain_equal(&mut self, left: Cell, right: Cell) {
         self.layouter.cs.copy(
             left.column,
             left.row_offset, // *self.layouter.regions[*left.region_index] + left.row_offset,
