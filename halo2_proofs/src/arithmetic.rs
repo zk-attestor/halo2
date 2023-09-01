@@ -60,6 +60,7 @@ fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut 
         tmp as usize
     }
 
+    // Ideally `segments` should be calculated from the max number of bits among all scalars. But this requires a scan of all scalars, so we don't implement it for now.
     let segments = (C::Scalar::NUM_BITS as usize + c - 1) / c;
 
     // this can be optimized
