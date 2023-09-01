@@ -61,7 +61,7 @@ fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut 
         tmp as usize
     }
 
-    let segments = (256 / c) + 1;
+    let segments = (C::Scalar::NUM_BITS as usize + c - 1) / c;
 
     // this can be optimized
     let mut coeffs_in_segments = Vec::with_capacity(segments);
@@ -126,8 +126,10 @@ fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut 
 
         let mut buckets: Vec<Bucket<C>> = vec![Bucket::None; (1 << c) - 1];
 
+        let mut max_bits = 0;
         for (coeff, base) in coeffs_seg.into_iter().zip(bases.iter()) {
             if coeff != 0 {
+                max_bits = cmp::max(max_bits, coeff);
                 buckets[coeff - 1].add_assign(base);
             }
         }
@@ -137,7 +139,7 @@ fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut 
         //                    (a) + b +
         //                    ((a) + b) + c
         let mut running_sum = C::Curve::identity();
-        for exp in buckets.into_iter().rev() {
+        for exp in buckets.into_iter().take(max_bits).rev() {
             running_sum = exp.add(running_sum);
             *acc = *acc + &running_sum;
         }
