@@ -444,6 +444,10 @@ pub trait Layouter<F: Field> {
     /// absolute position.
     fn constrain_instance(&mut self, cell: Cell, column: Column<Instance>, row: usize);
 
+    /// Commit advice columns in current phase and squeeze challenges.
+    /// This can be called DURING synthesize.
+    fn next_phase(&mut self);
+
     /// Queries the value of the given challenge.
     ///
     /// Returns `Value::unknown()` if the current synthesis phase is before the challenge can be queried.
@@ -511,6 +515,10 @@ impl<'a, F: Field, L: Layouter<F> + 'a> Layouter<F> for NamespacedLayouter<'a, F
 
     fn get_challenge(&self, challenge: Challenge) -> Value<F> {
         self.0.get_challenge(challenge)
+    }
+
+    fn next_phase(&mut self) {
+        self.0.next_phase();
     }
 
     fn get_root(&mut self) -> &mut Self::Root {

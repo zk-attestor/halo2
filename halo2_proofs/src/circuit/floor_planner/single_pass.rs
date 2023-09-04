@@ -218,6 +218,10 @@ impl<'a, F: Field, CS: Assignment<F> + 'a + SyncDeps> Layouter<F>
         self.cs.get_challenge(challenge)
     }
 
+    fn next_phase(&mut self) {
+        self.cs.next_phase();
+    }
+
     fn get_root(&mut self) -> &mut Self::Root {
         self
     }

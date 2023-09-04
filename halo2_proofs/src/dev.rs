@@ -1240,11 +1240,7 @@ impl<F: FromUniformBytes<64> + Ord> MockProver<F> {
                 advice
                     .iter()
                     .map(|rc| match *rc {
-                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(match a.as_ref() {
-                            Assigned::Trivial(a) => *a,
-                            Assigned::Rational(a, b) => *a * b.invert().unwrap(),
-                            _ => F::ZERO,
-                        }),
+                        AdviceCellValue::Assigned(ref a) => CellValue::Assigned(a.evaluate()),
                         AdviceCellValue::Poison(i) => CellValue::Poison(i),
                     })
                     .collect::<Vec<_>>()
