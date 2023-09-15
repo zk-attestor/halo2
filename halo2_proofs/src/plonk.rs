@@ -14,8 +14,8 @@ use crate::helpers::{
     SerdePrimeField,
 };
 use crate::poly::{
-    commitment::Params, Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff,
-    PinnedEvaluationDomain, Polynomial,
+    Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff, PinnedEvaluationDomain,
+    Polynomial,
 };
 use crate::transcript::{ChallengeScalar, EncodedChallenge, Transcript};
 use crate::SerdeFormat;
@@ -41,7 +41,7 @@ pub use prover::*;
 pub use verifier::*;
 
 use evaluation::Evaluator;
-use std::env::var;
+
 use std::io;
 
 /// This is a verifying key which allows for the verification of proofs for a
@@ -258,6 +258,11 @@ impl<C: CurveAffine> VerifyingKey<C> {
     /// Returns `ConstraintSystem`
     pub fn cs(&self) -> &ConstraintSystem<C::Scalar> {
         &self.cs
+    }
+
+    /// Returns representative of this `VerifyingKey` in transcripts
+    pub fn transcript_repr(&self) -> C::Scalar {
+        self.transcript_repr
     }
 }
 

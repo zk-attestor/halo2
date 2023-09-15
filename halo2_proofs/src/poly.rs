@@ -12,9 +12,11 @@ use crate::helpers::SerdePrimeField;
 use crate::plonk::Assigned;
 use crate::SerdeFormat;
 
-use ff::PrimeField;
 use group::ff::{BatchInvert, Field};
-use rayon::prelude::*;
+use maybe_rayon::{
+    iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator},
+    prelude::ParallelSlice,
+};
 
 /// Generic commitment scheme structures
 pub mod commitment;
@@ -163,7 +165,7 @@ impl<F, B> Polynomial<F, B> {
 }
 
 impl<F: SerdePrimeField, B> Polynomial<F, B> {
-    /// Reads polynomial from buffer using `SerdePrimeField::read`.  
+    /// Reads polynomial from buffer using `SerdePrimeField::read`.
     pub(crate) fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> Self {
         let mut poly_len = [0u8; 4];
         reader.read_exact(&mut poly_len).unwrap();
@@ -174,7 +176,7 @@ impl<F: SerdePrimeField, B> Polynomial<F, B> {
         }
     }
 
-    /// Writes polynomial to buffer using `SerdePrimeField::write`.  
+    /// Writes polynomial to buffer using `SerdePrimeField::write`.
     pub(crate) fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) {
         writer
             .write_all(&(self.values.len() as u32).to_be_bytes())
@@ -326,7 +328,7 @@ impl<'a, F: Field, B: Basis> Sub<F> for &'a Polynomial<F, B> {
 /// Describes the relative rotation of a vector. Negative numbers represent
 /// reverse (leftmost) rotations and positive numbers represent forward (rightmost)
 /// rotations. Zero represents no rotation.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Rotation(pub i32);
 
 impl Rotation {

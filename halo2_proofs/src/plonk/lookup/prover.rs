@@ -8,8 +8,7 @@ use crate::{
     arithmetic::{eval_polynomial, parallelize, CurveAffine},
     poly::{
         commitment::{Blind, Params},
-        Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, ProverQuery,
-        Rotation,
+        Coeff, EvaluationDomain, LagrangeCoeff, Polynomial, ProverQuery, Rotation,
     },
     transcript::{EncodedChallenge, TranscriptWrite},
 };
@@ -20,12 +19,17 @@ use group::{
     ff::{BatchInvert, Field},
     Curve,
 };
+use maybe_rayon::{
+    iter::{
+        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
+        IntoParallelRefMutIterator, ParallelIterator,
+    },
+    prelude::ParallelSliceMut,
+};
 use rand_core::RngCore;
-use rayon::prelude::*;
-use rustc_hash::FxHashMap;
+
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::{any::TypeId, convert::TryInto, num::ParseIntError, ops::Index};
 use std::{
     collections::BTreeMap,
     iter,
@@ -68,6 +72,7 @@ impl<F: WithSmallOrderMulGroup<3>> Argument<F> {
     /// - constructs Permuted<C> struct using permuted_input_value = A', and
     ///   permuted_table_expression = S'.
     /// The Permuted<C> struct is used to update the Lookup, and is then returned.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::plonk) fn commit_permuted<
         'a,
         'params: 'a,
@@ -407,7 +412,7 @@ fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: Rn
 where
     C::Scalar: Hash,
 {
-    let num_threads = rayon::current_num_threads();
+    let num_threads = maybe_rayon::current_num_threads();
     // heuristic on when multi-threading isn't worth it
     // for now it seems like multi-threading is often worth it
     /*if params.n() < (num_threads as u64) << 10 {
