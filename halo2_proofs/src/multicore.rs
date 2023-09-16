@@ -16,7 +16,7 @@ pub use maybe_rayon::{
 pub use maybe_rayon::{
     current_num_threads,
     iter::{IndexedParallelIterator, IntoParallelRefIterator},
-    slice::ParallelSliceMut,
+    slice::{ParallelSlice, ParallelSliceMut},
 };
 
 #[cfg(not(feature = "multicore"))]
@@ -30,7 +30,7 @@ pub trait TryFoldAndReduce<T, E> {
     /// disabled.
     /// The `try_fold_and_reduce` function can only be called by a iter with
     /// `Result<T, E>` item type because the `fold_op` must meet the trait
-    /// bounds of both `try_fold` and `try_reduce` from rayon.   
+    /// bounds of both `try_fold` and `try_reduce` from rayon.
     fn try_fold_and_reduce(
         self,
         identity: impl Fn() -> T + Send + Sync,

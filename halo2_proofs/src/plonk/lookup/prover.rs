@@ -3,6 +3,12 @@ use super::super::{
     ProvingKey,
 };
 use super::Argument;
+use crate::multicore::{self, IntoParallelIterator};
+#[cfg(feature = "multicore")]
+use crate::multicore::{
+    IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
+    ParallelSliceMut,
+};
 use crate::plonk::evaluation::evaluate;
 use crate::{
     arithmetic::{eval_polynomial, parallelize, CurveAffine},
@@ -18,13 +24,6 @@ use ff::WithSmallOrderMulGroup;
 use group::{
     ff::{BatchInvert, Field},
     Curve,
-};
-use maybe_rayon::{
-    iter::{
-        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
-        IntoParallelRefMutIterator, ParallelIterator,
-    },
-    prelude::ParallelSliceMut,
 };
 use rand_core::RngCore;
 
@@ -412,7 +411,7 @@ fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: Rn
 where
     C::Scalar: Hash,
 {
-    let num_threads = maybe_rayon::current_num_threads();
+    let num_threads = multicore::current_num_threads();
     // heuristic on when multi-threading isn't worth it
     // for now it seems like multi-threading is often worth it
     /*if params.n() < (num_threads as u64) << 10 {
@@ -434,6 +433,8 @@ where
     let input_time = start_timer!(|| "permute_par input hashmap (cpu par)");
     // count input_expression unique values using a HashMap, using rayon parallel fold+reduce
     let capacity = usable_rows / num_threads + 1;
+
+    #[cfg(feature = "multicore")]
     let input_uniques: HashMap<C::Scalar, usize> = input_expression
         .par_iter()
         .fold(
@@ -450,11 +451,21 @@ where
             m1
         })
         .unwrap();
+    #[cfg(not(feature = "multicore"))]
+    let input_uniques: HashMap<C::Scalar, usize> =
+        input_expression
+            .iter()
+            .fold(HashMap::with_capacity(capacity), |mut acc, coeff| {
+                *acc.entry(*coeff).or_insert(0) += 1;
+                acc
+            });
     #[cfg(feature = "profile")]
     end_timer!(input_time);
 
     #[cfg(feature = "profile")]
     let timer = start_timer!(|| "permute_par input unique ranges (cpu par)");
+
+    #[cfg(feature = "multicore")]
     let input_unique_ranges = input_uniques
         .par_iter()
         .fold(
@@ -478,6 +489,19 @@ where
             [r1, r2].concat()
         })
         .unwrap();
+    #[cfg(not(feature = "multicore"))]
+    let input_unique_ranges = input_uniques.iter().fold(
+        Vec::with_capacity(capacity),
+        |mut input_ranges, (&coeff, &count)| {
+            if input_ranges.is_empty() {
+                input_ranges.push((coeff, 0..count));
+            } else {
+                let prev_end = input_ranges.last().unwrap().1.end;
+                input_ranges.push((coeff, prev_end..prev_end + count));
+            }
+            input_ranges
+        },
+    );
     #[cfg(feature = "profile")]
     end_timer!(timer);
 
@@ -488,14 +512,19 @@ where
     end_timer!(to_vec_time);
     #[cfg(feature = "profile")]
     let sort_table_time = start_timer!(|| "permute_par sort table");
+    #[cfg(feature = "multicore")]
     sorted_table_coeffs.par_sort();
+    #[cfg(not(feature = "multicore"))]
+    sorted_table_coeffs.sort();
     #[cfg(feature = "profile")]
     end_timer!(sort_table_time);
 
     #[cfg(feature = "profile")]
     let timer = start_timer!(|| "leftover table coeffs (cpu par)");
+
     let leftover_table_coeffs: Vec<C::Scalar> = sorted_table_coeffs
-        .par_iter()
+        .as_slice()
+        .into_par_iter()
         .enumerate()
         .filter_map(|(i, coeff)| {
             ((i != 0 && coeff == &sorted_table_coeffs[i - 1]) || !input_uniques.contains_key(coeff))
@@ -515,7 +544,7 @@ where
                 let leftover_range_end = range.end - i - 1;
                 [(coeff, coeff)].into_par_iter().chain(
                     leftover_table_coeffs[leftover_range_start..leftover_range_end]
-                        .par_iter()
+                        .into_par_iter()
                         .map(move |leftover_table_coeff| (coeff, *leftover_table_coeff)),
                 )
             })
@@ -551,7 +580,10 @@ fn permute_expression_pair_seq<'params, C: CurveAffine, P: Params<'params, C>, R
     permuted_input_expression.truncate(usable_rows);
 
     // Sort input lookup expression values
+    #[cfg(feature = "multicore")]
     permuted_input_expression.par_sort();
+    #[cfg(not(feature = "multicore"))]
+    permuted_input_expression.sort();
 
     // A BTreeMap of each unique element in the table expression and its count
     let mut leftover_table_map: BTreeMap<C::Scalar, u32> = table_expression

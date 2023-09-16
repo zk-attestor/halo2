@@ -12,11 +12,11 @@ use crate::helpers::SerdePrimeField;
 use crate::plonk::Assigned;
 use crate::SerdeFormat;
 
-use group::ff::{BatchInvert, Field};
-use maybe_rayon::{
-    iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator},
-    prelude::ParallelSlice,
+#[cfg(feature = "multicore")]
+use crate::multicore::{
+    IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator, ParallelSlice,
 };
+use group::ff::{BatchInvert, Field};
 
 /// Generic commitment scheme structures
 pub mod commitment;
@@ -211,7 +211,8 @@ where
         .filter_map(|d| d.as_mut())
         .batch_invert();
 
-    assigned
+    #[cfg(feature = "multicore")]
+    return assigned
         .par_iter()
         .zip(assigned_denominators.par_chunks(n))
         .map(|(poly, inv_denoms)| {
@@ -226,7 +227,25 @@ where
                 _marker: PhantomData,
             }
         })
-        .collect()
+        .collect();
+
+    #[cfg(not(feature = "multicore"))]
+    return assigned
+        .iter()
+        .zip(assigned_denominators.chunks(n))
+        .map(|(poly, inv_denoms)| {
+            debug_assert_eq!(inv_denoms.len(), poly.as_ref().len());
+            Polynomial {
+                values: poly
+                    .as_ref()
+                    .iter()
+                    .zip(inv_denoms.iter())
+                    .map(|(a, inv_den)| a.numerator() * inv_den.unwrap_or(F::ONE))
+                    .collect(),
+                _marker: PhantomData,
+            }
+        })
+        .collect();
 }
 
 impl<F: Field> Polynomial<Assigned<F>, LagrangeCoeff> {
