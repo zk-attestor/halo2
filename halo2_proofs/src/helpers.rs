@@ -1,7 +1,6 @@
 use crate::poly::Polynomial;
 use ff::PrimeField;
 use halo2curves::{serde::SerdeObject, CurveAffine};
-use pairing::Engine;
 use std::io;
 
 /// This enum specifies how various types are serialized and deserialized.

@@ -9,10 +9,7 @@ use crate::{
 
 use super::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation};
 
-use group::{
-    ff::{BatchInvert, Field, PrimeField, WithSmallOrderMulGroup},
-    Group,
-};
+use group::ff::{BatchInvert, Field, WithSmallOrderMulGroup};
 
 use std::{env::var, marker::PhantomData};
 
@@ -447,6 +444,9 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         }
         #[cfg(feature = "profile")]
         println!("k: {}, extended_k: {}", k, extended_k);
+
+        // ensure extended_k <= S
+        assert!(extended_k <= F::S);
 
         let mut extended_omega = F::ROOT_OF_UNITY;
 
@@ -965,7 +965,7 @@ fn test_l_i() {
     let mut l = vec![];
     let mut points = vec![];
     for i in 0..8 {
-        points.push(domain.omega.pow([i, 0, 0, 0]));
+        points.push(domain.omega.pow([i]));
     }
     for i in 0..8 {
         let mut l_i = vec![Scalar::zero(); 8];
@@ -975,7 +975,7 @@ fn test_l_i() {
     }
 
     let x = Scalar::random(OsRng);
-    let xn = x.pow([8, 0, 0, 0]);
+    let xn = x.pow([8]);
 
     let evaluations = domain.l_i_range(x, xn, -7..=7);
     for i in 0..8 {

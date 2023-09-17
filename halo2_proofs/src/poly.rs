@@ -12,9 +12,11 @@ use crate::helpers::SerdePrimeField;
 use crate::plonk::Assigned;
 use crate::SerdeFormat;
 
-use ff::PrimeField;
+#[cfg(feature = "multicore")]
+use crate::multicore::{
+    IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator, ParallelSlice,
+};
 use group::ff::{BatchInvert, Field};
-use rayon::prelude::*;
 
 /// Generic commitment scheme structures
 pub mod commitment;
@@ -163,7 +165,7 @@ impl<F, B> Polynomial<F, B> {
 }
 
 impl<F: SerdePrimeField, B> Polynomial<F, B> {
-    /// Reads polynomial from buffer using `SerdePrimeField::read`.  
+    /// Reads polynomial from buffer using `SerdePrimeField::read`.
     pub(crate) fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> Self {
         let mut poly_len = [0u8; 4];
         reader.read_exact(&mut poly_len).unwrap();
@@ -174,7 +176,7 @@ impl<F: SerdePrimeField, B> Polynomial<F, B> {
         }
     }
 
-    /// Writes polynomial to buffer using `SerdePrimeField::write`.  
+    /// Writes polynomial to buffer using `SerdePrimeField::write`.
     pub(crate) fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) {
         writer
             .write_all(&(self.values.len() as u32).to_be_bytes())
@@ -209,7 +211,8 @@ where
         .filter_map(|d| d.as_mut())
         .batch_invert();
 
-    assigned
+    #[cfg(feature = "multicore")]
+    return assigned
         .par_iter()
         .zip(assigned_denominators.par_chunks(n))
         .map(|(poly, inv_denoms)| {
@@ -224,7 +227,25 @@ where
                 _marker: PhantomData,
             }
         })
-        .collect()
+        .collect();
+
+    #[cfg(not(feature = "multicore"))]
+    return assigned
+        .iter()
+        .zip(assigned_denominators.chunks(n))
+        .map(|(poly, inv_denoms)| {
+            debug_assert_eq!(inv_denoms.len(), poly.as_ref().len());
+            Polynomial {
+                values: poly
+                    .as_ref()
+                    .iter()
+                    .zip(inv_denoms.iter())
+                    .map(|(a, inv_den)| a.numerator() * inv_den.unwrap_or(F::ONE))
+                    .collect(),
+                _marker: PhantomData,
+            }
+        })
+        .collect();
 }
 
 impl<F: Field> Polynomial<Assigned<F>, LagrangeCoeff> {
@@ -326,7 +347,7 @@ impl<'a, F: Field, B: Basis> Sub<F> for &'a Polynomial<F, B> {
 /// Describes the relative rotation of a vector. Negative numbers represent
 /// reverse (leftmost) rotations and positive numbers represent forward (rightmost)
 /// rotations. Zero represents no rotation.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Rotation(pub i32);
 
 impl Rotation {

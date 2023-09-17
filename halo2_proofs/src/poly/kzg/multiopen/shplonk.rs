@@ -1,24 +1,17 @@
 mod prover;
 mod verifier;
 
-use std::{
-    collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
-    hash::Hash,
-    marker::PhantomData,
-    sync::Arc,
-};
+use std::hash::Hash;
 
-use crate::{
-    arithmetic::{eval_polynomial, lagrange_interpolate, CurveAffine},
-    poly::{query::Query, Coeff, Polynomial},
-    transcript::ChallengeScalar,
-};
-
+use crate::multicore::IntoParallelIterator;
+use crate::{poly::query::Query, transcript::ChallengeScalar};
 use ff::Field;
 pub use prover::ProverSHPLONK;
-use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 pub use verifier::VerifierSHPLONK;
+
+#[cfg(feature = "multicore")]
+use crate::multicore::ParallelIterator;
 
 #[derive(Clone, Copy, Debug)]
 struct U {}
@@ -129,7 +122,8 @@ where
                 .into_par_iter()
                 .map(|commitment| {
                     let evals: Vec<F> = rotations_vec
-                        .par_iter()
+                        .as_slice()
+                        .into_par_iter()
                         .map(|&&rotation| get_eval(commitment, rotation))
                         .collect();
                     Commitment((commitment, evals))
@@ -151,18 +145,10 @@ where
 
 #[cfg(test)]
 mod proptests {
-    use proptest::{
-        collection::vec,
-        prelude::*,
-        sample::{select, subsequence},
-        strategy::Strategy,
-    };
-
     use super::{construct_intermediate_sets, Commitment, IntermediateSets};
-    use crate::poly::Rotation;
-    use ff::{Field, FromUniformBytes};
+    use ff::FromUniformBytes;
     use halo2curves::bn256::Fr;
-    use std::collections::BTreeMap;
+    use proptest::{collection::vec, prelude::*, sample::select};
     use std::convert::TryFrom;
 
     #[derive(Debug, Clone)]

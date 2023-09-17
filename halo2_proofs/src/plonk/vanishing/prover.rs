@@ -1,16 +1,14 @@
 use std::iter;
 
-use ff::{Field, PrimeField};
+use ff::Field;
 use group::Curve;
-use rand_core::{RngCore, SeedableRng};
-use rayon::{current_num_threads, prelude::*};
+use rand_core::RngCore;
 
 use super::Argument;
 use crate::{
     arithmetic::{eval_polynomial, parallelize, CurveAffine},
-    plonk::{ChallengeX, ChallengeY, Error},
+    plonk::{ChallengeX, Error},
     poly::{
-        self,
         commitment::{Blind, ParamsProver},
         Coeff, EvaluationDomain, ExtendedLagrangeCoeff, Polynomial, ProverQuery,
     },

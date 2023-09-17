@@ -1,43 +1,38 @@
 #[cfg(feature = "profile")]
 use ark_std::{end_timer, start_timer};
-use ff::{Field, FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
+use ff::{Field, WithSmallOrderMulGroup};
 use group::Curve;
-use halo2curves::CurveExt;
 use rand_core::RngCore;
-use std::collections::BTreeSet;
-use std::env::var;
+
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::RangeTo;
-use std::rc::Rc;
-use std::sync::atomic::AtomicUsize;
-use std::{collections::HashMap, iter, mem, sync::atomic::Ordering};
+
+use std::{collections::HashMap, iter};
 
 use super::{
     circuit::{
-        sealed::{self, SealedPhase},
-        Advice, Any, Assignment, Challenge, Circuit, Column, ConstraintSystem, FirstPhase, Fixed,
-        FloorPlanner, Instance, Selector,
+        sealed::{self},
+        Advice, Any, Assignment, Challenge, Circuit, Column, ConstraintSystem, Fixed, FloorPlanner,
+        Instance, Selector,
     },
     lookup, permutation, shuffle, vanishing, ChallengeBeta, ChallengeGamma, ChallengeTheta,
-    ChallengeX, ChallengeY, Error, Expression, ProvingKey,
+    ChallengeX, ChallengeY, Error, ProvingKey,
 };
-use crate::circuit::layouter::SyncDeps;
+
 use crate::{
     arithmetic::{eval_polynomial, CurveAffine},
     circuit::Value,
     plonk::Assigned,
     poly::{
-        self,
         commitment::{Blind, CommitmentScheme, Params, Prover},
-        Basis, Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, ProverQuery,
+        Basis, Coeff, LagrangeCoeff, Polynomial, ProverQuery,
     },
 };
 use crate::{
     poly::batch_invert_assigned,
     transcript::{EncodedChallenge, TranscriptWrite},
 };
-use group::prime::PrimeCurveAffine;
 
 /// This creates a proof for the provided `circuit` when given the public
 /// parameters `params` and the proving key [`ProvingKey`] that was
@@ -63,6 +58,10 @@ pub fn create_proof<
 where
     Scheme::Scalar: Hash + WithSmallOrderMulGroup<3>,
 {
+    if circuits.len() != instances.len() {
+        return Err(Error::InvalidInstances);
+    }
+
     for instance in instances.iter() {
         if instance.len() != pk.vk.cs.num_instance_columns {
             return Err(Error::InvalidInstances);
@@ -150,19 +149,6 @@ where
         challenge_indices: [Vec<usize>; 3],
         unusable_rows_start: usize,
         _marker: PhantomData<(P, E)>,
-    }
-
-    impl<'params, 'a, 'b, F, Scheme, P, C, E, R, T> SyncDeps
-        for WitnessCollection<'params, 'a, 'b, Scheme, P, C, E, R, T>
-    where
-        F: Field,
-        Scheme: CommitmentScheme<Curve = C>,
-        P: Prover<'params, Scheme>,
-        C: CurveAffine<ScalarExt = F>,
-        E: EncodedChallenge<C>,
-        R: RngCore,
-        T: TranscriptWrite<C, E>,
-    {
     }
 
     impl<'params, 'a, 'b, F, Scheme, P, C, E, R, T> Assignment<F>
@@ -659,7 +645,7 @@ where
     let eval_time = start_timer!(|| "Commit to vanishing argument's h(X) commitments");
 
     let x: ChallengeX<_> = transcript.squeeze_challenge_scalar();
-    let xn = x.pow([params.n(), 0, 0, 0]);
+    let xn = x.pow([params.n()]);
 
     if P::QUERY_INSTANCE {
         // Compute and hash instance evals for each circuit instance
@@ -812,4 +798,70 @@ where
     #[cfg(feature = "profile")]
     end_timer!(multiopen_time);
     multiopen_res
+}
+
+#[test]
+fn test_create_proof() {
+    use crate::{
+        circuit::SimpleFloorPlanner,
+        plonk::{keygen_pk, keygen_vk},
+        poly::kzg::{
+            commitment::{KZGCommitmentScheme, ParamsKZG},
+            multiopen::ProverSHPLONK,
+        },
+        transcript::{Blake2bWrite, Challenge255, TranscriptWriterBuffer},
+    };
+    use halo2curves::bn256::Bn256;
+    use rand_core::OsRng;
+
+    #[derive(Clone, Copy)]
+    struct MyCircuit;
+
+    impl<F: Field> Circuit<F> for MyCircuit {
+        type Config = ();
+        type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
+
+        fn without_witnesses(&self) -> Self {
+            *self
+        }
+
+        fn configure(_meta: &mut ConstraintSystem<F>) -> Self::Config {}
+
+        fn synthesize(
+            &self,
+            _config: Self::Config,
+            _layouter: impl crate::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    let params: ParamsKZG<Bn256> = ParamsKZG::setup(3, OsRng);
+    let vk = keygen_vk(&params, &MyCircuit).expect("keygen_vk should not fail");
+    let pk = keygen_pk(&params, vk, &MyCircuit).expect("keygen_pk should not fail");
+    let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+
+    // Create proof with wrong number of instances
+    let proof = create_proof::<KZGCommitmentScheme<_>, ProverSHPLONK<_>, _, _, _, _>(
+        &params,
+        &pk,
+        &[MyCircuit, MyCircuit],
+        &[],
+        OsRng,
+        &mut transcript,
+    );
+    assert!(matches!(proof.unwrap_err(), Error::InvalidInstances));
+
+    // Create proof with correct number of instances
+    create_proof::<KZGCommitmentScheme<_>, ProverSHPLONK<_>, _, _, _, _>(
+        &params,
+        &pk,
+        &[MyCircuit, MyCircuit],
+        &[&[], &[]],
+        OsRng,
+        &mut transcript,
+    )
+    .expect("proof generation should not fail");
 }
