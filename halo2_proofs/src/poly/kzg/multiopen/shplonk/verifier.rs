@@ -16,7 +16,7 @@ use crate::poly::kzg::strategy::GuardKZG;
 use crate::poly::query::{CommitmentReference, VerifierQuery};
 use crate::poly::Error;
 use crate::transcript::{EncodedChallenge, TranscriptRead};
-use ff::{Field};
+use ff::Field;
 use pairing::{Engine, MultiMillerLoop};
 use std::ops::MulAssign;
 

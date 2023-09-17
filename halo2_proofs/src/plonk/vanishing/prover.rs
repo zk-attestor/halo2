@@ -1,8 +1,8 @@
-use std::{iter};
+use std::iter;
 
 use ff::Field;
 use group::Curve;
-use rand_core::{RngCore};
+use rand_core::RngCore;
 
 use super::Argument;
 use crate::{

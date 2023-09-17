@@ -13,7 +13,7 @@ use crate::poly::query::{CommitmentReference, VerifierQuery};
 use crate::poly::Error;
 use crate::transcript::{EncodedChallenge, TranscriptRead};
 
-use ff::{Field};
+use ff::Field;
 use pairing::{Engine, MultiMillerLoop};
 
 #[derive(Debug)]

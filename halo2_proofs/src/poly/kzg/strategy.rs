@@ -10,7 +10,7 @@ use crate::{
         strategy::{Guard, VerificationStrategy},
     },
 };
-use ff::{Field};
+use ff::Field;
 use pairing::{Engine, MultiMillerLoop};
 use rand_core::OsRng;
 use std::fmt::Debug;

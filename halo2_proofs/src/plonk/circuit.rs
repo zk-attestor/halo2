@@ -95,7 +95,6 @@ impl<C: ColumnType> PartialOrd for Column<C> {
 }
 
 pub(crate) mod sealed {
-    
 
     /// Phase of advice column
     #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]

@@ -18,7 +18,7 @@ use crate::poly::{Coeff, Polynomial};
 use crate::transcript::{EncodedChallenge, TranscriptWrite};
 
 use crate::multicore::IntoParallelIterator;
-use ff::{Field};
+use ff::Field;
 use group::Curve;
 use pairing::Engine;
 use rand_core::RngCore;

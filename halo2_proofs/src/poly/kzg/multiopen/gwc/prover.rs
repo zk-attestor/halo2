@@ -8,7 +8,6 @@ use crate::poly::query::ProverQuery;
 use crate::poly::{commitment::Blind, Polynomial};
 use crate::transcript::{EncodedChallenge, TranscriptWrite};
 
-
 use group::Curve;
 use pairing::Engine;
 use rand_core::RngCore;
