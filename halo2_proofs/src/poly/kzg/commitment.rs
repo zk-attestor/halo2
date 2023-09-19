@@ -160,30 +160,31 @@ impl<E: Engine + Debug> ParamsKZG<E> {
     }
 
     /// Writes parameters to buffer
-    pub fn write_custom<W: io::Write>(&self, writer: &mut W, format: SerdeFormat)
+    pub fn write_custom<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()>
     where
         E::G1Affine: SerdeCurveAffine,
         E::G2Affine: SerdeCurveAffine,
     {
-        writer.write_all(&self.k.to_le_bytes()).unwrap();
+        writer.write_all(&self.k.to_le_bytes())?;
         for el in self.g.iter() {
-            el.write(writer, format);
+            el.write(writer, format)?;
         }
         for el in self.g_lagrange.iter() {
-            el.write(writer, format);
+            el.write(writer, format)?;
         }
-        self.g2.write(writer, format);
-        self.s_g2.write(writer, format);
+        self.g2.write(writer, format)?;
+        self.s_g2.write(writer, format)?;
+        Ok(())
     }
 
     /// Reads params from a buffer.
-    pub fn read_custom<R: io::Read>(reader: &mut R, format: SerdeFormat) -> Self
+    pub fn read_custom<R: io::Read>(reader: &mut R, format: SerdeFormat) -> io::Result<Self>
     where
         E::G1Affine: SerdeCurveAffine,
         E::G2Affine: SerdeCurveAffine,
     {
         let mut k = [0u8; 4];
-        reader.read_exact(&mut k[..]).unwrap();
+        reader.read_exact(&mut k[..])?;
         let k = u32::from_le_bytes(k);
         let n = 1 << k;
 
@@ -191,11 +192,11 @@ impl<E: Engine + Debug> ParamsKZG<E> {
             SerdeFormat::Processed => {
                 use group::GroupEncoding;
                 let load_points_from_file_parallelly =
-                    |reader: &mut R| -> Vec<Option<E::G1Affine>> {
+                    |reader: &mut R| -> io::Result<Vec<Option<E::G1Affine>>> {
                         let mut points_compressed =
                             vec![<<E as Engine>::G1Affine as GroupEncoding>::Repr::default(); n];
                         for points_compressed in points_compressed.iter_mut() {
-                            reader.read_exact((*points_compressed).as_mut()).unwrap();
+                            reader.read_exact((*points_compressed).as_mut())?;
                         }
 
                         let mut points = vec![Option::<E::G1Affine>::None; n];
@@ -206,53 +207,61 @@ impl<E: Engine + Debug> ParamsKZG<E> {
                                 ));
                             }
                         });
-                        points
+                        Ok(points)
                     };
 
-                let g = load_points_from_file_parallelly(reader);
+                let g = load_points_from_file_parallelly(reader)?;
                 let g: Vec<<E as Engine>::G1Affine> = g
                     .iter()
-                    .map(|point| point.unwrap_or_else(|| panic!("invalid point encoding")))
-                    .collect();
-                let g_lagrange = load_points_from_file_parallelly(reader);
+                    .map(|point| {
+                        point.ok_or_else(|| {
+                            io::Error::new(io::ErrorKind::Other, "invalid point encoding")
+                        })
+                    })
+                    .collect::<io::Result<_>>()?;
+                let g_lagrange = load_points_from_file_parallelly(reader)?;
                 let g_lagrange: Vec<<E as Engine>::G1Affine> = g_lagrange
                     .iter()
-                    .map(|point| point.unwrap_or_else(|| panic!("invalid point encoding")))
-                    .collect();
+                    .map(|point| {
+                        point.ok_or_else(|| {
+                            io::Error::new(io::ErrorKind::Other, "invalid point encoding")
+                        })
+                    })
+                    .collect::<io::Result<_>>()?;
                 (g, g_lagrange)
             }
             SerdeFormat::RawBytes => {
                 let g = (0..n)
                     .map(|_| <E::G1Affine as SerdeCurveAffine>::read(reader, format))
-                    .collect();
+                    .collect::<io::Result<_>>()?;
                 let g_lagrange = (0..n)
                     .map(|_| <E::G1Affine as SerdeCurveAffine>::read(reader, format))
-                    .collect();
+                    .collect::<io::Result<_>>()?;
                 (g, g_lagrange)
             }
             SerdeFormat::RawBytesUnchecked => {
                 // avoid try branching for performance
                 let g = (0..n)
-                    .map(|_| <E::G1Affine as SerdeCurveAffine>::read(reader, format))
+                    .map(|_| <E::G1Affine as SerdeCurveAffine>::read(reader, format).unwrap())
                     .collect::<Vec<_>>();
                 let g_lagrange = (0..n)
-                    .map(|_| <E::G1Affine as SerdeCurveAffine>::read(reader, format))
+                    .map(|_| <E::G1Affine as SerdeCurveAffine>::read(reader, format).unwrap())
                     .collect::<Vec<_>>();
                 (g, g_lagrange)
             }
         };
 
-        let g2 = E::G2Affine::read(reader, format);
-        let s_g2 = E::G2Affine::read(reader, format);
+        let g2 = E::G2Affine::read(reader, format)?;
+        let s_g2 = E::G2Affine::read(reader, format)?;
 
-        Self {
+        Ok(Self {
             k,
             n: n as u64,
             g,
             g_lagrange,
             g2,
             s_g2,
-        }
+        })
     }
 }
 
@@ -298,13 +307,12 @@ where
 
     /// Writes params to a buffer.
     fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        self.write_custom(writer, SerdeFormat::RawBytesUnchecked);
-        Ok(())
+        self.write_custom(writer, SerdeFormat::RawBytesUnchecked)
     }
 
     /// Reads params from a buffer.
     fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(Self::read_custom(reader, SerdeFormat::RawBytesUnchecked))
+        Self::read_custom(reader, SerdeFormat::RawBytesUnchecked)
     }
 }
 

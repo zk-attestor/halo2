@@ -39,20 +39,20 @@ pub trait SerdeCurveAffine: CurveAffine + SerdeObject {
     /// Checks that field elements are less than modulus, and then checks that the point is on the curve.
     /// - `RawBytesUnchecked`: Reads an uncompressed curve element with coordinates in Montgomery form;
     /// does not perform any checks
-    fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> Self {
+    fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> io::Result<Self> {
         match format {
-            SerdeFormat::Processed => <Self as CurveRead>::read(reader).unwrap(),
-            SerdeFormat::RawBytes => <Self as SerdeObject>::read_raw(reader).unwrap(),
-            SerdeFormat::RawBytesUnchecked => <Self as SerdeObject>::read_raw_unchecked(reader),
+            SerdeFormat::Processed => <Self as CurveRead>::read(reader),
+            SerdeFormat::RawBytes => <Self as SerdeObject>::read_raw(reader),
+            SerdeFormat::RawBytesUnchecked => Ok(<Self as SerdeObject>::read_raw_unchecked(reader)),
         }
     }
     /// Writes a curve element according to `format`:
     /// - `Processed`: Writes a compressed curve element
     /// - Otherwise: Writes an uncompressed curve element with coordinates in Montgomery form
-    fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) {
+    fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
         match format {
-            SerdeFormat::Processed => writer.write_all(self.to_bytes().as_ref()).unwrap(),
-            _ => self.write_raw(writer).unwrap(),
+            SerdeFormat::Processed => writer.write_all(self.to_bytes().as_ref()),
+            _ => self.write_raw(writer),
         }
     }
 }
@@ -65,16 +65,17 @@ pub trait SerdePrimeField: PrimeField + SerdeObject {
     /// - `RawBytes`: Reads a field element from raw bytes in its internal Montgomery representations,
     /// and checks that the element is less than the modulus.
     /// - `RawBytesUnchecked`: Reads a field element in Montgomery form and performs no checks.
-    fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> Self {
+    fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> io::Result<Self> {
         match format {
             SerdeFormat::Processed => {
                 let mut compressed = Self::Repr::default();
                 reader.read_exact(compressed.as_mut()).unwrap();
-                Option::from(Self::from_repr(compressed))
-                    .unwrap_or_else(|| panic!("Invalid prime field point encoding"))
+                Option::from(Self::from_repr(compressed)).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::Other, "Invalid prime field point encoding")
+                })
             }
-            SerdeFormat::RawBytes => <Self as SerdeObject>::read_raw(reader).unwrap(),
-            SerdeFormat::RawBytesUnchecked => <Self as SerdeObject>::read_raw_unchecked(reader),
+            SerdeFormat::RawBytes => <Self as SerdeObject>::read_raw(reader),
+            SerdeFormat::RawBytesUnchecked => Ok(<Self as SerdeObject>::read_raw_unchecked(reader)),
         }
     }
 
@@ -83,10 +84,10 @@ pub trait SerdePrimeField: PrimeField + SerdeObject {
     /// `PrimeField` implementation.
     /// - Otherwise: Writes a field element into raw bytes in its internal Montgomery representation,
     /// WITHOUT performing the expensive Montgomery reduction.
-    fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) {
+    fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
         match format {
-            SerdeFormat::Processed => writer.write_all(self.to_repr().as_ref()).unwrap(),
-            _ => self.write_raw(writer).unwrap(),
+            SerdeFormat::Processed => writer.write_all(self.to_repr().as_ref()),
+            _ => self.write_raw(writer),
         }
     }
 }

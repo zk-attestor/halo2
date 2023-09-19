@@ -93,27 +93,28 @@ impl<C: CurveAffine> VerifyingKey<C> {
         &self.commitments
     }
 
-    pub(crate) fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat)
+    pub(crate) fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()>
     where
         C: SerdeCurveAffine,
     {
         for commitment in &self.commitments {
-            commitment.write(writer, format);
+            commitment.write(writer, format)?;
         }
+        Ok(())
     }
 
     pub(crate) fn read<R: io::Read>(
         reader: &mut R,
         argument: &Argument,
         format: SerdeFormat,
-    ) -> Self
+    ) -> io::Result<Self>
     where
         C: SerdeCurveAffine,
     {
         let commitments = (0..argument.columns.len())
             .map(|_| C::read(reader, format))
-            .collect();
-        VerifyingKey { commitments }
+            .collect::<io::Result<Vec<_>>>()?;
+        Ok(VerifyingKey { commitments })
     }
 
     pub(crate) fn bytes_length(&self) -> usize {

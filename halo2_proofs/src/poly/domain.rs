@@ -298,6 +298,7 @@ pub fn butterfly_4_parallel<F: Field>(
 }
 
 /// Inner recursion
+#[allow(clippy::too_many_arguments)]
 fn recursive_fft_inner<F: Field>(
     data_in: &[F],
     data_out: &mut [F],
@@ -986,7 +987,6 @@ fn test_l_i() {
 
 #[test]
 fn test_fft() {
-    use crate::arithmetic::{eval_polynomial, lagrange_interpolate};
     use halo2curves::pasta::pallas::Scalar;
     use rand_core::OsRng;
 
