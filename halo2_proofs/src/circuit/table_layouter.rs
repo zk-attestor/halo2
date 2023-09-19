@@ -82,7 +82,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> TableLayouter<F>
 
         let entry = self.default_and_assigned.entry(column).or_default();
 
-        let mut value = Value::unknown();
+        let value;
         self.cs.assign_fixed(
             // annotation,
             column.inner(),
