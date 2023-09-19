@@ -135,16 +135,17 @@ fn main() {
     let vk = keygen_vk(&params, &circuit).expect("vk should not fail");
     let pk = keygen_pk(&params, vk, &circuit).expect("pk should not fail");
 
+    let format = SerdeFormat::RawBytes;
     let f = File::create("serialization-test.pk").unwrap();
     let mut writer = BufWriter::new(f);
-    pk.write(&mut writer, SerdeFormat::RawBytes).unwrap();
+    pk.write(&mut writer, format).unwrap();
     writer.flush().unwrap();
 
     let f = File::open("serialization-test.pk").unwrap();
     let mut reader = BufReader::new(f);
     let pk = {
         circuit.params();
-        ProvingKey::<G1Affine>::read::<_, StandardPlonk>(&mut reader, SerdeFormat::RawBytes, ())
+        ProvingKey::<G1Affine>::read::<_, StandardPlonk>(&mut reader, format, ())
     }
     .unwrap();
 

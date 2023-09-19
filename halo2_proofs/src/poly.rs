@@ -171,7 +171,9 @@ impl<F: SerdePrimeField, B> Polynomial<F, B> {
         reader.read_exact(&mut poly_len).unwrap();
         let poly_len = u32::from_be_bytes(poly_len);
         Self {
-            values: (0..poly_len).map(|_| F::read(reader, format)).collect(),
+            values: (0..poly_len)
+                .map(|_| F::read(reader, format).unwrap())
+                .collect(),
             _marker: PhantomData,
         }
     }
@@ -182,7 +184,7 @@ impl<F: SerdePrimeField, B> Polynomial<F, B> {
             .write_all(&(self.values.len() as u32).to_be_bytes())
             .unwrap();
         for value in self.values.iter() {
-            value.write(writer, format);
+            value.write(writer, format).unwrap();
         }
     }
 }

@@ -73,20 +73,18 @@ where
     /// Writes a field element into raw bytes in its internal Montgomery representation,
     /// WITHOUT performing the expensive Montgomery reduction.
     pub fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
-        writer.write_all(&self.domain.k().to_be_bytes()).unwrap();
-        writer
-            .write_all(&(self.fixed_commitments.len() as u32).to_be_bytes())
-            .unwrap();
+        writer.write_all(&self.domain.k().to_be_bytes())?;
+        writer.write_all(&(self.fixed_commitments.len() as u32).to_be_bytes())?;
         for commitment in &self.fixed_commitments {
-            commitment.write(writer, format);
+            commitment.write(writer, format)?;
         }
-        self.permutation.write(writer, format);
+        self.permutation.write(writer, format)?;
 
         // write self.selectors
         for selector in &self.selectors {
             // since `selector` is filled with `bool`, we pack them 8 at a time into bytes and then write
             for bits in selector.chunks(8) {
-                writer.write_all(&[crate::helpers::pack(bits)]).unwrap();
+                writer.write_all(&[crate::helpers::pack(bits)])?;
             }
         }
         Ok(())
@@ -116,27 +114,27 @@ where
             params,
         );
         let mut num_fixed_columns = [0u8; 4];
-        reader.read_exact(&mut num_fixed_columns).unwrap();
+        reader.read_exact(&mut num_fixed_columns)?;
         let num_fixed_columns = u32::from_be_bytes(num_fixed_columns);
 
         let fixed_commitments: Vec<_> = (0..num_fixed_columns)
             .map(|_| C::read(reader, format))
-            .collect();
+            .collect::<io::Result<_>>()?;
 
-        let permutation = permutation::VerifyingKey::read(reader, &cs.permutation, format);
+        let permutation = permutation::VerifyingKey::read(reader, &cs.permutation, format)?;
 
         // read selectors
         let selectors: Vec<Vec<bool>> = vec![vec![false; 1 << k]; cs.num_selectors]
             .into_iter()
             .map(|mut selector| {
                 let mut selector_bytes = vec![0u8; (selector.len() + 7) / 8];
-                reader.read_exact(&mut selector_bytes).unwrap();
+                reader.read_exact(&mut selector_bytes)?;
                 for (bits, byte) in selector.chunks_mut(8).zip(selector_bytes) {
                     crate::helpers::unpack(byte, bits);
                 }
-                selector
+                Ok(selector)
             })
-            .collect();
+            .collect::<io::Result<_>>()?;
         let (cs, _) = cs.compress_selectors(selectors.clone());
 
         Ok(Self::from_parts(
