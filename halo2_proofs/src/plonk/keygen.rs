@@ -243,7 +243,6 @@ where
     )?;
 
     let mut fixed = batch_invert_assigned(assembly.fixed);
-    let max_degree = if compress_selectors { cs.degree() } else { 0 };
     let (cs, selector_polys) = if compress_selectors {
         cs.compress_selectors(assembly.selectors.clone())
     } else {
@@ -317,11 +316,6 @@ where
     )?;
 
     let mut fixed = batch_invert_assigned(assembly.fixed);
-    let max_degree = if vk.compress_selectors {
-        cs.degree()
-    } else {
-        0
-    };
     let (cs, selector_polys) = if vk.compress_selectors {
         cs.compress_selectors(assembly.selectors)
     } else {
