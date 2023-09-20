@@ -203,9 +203,27 @@ impl<F: Field> Assignment<F> for Assembly<F> {
 }
 
 /// Generate a `VerifyingKey` from an instance of `Circuit`.
+/// By default, selector compression is turned **off**.
 pub fn keygen_vk<'params, C, P, ConcreteCircuit>(
     params: &P,
     circuit: &ConcreteCircuit,
+) -> Result<VerifyingKey<C>, Error>
+where
+    C: CurveAffine,
+    P: Params<'params, C>,
+    ConcreteCircuit: Circuit<C::Scalar>,
+    C::Scalar: FromUniformBytes<64>,
+{
+    keygen_vk_custom(params, circuit, false)
+}
+
+/// Generate a `VerifyingKey` from an instance of `Circuit`.
+///
+/// The selector compression optimization is turned on only if `compress_selectors` is `true`.
+pub fn keygen_vk_custom<'params, C, P, ConcreteCircuit>(
+    params: &P,
+    circuit: &ConcreteCircuit,
+    compress_selectors: bool,
 ) -> Result<VerifyingKey<C>, Error>
 where
     C: CurveAffine,
@@ -241,7 +259,9 @@ where
     )?;
 
     let mut fixed = batch_invert_assigned(assembly.fixed);
-    let (cs, selector_polys) = cs.compress_selectors(assembly.selectors.clone());
+    let max_degree = if compress_selectors { cs.degree() } else { 0 };
+    let (cs, selector_polys) =
+        cs.compress_selectors_up_to_degree(assembly.selectors.clone(), max_degree);
     fixed.extend(
         selector_polys
             .into_iter()

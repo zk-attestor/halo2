@@ -1943,7 +1943,29 @@ impl<F: Field> ConstraintSystem<F> {
     /// find which fixed column corresponds with a given `Selector`.
     ///
     /// Do not call this twice. Yes, this should be a builder pattern instead.
-    pub fn compress_selectors(mut self, selectors: Vec<Vec<bool>>) -> (Self, Vec<Vec<F>>) {
+    pub fn compress_selectors(self, selectors: Vec<Vec<bool>>) -> (Self, Vec<Vec<F>>) {
+        // We will not increase the degree of the constraint system, so we limit
+        // ourselves to the largest existing degree constraint.
+        let max_degree = self.degree();
+        self.compress_selectors_up_to_degree(selectors, max_degree)
+    }
+
+    /// This will compress selectors together depending on their provided
+    /// assignments. This `ConstraintSystem` will then be modified to add new
+    /// fixed columns (representing the actual selectors) and will return the
+    /// polynomials for those columns. Finally, an internal map is updated to
+    /// find which fixed column corresponds with a given `Selector`.
+    ///
+    /// The selectors will only be allowed to be compressed such that the mutated
+    /// `ConstraintSystem` has degree at most `max_degree`.
+    ///
+    /// **In particular**, if you set `max_degree = 0`, this will turn _off_
+    /// selector compression.
+    pub fn compress_selectors_up_to_degree(
+        mut self,
+        selectors: Vec<Vec<bool>>,
+        max_degree: usize,
+    ) -> (Self, Vec<Vec<F>>) {
         // The number of provided selector assignments must be the number we
         // counted for this constraint system.
         assert_eq!(selectors.len(), self.num_selectors);
@@ -1958,10 +1980,6 @@ impl<F: Field> ConstraintSystem<F> {
                 degrees[selector.0] = max(degrees[selector.0], expr.degree());
             }
         }
-
-        // We will not increase the degree of the constraint system, so we limit
-        // ourselves to the largest existing degree constraint.
-        let max_degree = self.degree();
 
         let mut new_columns = vec![];
         let (polys, selector_assignment) = compress_selectors::process(
