@@ -267,6 +267,7 @@ where
         permutation_vk,
         cs,
         assembly.selectors,
+        compress_selectors,
     ))
 }
 
@@ -311,7 +312,12 @@ where
     )?;
 
     let mut fixed = batch_invert_assigned(assembly.fixed);
-    let (cs, selector_polys) = cs.compress_selectors(assembly.selectors);
+    let max_degree = if vk.compress_selectors {
+        cs.degree()
+    } else {
+        0
+    };
+    let (cs, selector_polys) = cs.compress_selectors_up_to_degree(assembly.selectors, max_degree);
     fixed.extend(
         selector_polys
             .into_iter()
