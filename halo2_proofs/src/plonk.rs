@@ -164,7 +164,7 @@ where
             (cs, selectors)
         } else {
             // we still need to replace selectors with fixed Expressions in `cs`
-            let fake_selectors = vec![vec![false]; cs.num_selectors];
+            let fake_selectors = vec![vec![]; cs.num_selectors];
             let (cs, _) = cs.directly_convert_selectors_to_fixed(fake_selectors);
             (cs, vec![])
         };
