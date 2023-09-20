@@ -181,7 +181,7 @@ where
 
     /// Writes a verifying key to a vector of bytes using [`Self::write`].
     pub fn to_bytes(&self, format: SerdeFormat) -> Vec<u8> {
-        let mut bytes = Vec::<u8>::with_capacity(self.bytes_length());
+        let mut bytes = Vec::<u8>::with_capacity(self.bytes_length(format));
         Self::write(self, &mut bytes, format).expect("Writing to vector should not fail");
         bytes
     }
@@ -202,9 +202,12 @@ where
 }
 
 impl<C: CurveAffine> VerifyingKey<C> {
-    fn bytes_length(&self) -> usize {
-        8 + (self.fixed_commitments.len() * C::default().to_bytes().as_ref().len())
-            + self.permutation.bytes_length()
+    fn bytes_length(&self, format: SerdeFormat) -> usize
+    where
+        C: SerdeCurveAffine,
+    {
+        10 + (self.fixed_commitments.len() * C::byte_length(format))
+            + self.permutation.bytes_length(format)
             + self.selectors.len()
                 * (self
                     .selectors
@@ -336,9 +339,12 @@ where
     }
 
     /// Gets the total number of bytes in the serialization of `self`
-    fn bytes_length(&self) -> usize {
+    fn bytes_length(&self, format: SerdeFormat) -> usize
+    where
+        C: SerdeCurveAffine,
+    {
         let scalar_len = C::Scalar::default().to_repr().as_ref().len();
-        self.vk.bytes_length()
+        self.vk.bytes_length(format)
             + 12
             + scalar_len * (self.l0.len() + self.l_last.len() + self.l_active_row.len())
             + polynomial_slice_byte_length(&self.fixed_values)
@@ -419,7 +425,7 @@ where
 
     /// Writes a proving key to a vector of bytes using [`Self::write`].
     pub fn to_bytes(&self, format: SerdeFormat) -> Vec<u8> {
-        let mut bytes = Vec::<u8>::with_capacity(self.bytes_length());
+        let mut bytes = Vec::<u8>::with_capacity(self.bytes_length(format));
         Self::write(self, &mut bytes, format).expect("Writing to vector should not fail");
         bytes
     }
