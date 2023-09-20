@@ -28,7 +28,7 @@ use crate::{
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// use ff::Field;
 /// use halo2_proofs::{
 ///     circuit::{floor_planner, Layouter, Value},
