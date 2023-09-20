@@ -260,8 +260,13 @@ where
 
     let mut fixed = batch_invert_assigned(assembly.fixed);
     let max_degree = if compress_selectors { cs.degree() } else { 0 };
-    let (cs, selector_polys) =
-        cs.compress_selectors_up_to_degree(assembly.selectors.clone(), max_degree);
+    let (cs, selector_polys) = if compress_selectors {
+        cs.compress_selectors(assembly.selectors.clone())
+    } else {
+        // After this, the ConstraintSystem should not have any selectors: `verify` does not need them, and `keygen_pk` regenerates `cs` from scratch anyways.
+        let selectors = std::mem::take(&mut assembly.selectors);
+        cs.directly_convert_selectors_to_fixed(selectors)
+    };
     fixed.extend(
         selector_polys
             .into_iter()
@@ -333,7 +338,11 @@ where
     } else {
         0
     };
-    let (cs, selector_polys) = cs.compress_selectors_up_to_degree(assembly.selectors, max_degree);
+    let (cs, selector_polys) = if vk.compress_selectors {
+        cs.compress_selectors(assembly.selectors)
+    } else {
+        cs.directly_convert_selectors_to_fixed(assembly.selectors)
+    };
     fixed.extend(
         selector_polys
             .into_iter()
