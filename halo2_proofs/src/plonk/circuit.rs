@@ -2073,7 +2073,7 @@ impl<F: Field> ConstraintSystem<F> {
 
         // Substitute selectors for the real fixed columns in all gates
         for expr in self.gates.iter_mut().flat_map(|gate| gate.polys.iter_mut()) {
-            replace_selectors(expr, &selector_replacements, false);
+            replace_selectors(expr, selector_replacements, false);
         }
 
         // Substitute non-simple selectors for the real fixed columns in all
@@ -2084,7 +2084,7 @@ impl<F: Field> ConstraintSystem<F> {
                 .iter_mut()
                 .chain(lookup.table_expressions.iter_mut())
         }) {
-            replace_selectors(expr, &selector_replacements, true);
+            replace_selectors(expr, selector_replacements, true);
         }
 
         for expr in self.shuffles.iter_mut().flat_map(|shuffle| {
@@ -2093,7 +2093,7 @@ impl<F: Field> ConstraintSystem<F> {
                 .iter_mut()
                 .chain(shuffle.shuffle_expressions.iter_mut())
         }) {
-            replace_selectors(expr, &selector_replacements, true);
+            replace_selectors(expr, selector_replacements, true);
         }
     }
 
