@@ -85,6 +85,9 @@ where
         }
         self.permutation.write(writer, format)?;
 
+        if !self.compress_selectors {
+            assert!(self.selectors.is_empty());
+        }
         // write self.selectors
         for selector in &self.selectors {
             // since `selector` is filled with `bool`, we pack them 8 at a time into bytes and then write
@@ -145,20 +148,27 @@ where
 
         let permutation = permutation::VerifyingKey::read(reader, &cs.permutation, format)?;
 
-        // read selectors
-        let selectors: Vec<Vec<bool>> = vec![vec![false; 1 << k]; cs.num_selectors]
-            .into_iter()
-            .map(|mut selector| {
-                let mut selector_bytes = vec![0u8; (selector.len() + 7) / 8];
-                reader.read_exact(&mut selector_bytes)?;
-                for (bits, byte) in selector.chunks_mut(8).zip(selector_bytes) {
-                    crate::helpers::unpack(byte, bits);
-                }
-                Ok(selector)
-            })
-            .collect::<io::Result<_>>()?;
-        let max_degree = if compress_selectors { cs.degree() } else { 0 };
-        let (cs, _) = cs.compress_selectors_up_to_degree(selectors.clone(), max_degree);
+        let (cs, selectors) = if compress_selectors {
+            // read selectors
+            let selectors: Vec<Vec<bool>> = vec![vec![false; 1 << k]; cs.num_selectors]
+                .into_iter()
+                .map(|mut selector| {
+                    let mut selector_bytes = vec![0u8; (selector.len() + 7) / 8];
+                    reader.read_exact(&mut selector_bytes)?;
+                    for (bits, byte) in selector.chunks_mut(8).zip(selector_bytes) {
+                        crate::helpers::unpack(byte, bits);
+                    }
+                    Ok(selector)
+                })
+                .collect::<io::Result<_>>()?;
+            let (cs, _) = cs.compress_selectors(selectors.clone());
+            (cs, selectors)
+        } else {
+            // we still need to replace selectors with fixed Expressions in `cs`
+            let fake_selectors = vec![vec![false]; cs.num_selectors];
+            let (cs, _) = cs.directly_convert_selectors_to_fixed(fake_selectors);
+            (cs, vec![])
+        };
 
         Ok(Self::from_parts(
             domain,
