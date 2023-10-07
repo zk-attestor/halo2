@@ -8,6 +8,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::RangeTo;
 
+use crate::multicore::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::{collections::HashMap, iter};
 
 use super::{
@@ -57,6 +58,7 @@ pub fn create_proof<
 ) -> Result<(), Error>
 where
     Scheme::Scalar: Hash + WithSmallOrderMulGroup<3>,
+    <Scheme as CommitmentScheme>::ParamsProver: Sync,
 {
     if circuits.len() != instances.len() {
         return Err(Error::InvalidInstances);
@@ -161,6 +163,7 @@ where
         E: EncodedChallenge<C>,
         R: RngCore,
         T: TranscriptWrite<C, E>,
+        <Scheme as CommitmentScheme>::ParamsProver: Sync,
     {
         fn enter_region<NR, N>(&mut self, _: N)
         where
@@ -296,7 +299,7 @@ where
                     let instance_commitments_projective: Vec<_> = self
                         .instance_single
                         .instance_values
-                        .iter()
+                        .par_iter()
                         .map(|poly| self.params.commit_lagrange(poly, Blind::default()))
                         .collect();
                     let mut instance_commitments =
@@ -336,8 +339,8 @@ where
                 .map(|_| Blind(F::random(&mut self.rng)))
                 .collect();
             let advice_commitments_projective: Vec<_> = advice_values
-                .iter()
-                .zip(blinds.iter())
+                .par_iter()
+                .zip(blinds.par_iter())
                 .map(|(poly, blind)| self.params.commit_lagrange(poly, *blind))
                 .collect();
             let mut advice_commitments = vec![C::identity(); advice_commitments_projective.len()];

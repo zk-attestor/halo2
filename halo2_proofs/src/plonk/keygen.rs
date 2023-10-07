@@ -16,6 +16,7 @@ use super::{
 use crate::{
     arithmetic::{parallelize, CurveAffine},
     circuit::Value,
+    multicore::{IntoParallelRefIterator, ParallelIterator},
     poly::{
         batch_invert_assigned,
         commitment::{Blind, Params},
@@ -194,7 +195,7 @@ pub fn keygen_vk<'params, C, P, ConcreteCircuit>(
 ) -> Result<VerifyingKey<C>, Error>
 where
     C: CurveAffine,
-    P: Params<'params, C>,
+    P: Params<'params, C> + Sync,
     ConcreteCircuit: Circuit<C::Scalar>,
     C::Scalar: FromUniformBytes<64>,
 {
@@ -211,7 +212,7 @@ pub fn keygen_vk_custom<'params, C, P, ConcreteCircuit>(
 ) -> Result<VerifyingKey<C>, Error>
 where
     C: CurveAffine,
-    P: Params<'params, C>,
+    P: Params<'params, C> + Sync,
     ConcreteCircuit: Circuit<C::Scalar>,
     C::Scalar: FromUniformBytes<64>,
 {
@@ -261,7 +262,7 @@ where
         .build_vk(params, &domain, &cs.permutation);
 
     let fixed_commitments = fixed
-        .iter()
+        .par_iter()
         .map(|poly| params.commit_lagrange(poly, Blind::default()).to_affine())
         .collect();
 

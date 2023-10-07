@@ -402,6 +402,7 @@ fn plonk_api() {
     fn keygen<Scheme: CommitmentScheme>(params: &Scheme::ParamsProver) -> ProvingKey<Scheme::Curve>
     where
         Scheme::Scalar: FromUniformBytes<64> + WithSmallOrderMulGroup<3>,
+        <Scheme as CommitmentScheme>::ParamsProver: Sync,
     {
         let (_, _, lookup_table) = common!(Scheme);
         let empty_circuit: MyCircuit<Scheme::Scalar> = MyCircuit {
@@ -429,6 +430,7 @@ fn plonk_api() {
     ) -> Vec<u8>
     where
         Scheme::Scalar: Hash + Ord + WithSmallOrderMulGroup<3> + FromUniformBytes<64>,
+        <Scheme as CommitmentScheme>::ParamsProver: Sync,
     {
         let (a, instance, lookup_table) = common!(Scheme);
 
