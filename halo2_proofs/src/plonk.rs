@@ -8,10 +8,12 @@
 use blake2b_simd::Params as Blake2bParams;
 use ff::PrimeField;
 use group::ff::Field;
+use rayon::prelude::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use crate::arithmetic::{CurveAffine, FieldExt};
 use crate::helpers::{
+    multi_thread_read_polynomial_vec, multi_thread_write_polynomial_slice,
     polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice, SerdeCurveAffine,
     SerdePrimeField,
 };
@@ -45,7 +47,7 @@ pub use verifier::*;
 
 use evaluation::Evaluator;
 use std::env::var;
-use std::io;
+use std::io::{self, BufReader};
 use std::time::Instant;
 
 /// Temp
@@ -148,6 +150,10 @@ pub fn log_info(msg: String) {
         println!("{}", msg);
     }
 }
+
+use std::fs::File;
+use std::io::BufWriter;
+use std::path::{Path, PathBuf};
 
 /// This is a verifying key which allows for the verification of proofs for a
 /// particular circuit.
@@ -387,6 +393,13 @@ pub struct ProvingKey<C: CurveAffine> {
     ev: Evaluator<C>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProvingKeyMetadata {
+    pub num_fixed_values: usize,
+    pub num_fixed_polys: usize,
+    pub num_fixed_cosets: usize,
+}
+
 impl<C: CurveAffine> ProvingKey<C> {
     /// Get the underlying [`VerifyingKey`].
     pub fn get_vk(&self) -> &VerifyingKey<C> {
@@ -432,6 +445,56 @@ where
         Ok(())
     }
 
+    pub fn multi_thread_write(
+        &self,
+        path: impl AsRef<Path>,
+        format: SerdeFormat,
+    ) -> io::Result<()> {
+        const BUFFER_SIZE: usize = 1024 * 1024;
+        let create_path = |filename: &str| -> PathBuf {
+            let mut p = path.as_ref().to_path_buf();
+            p.push(filename);
+            p
+        };
+        let create_writer = |filename: &str| -> BufWriter<File> {
+            let p = create_path(filename);
+            BufWriter::with_capacity(BUFFER_SIZE, File::create(p).unwrap())
+        };
+        let metadata = ProvingKeyMetadata {
+            num_fixed_values: self.fixed_values.len(),
+            num_fixed_polys: self.fixed_polys.len(),
+            num_fixed_cosets: self.fixed_cosets.len(),
+        };
+        serde_json::to_writer(create_writer("metadata"), &metadata)?;
+
+        let mut vk_writer = create_writer("vk");
+        self.vk.write(&mut vk_writer, format)?;
+
+        let l0_writer = create_writer("l0");
+        let l_last_writer = create_writer("l_last");
+        let l_active_writer = create_writer("l_active");
+
+        let mut v = [
+            (l0_writer, &self.l0),
+            (l_last_writer, &self.l_last),
+            (l_active_writer, &self.l_last),
+        ];
+        v.par_iter_mut().for_each(|(writer, p)| {
+            p.write(writer, format);
+        });
+
+        let values_path_prefix = create_path("values");
+        multi_thread_write_polynomial_slice(&self.fixed_values, values_path_prefix, format);
+        let polys_path_prefix = create_path("polys");
+        multi_thread_write_polynomial_slice(&self.fixed_polys, polys_path_prefix, format);
+        let cosets_path_prefix = create_path("cosets");
+        multi_thread_write_polynomial_slice(&self.fixed_cosets, cosets_path_prefix, format);
+
+        let perm_path = create_path("perm");
+        self.permutation.multi_thread_write(perm_path, format);
+        Ok(())
+    }
+
     /// Reads a proving key from a buffer.
     /// Does so by reading verification key first, and then deserializing the rest of the file into the remaining proving key data.
     ///
@@ -465,6 +528,82 @@ where
             fixed_polys,
             fixed_cosets,
             permutation,
+            ev,
+        })
+    }
+
+    pub async fn multi_thread_read<ConcreteCircuit: Circuit<C::Scalar>>(
+        path: impl AsRef<Path>,
+        format: SerdeFormat,
+    ) -> io::Result<Self> {
+        const BUFFER_SIZE: usize = 1024 * 1024;
+        let create_path = |filename: &str| -> PathBuf {
+            let mut p = path.as_ref().to_path_buf();
+            p.push(filename);
+            p
+        };
+        let create_reader = |filename: &str| -> BufReader<File> {
+            let p = create_path(filename);
+            BufReader::with_capacity(BUFFER_SIZE, File::open(p).unwrap())
+        };
+        let metadata: ProvingKeyMetadata = serde_json::from_reader(create_reader("metadata"))?;
+
+        let vk_path = create_path("vk");
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, File::open(vk_path).unwrap());
+        let vk_promise = tokio::spawn(async move {
+            VerifyingKey::<C>::read::<_, ConcreteCircuit>(&mut reader, format).unwrap()
+        });
+
+        let l0_path = create_path("l0");
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, File::open(l0_path).unwrap());
+        let l0_promise = tokio::spawn(async move { Polynomial::read(&mut reader, format) });
+
+        let l_last_path = create_path("l_last");
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, File::open(l_last_path).unwrap());
+        let l_last_promise = tokio::spawn(async move { Polynomial::read(&mut reader, format) });
+
+        let l_active_row_path = create_path("l_active");
+        let mut reader =
+            BufReader::with_capacity(BUFFER_SIZE, File::open(l_active_row_path).unwrap());
+        let l_active_row_promise =
+            tokio::spawn(async move { Polynomial::read(&mut reader, format) });
+
+        let values_path = create_path("values");
+        let values_n = metadata.num_fixed_values;
+        let values_promise = tokio::spawn(multi_thread_read_polynomial_vec(
+            values_path,
+            format,
+            values_n,
+        ));
+
+        let polys_path = create_path("polys");
+        let polys_n = metadata.num_fixed_polys;
+        let polys_promise = tokio::spawn(multi_thread_read_polynomial_vec(
+            polys_path, format, polys_n,
+        ));
+
+        let cosets_path = create_path("cosets");
+        let cosets_n = metadata.num_fixed_cosets;
+        let cosets_promise = tokio::spawn(multi_thread_read_polynomial_vec(
+            cosets_path,
+            format,
+            cosets_n,
+        ));
+
+        let perm_path = create_path("perm");
+        let permutation_promise =
+            tokio::spawn(permutation::ProvingKey::async_read(perm_path, format));
+        let vk = vk_promise.await?;
+        let ev = Evaluator::new(vk.cs());
+        Ok(Self {
+            vk,
+            l0: l0_promise.await?,
+            l_last: l_last_promise.await?,
+            l_active_row: l_active_row_promise.await?,
+            fixed_values: values_promise.await?,
+            fixed_polys: polys_promise.await?,
+            fixed_cosets: cosets_promise.await?,
+            permutation: permutation_promise.await?,
             ev,
         })
     }

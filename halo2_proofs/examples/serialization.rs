@@ -126,91 +126,121 @@ impl Circuit<Fr> for StandardPlonk {
     }
 }
 
-fn main() -> std::io::Result<()> {
+#[tokio::main(flavor = "multi_thread", worker_threads = 24)]
+async fn main() -> std::io::Result<()> {
     let k = 22;
-    let circuit = StandardPlonk(Fr::random(OsRng));
-    let params = ParamsKZG::<Bn256>::setup(k, OsRng);
-    let vk = keygen_vk(&params, &circuit).expect("vk should not fail");
-    let pk = keygen_pk(&params, vk, &circuit).expect("pk should not fail");
 
-    for buf_size in [1024, 8 * 1024, 1024 * 1024, 1024 * 1024 * 1024] {
-        println!("buf_size: {buf_size}");
-        // Using halo2_proofs serde implementation
-        let f = File::create("serialization-test.pk")?;
-        let mut writer = BufWriter::with_capacity(buf_size, f);
-        let start = std::time::Instant::now();
-        pk.write(&mut writer, SerdeFormat::RawBytes)?;
-        writer.flush().unwrap();
-        println!("SerdeFormat::RawBytes pk write time: {:?}", start.elapsed());
+    let buf_size = 1024 * 1024;
 
-        let f = File::open("serialization-test.pk")?;
-        let mut reader = BufReader::with_capacity(buf_size, f);
-        let start = std::time::Instant::now();
-        let pk =
-            ProvingKey::<G1Affine>::read::<_, StandardPlonk>(&mut reader, SerdeFormat::RawBytes)
-                .unwrap();
-        println!("SerdeFormat::RawBytes pk read time: {:?}", start.elapsed());
+    // let pk_path = "/home/ubuntu/playground/serialization-test.pk";
+    // let f = File::open(pk_path)?;
+    // let mut reader = BufReader::with_capacity(buf_size, f);
+    // let start = std::time::Instant::now();
+    // let pk = ProvingKey::<G1Affine>::read::<_, StandardPlonk>(&mut reader, SerdeFormat::RawBytes)
+    //     .unwrap();
+    // println!("SerdeFormat::RawBytes pk read time: {:?}", start.elapsed());
 
-        let metadata = fs::metadata("serialization-test.pk")?;
-        let file_size = metadata.len();
-        println!("The size of the file is {} bytes", file_size);
-        std::fs::remove_file("serialization-test.pk")?;
+    // let pk_folder = "/home/ubuntu/playground/serialization-test/";
+    let pk_folder = "/mnt/ramdisk/serialization-test";
+    // let start = std::time::Instant::now();
+    // pk.multi_thread_write(pk_folder, SerdeFormat::RawBytes)?;
+    // println!(
+    //     "SerdeFormat::RawBytes pk multi thread write time: {:?}",
+    //     start.elapsed()
+    // );
 
-        // Using bincode
-        let f = File::create("serialization-test.pk")?;
-        let mut writer = BufWriter::with_capacity(buf_size, f);
-        let start = std::time::Instant::now();
-        bincode::serialize_into(&mut writer, &pk).unwrap();
-        writer.flush().unwrap();
-        println!("bincode pk write time: {:?}", start.elapsed());
+    let start = std::time::Instant::now();
+    ProvingKey::<G1Affine>::multi_thread_read::<StandardPlonk>(pk_folder, SerdeFormat::RawBytes)
+        .await?;
+    println!(
+        "SerdeFormat::RawBytes pk multi thread read time: {:?}",
+        start.elapsed()
+    );
 
-        let f = File::open("serialization-test.pk").unwrap();
-        let mut reader = BufReader::with_capacity(buf_size, f);
-        let start = std::time::Instant::now();
-        let pk: ProvingKey<G1Affine> = bincode::deserialize_from(&mut reader).unwrap();
-        println!("bincode pk read time: {:?}", start.elapsed());
-
-        let metadata = fs::metadata("serialization-test.pk")?;
-        let file_size = metadata.len();
-        println!("The size of the file is {} bytes", file_size);
-        std::fs::remove_file("serialization-test.pk").unwrap();
-
-        let instances: &[&[Fr]] = &[&[circuit.clone().0]];
-        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof::<
-            KZGCommitmentScheme<Bn256>,
-            ProverGWC<'_, Bn256>,
-            Challenge255<G1Affine>,
-            _,
-            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<_>>,
-            _,
-        >(
-            &params,
-            &pk,
-            &[circuit.clone()],
-            &[instances],
-            OsRng,
-            &mut transcript,
-        )
-        .expect("prover should not fail");
-        let proof = transcript.finalize();
-
-        let strategy = SingleStrategy::new(&params);
-        let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-        assert!(verify_proof::<
-            KZGCommitmentScheme<Bn256>,
-            VerifierGWC<'_, Bn256>,
-            Challenge255<G1Affine>,
-            Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
-            SingleStrategy<'_, Bn256>,
-        >(
-            &params,
-            pk.get_vk(),
-            strategy,
-            &[instances],
-            &mut transcript
-        )
-        .is_ok());
-    }
     Ok(())
+    // let circuit = StandardPlonk(Fr::random(OsRng));
+    // let params = ParamsKZG::<Bn256>::setup(k, OsRng);
+    // let vk = keygen_vk(&params, &circuit).expect("vk should not fail");
+    // let pk = keygen_pk(&params, vk, &circuit).expect("pk should not fail");
+
+    // for buf_size in [1024, 8 * 1024, 1024 * 1024, 1024 * 1024 * 1024] {
+    //     println!("buf_size: {buf_size}");
+    //     // Using halo2_proofs serde implementation
+    //     let f = File::create("serialization-test.pk")?;
+    //     let mut writer = BufWriter::with_capacity(buf_size, f);
+    //     let start = std::time::Instant::now();
+    //     pk.write(&mut writer, SerdeFormat::RawBytes)?;
+    //     writer.flush().unwrap();
+    //     println!("SerdeFormat::RawBytes pk write time: {:?}", start.elapsed());
+
+    //     let f = File::open("serialization-test.pk")?;
+    //     let mut reader = BufReader::with_capacity(buf_size, f);
+    //     let start = std::time::Instant::now();
+    //     let pk =
+    //         ProvingKey::<G1Affine>::read::<_, StandardPlonk>(&mut reader, SerdeFormat::RawBytes)
+    //             .unwrap();
+    //     println!("SerdeFormat::RawBytes pk read time: {:?}", start.elapsed());
+
+    //     let metadata = fs::metadata("serialization-test.pk")?;
+    //     let file_size = metadata.len();
+    //     println!("The size of the file is {} bytes", file_size);
+    //     std::fs::remove_file("serialization-test.pk")?;
+
+    //     // Using bincode
+    //     let f = File::create("serialization-test.pk")?;
+    //     let mut writer = BufWriter::with_capacity(buf_size, f);
+    //     let start = std::time::Instant::now();
+    //     bincode::serialize_into(&mut writer, &pk).unwrap();
+    //     writer.flush().unwrap();
+    //     println!("bincode pk write time: {:?}", start.elapsed());
+
+    //     let f = File::open("serialization-test.pk").unwrap();
+    //     let mut reader = BufReader::with_capacity(buf_size, f);
+    //     let start = std::time::Instant::now();
+    //     let pk: ProvingKey<G1Affine> = bincode::deserialize_from(&mut reader).unwrap();
+    //     println!("bincode pk read time: {:?}", start.elapsed());
+
+    //     let metadata = fs::metadata("serialization-test.pk")?;
+    //     let file_size = metadata.len();
+    //     println!("The size of the file is {} bytes", file_size);
+    //     std::fs::remove_file("serialization-test.pk").unwrap();
+
+    //     let instances: &[&[Fr]] = &[&[circuit.clone().0]];
+    //     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+    //     create_proof::<
+    //         KZGCommitmentScheme<Bn256>,
+    //         ProverGWC<'_, Bn256>,
+    //         Challenge255<G1Affine>,
+    //         _,
+    //         Blake2bWrite<Vec<u8>, G1Affine, Challenge255<_>>,
+    //         _,
+    //     >(
+    //         &params,
+    //         &pk,
+    //         &[circuit.clone()],
+    //         &[instances],
+    //         OsRng,
+    //         &mut transcript,
+    //     )
+    //     .expect("prover should not fail");
+    //     let proof = transcript.finalize();
+
+    //     let strategy = SingleStrategy::new(&params);
+    //     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+    //     assert!(verify_proof::<
+    //         KZGCommitmentScheme<Bn256>,
+    //         VerifierGWC<'_, Bn256>,
+    //         Challenge255<G1Affine>,
+    //         Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
+    //         SingleStrategy<'_, Bn256>,
+    //     >(
+    //         &params,
+    //         pk.get_vk(),
+    //         strategy,
+    //         &[instances],
+    //         &mut transcript
+    //     )
+    //     .is_ok());
+    // }
+    // Ok(())
 }

@@ -4,6 +4,7 @@ use super::circuit::{Any, Column};
 use crate::{
     arithmetic::CurveAffine,
     helpers::{
+        multi_thread_read_polynomial_vec, multi_thread_write_polynomial_slice,
         polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice,
         SerdeCurveAffine, SerdePrimeField,
     },
@@ -19,7 +20,7 @@ pub(crate) mod verifier;
 pub use keygen::Assembly;
 use serde::{Deserialize, Serialize};
 
-use std::io;
+use std::{fs::File, io, path::Path};
 
 /// A permutation argument.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,6 +136,13 @@ pub(crate) struct ProvingKey<C: CurveAffine> {
     pub(super) cosets: Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProvingKeyMetadata {
+    pub num_perms: usize,
+    pub num_polys: usize,
+    pub num_cosets: usize,
+}
+
 impl<C: SerdeCurveAffine> ProvingKey<C>
 where
     C::Scalar: SerdePrimeField,
@@ -150,12 +158,70 @@ where
             cosets,
         }
     }
+    /// Async version of read
+    pub(super) async fn async_read(prefix: impl AsRef<Path>, format: SerdeFormat) -> Self {
+        let os_str = prefix.as_ref().clone().to_path_buf().into_os_string();
+        let mut metadata_os_str = os_str.clone();
+        metadata_os_str.push("_metadata");
+        let metadata: ProvingKeyMetadata =
+            serde_json::from_reader(File::open(metadata_os_str).unwrap()).unwrap();
+
+        let mut perms_os_str = os_str.clone();
+        perms_os_str.push("_perm");
+        let permutations_promise = tokio::spawn(multi_thread_read_polynomial_vec(
+            perms_os_str,
+            format,
+            metadata.num_perms,
+        ));
+        let mut polys_os_str = os_str.clone();
+        polys_os_str.push("_polys");
+        let polys_promise = tokio::spawn(multi_thread_read_polynomial_vec(
+            polys_os_str,
+            format,
+            metadata.num_polys,
+        ));
+        let mut cosets_os_str = os_str.clone();
+        cosets_os_str.push("_cosets");
+        let cosets_promise = tokio::spawn(multi_thread_read_polynomial_vec(
+            cosets_os_str,
+            format,
+            metadata.num_cosets,
+        ));
+        ProvingKey {
+            permutations: permutations_promise.await.unwrap(),
+            polys: polys_promise.await.unwrap(),
+            cosets: cosets_promise.await.unwrap(),
+        }
+    }
 
     /// Writes proving key for a single permutation argument to buffer using `Polynomial::write`.  
     pub(super) fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) {
         write_polynomial_slice(&self.permutations, writer, format);
         write_polynomial_slice(&self.polys, writer, format);
         write_polynomial_slice(&self.cosets, writer, format);
+    }
+    /// Multi thread write
+    pub(super) fn multi_thread_write(&self, prefix: impl AsRef<Path>, format: SerdeFormat) {
+        let os_str = prefix.as_ref().clone().to_path_buf().into_os_string();
+        let metadata = ProvingKeyMetadata {
+            num_perms: self.permutations.len(),
+            num_polys: self.polys.len(),
+            num_cosets: self.cosets.len(),
+        };
+        let mut metadata_os_str = os_str.clone();
+        metadata_os_str.push("_metadata");
+        serde_json::to_writer(File::create(metadata_os_str).unwrap(), &metadata).unwrap();
+
+        let permutations = &self.permutations;
+        let mut perm_os_str = os_str.clone();
+        perm_os_str.push("_perm");
+        multi_thread_write_polynomial_slice(permutations, perm_os_str, format);
+        let mut polys_os_str = os_str.clone();
+        polys_os_str.push("_polys");
+        multi_thread_write_polynomial_slice(&self.polys, polys_os_str, format);
+        let mut cosets_os_str = os_str.clone();
+        cosets_os_str.push("_cosets");
+        multi_thread_write_polynomial_slice(&self.cosets, cosets_os_str, format);
     }
 }
 

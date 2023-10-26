@@ -1,7 +1,15 @@
 use crate::poly::Polynomial;
 use ff::PrimeField;
 use halo2curves::{pairing::Engine, serde::SerdeObject, CurveAffine};
-use std::io;
+use itertools::Itertools;
+use maybe_rayon::prelude::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
+use std::{
+    fs::File,
+    io::{self, BufReader, BufWriter},
+    path::Path,
+};
 
 /// This enum specifies how various types are serialized and deserialized.
 #[derive(Clone, Copy, Debug)]
@@ -125,6 +133,35 @@ pub(crate) fn read_polynomial_vec<R: io::Read, F: SerdePrimeField, B>(
         .collect()
 }
 
+/// Reads a vector of polynomials from buffer
+pub(crate) async fn multi_thread_read_polynomial_vec<
+    F: SerdePrimeField,
+    B: Send + Sync + 'static,
+>(
+    pk_prefix_path: impl AsRef<Path>,
+    format: SerdeFormat,
+    n: usize,
+) -> Vec<Polynomial<F, B>> {
+    const BUFFER_SIZE: usize = 1024 * 1024;
+    let join_handles = (0..n)
+        .map(|i| {
+            let mut poly_path = pk_prefix_path
+                .as_ref()
+                .clone()
+                .to_path_buf()
+                .into_os_string();
+            poly_path.push(format!("_{i}"));
+            let mut reader = BufReader::with_capacity(BUFFER_SIZE, File::open(poly_path).unwrap());
+            tokio::spawn(async move { Polynomial::<F, B>::read(&mut reader, format) })
+        })
+        .collect_vec();
+    let mut ret = Vec::with_capacity(join_handles.len());
+    for join_handle in join_handles {
+        ret.push(join_handle.await.unwrap());
+    }
+    ret
+}
+
 /// Writes a slice of polynomials to buffer
 pub(crate) fn write_polynomial_slice<W: io::Write, F: SerdePrimeField, B>(
     slice: &[Polynomial<F, B>],
@@ -137,6 +174,36 @@ pub(crate) fn write_polynomial_slice<W: io::Write, F: SerdePrimeField, B>(
     for poly in slice.iter() {
         poly.write(writer, format);
     }
+}
+
+/// Writes a slice of polynomials to buffer
+pub(crate) fn multi_thread_write_polynomial_slice<F: SerdePrimeField, B: Send + Sync>(
+    slice: &[Polynomial<F, B>],
+    pk_prefix_path: impl AsRef<Path>,
+    format: SerdeFormat,
+) {
+    const BUFFER_SIZE: usize = 1024 * 1024;
+    let poly_path = slice
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            let mut poly_path = pk_prefix_path
+                .as_ref()
+                .clone()
+                .to_path_buf()
+                .into_os_string();
+            poly_path.push(format!("_{i}"));
+            poly_path
+        })
+        .collect_vec();
+    slice
+        .par_iter()
+        .zip_eq(poly_path.par_iter())
+        .for_each(|(poly, poly_path)| {
+            let mut writer =
+                BufWriter::with_capacity(BUFFER_SIZE, File::create(poly_path).unwrap());
+            poly.write(&mut writer, format);
+        });
 }
 
 /// Gets the total number of bytes of a slice of polynomials, assuming all polynomials are the same length
