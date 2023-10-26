@@ -10,8 +10,8 @@ use group::ff::{Field, FromUniformBytes, PrimeField};
 
 use crate::arithmetic::CurveAffine;
 use crate::helpers::{
-    polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice, SerdeCurveAffine,
-    SerdePrimeField,
+    multi_thread_write_polynomial_slice, polynomial_slice_byte_length, read_polynomial_vec,
+    write_polynomial_slice, SerdeCurveAffine, SerdePrimeField,
 };
 use crate::poly::{
     Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff, PinnedEvaluationDomain,
@@ -42,7 +42,9 @@ pub use verifier::*;
 
 use evaluation::Evaluator;
 
-use std::io;
+use std::fs::File;
+use std::io::{self, BufWriter};
+use std::path::Path;
 
 /// This is a verifying key which allows for the verification of proofs for a
 /// particular circuit.
@@ -372,6 +374,34 @@ where
         write_polynomial_slice(&self.fixed_polys, writer, format);
         write_polynomial_slice(&self.fixed_cosets, writer, format);
         self.permutation.write(writer, format);
+        Ok(())
+    }
+
+    pub fn multi_thread_write(
+        &self,
+        path: impl AsRef<Path>,
+        format: SerdeFormat,
+    ) -> io::Result<()> {
+        const BUFFER_SIZE: usize = 1024 * 1024;
+        let mut misc_path = path.as_ref().to_path_buf();
+        misc_path.push("misc");
+        let mut misc_writer =
+            BufWriter::with_capacity(BUFFER_SIZE, File::create(misc_path).unwrap());
+        self.vk.write(&mut misc_writer, format)?;
+        self.l0.write(&mut misc_writer, format);
+        self.l_last.write(&mut misc_writer, format);
+        self.l_active_row.write(&mut misc_writer, format);
+
+        let mut values_path_prefix = path.as_ref().to_path_buf();
+        values_path_prefix.push("values");
+        multi_thread_write_polynomial_slice(&self.fixed_values, values_path_prefix, format);
+        let mut polys_path_prefix = path.as_ref().to_path_buf();
+        polys_path_prefix.push("polys");
+        multi_thread_write_polynomial_slice(&self.fixed_polys, polys_path_prefix, format);
+        let mut cosets_path_prefix = path.as_ref().to_path_buf();
+        cosets_path_prefix.push("cosets");
+        multi_thread_write_polynomial_slice(&self.fixed_cosets, cosets_path_prefix, format);
+        self.permutation.write(&mut misc_writer, format);
         Ok(())
     }
 

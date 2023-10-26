@@ -20,8 +20,11 @@ use halo2_proofs::transcript::{
     Blake2bRead, Blake2bWrite, Challenge255, EncodedChallenge, TranscriptReadBuffer,
     TranscriptWriterBuffer,
 };
+use halo2_proofs::SerdeFormat;
 use rand_core::{OsRng, RngCore};
+use std::fs::File;
 use std::hash::Hash;
+use std::io;
 use std::marker::PhantomData;
 
 #[test]

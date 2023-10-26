@@ -1,7 +1,15 @@
 use crate::poly::Polynomial;
 use ff::PrimeField;
 use halo2curves::{serde::SerdeObject, CurveAffine};
-use std::io;
+use itertools::Itertools;
+use maybe_rayon::prelude::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
+use std::{
+    fs::File,
+    io::{self, BufWriter},
+    path::Path,
+};
 
 /// This enum specifies how various types are serialized and deserialized.
 #[derive(Clone, Copy, Debug)]
@@ -138,6 +146,36 @@ pub(crate) fn write_polynomial_slice<W: io::Write, F: SerdePrimeField, B>(
     for poly in slice.iter() {
         poly.write(writer, format);
     }
+}
+
+/// Writes a slice of polynomials to buffer
+pub(crate) fn multi_thread_write_polynomial_slice<F: SerdePrimeField, B: Send + Sync>(
+    slice: &[Polynomial<F, B>],
+    pk_prefix_path: impl AsRef<Path>,
+    format: SerdeFormat,
+) {
+    const BUFFER_SIZE: usize = 1024 * 1024;
+    let poly_path = slice
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            let mut slice_path = pk_prefix_path
+                .as_ref()
+                .clone()
+                .to_path_buf()
+                .into_os_string();
+            slice_path.push(format!("_{i}"));
+            slice_path
+        })
+        .collect_vec();
+    slice
+        .par_iter()
+        .zip_eq(poly_path.par_iter())
+        .for_each(|(poly, poly_path)| {
+            let mut writer =
+                BufWriter::with_capacity(BUFFER_SIZE, File::create(poly_path).unwrap());
+            poly.write(&mut writer, format);
+        });
 }
 
 /// Gets the total number of bytes of a slice of polynomials, assuming all polynomials are the same length
