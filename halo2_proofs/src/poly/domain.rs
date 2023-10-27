@@ -224,6 +224,32 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         }
     }
 
+    /// Obtains a polynomial in ExtendedLagrange form when given a vector of
+    /// Lagrange polynomials with total size `extended_n`; panics if the
+    /// provided vector is the wrong length.
+    pub fn extended_from_lagrange_vec(
+        &self,
+        values: Vec<Polynomial<F, LagrangeCoeff>>,
+    ) -> Polynomial<F, ExtendedLagrangeCoeff> {
+        assert_eq!(values.len(), self.extended_len() >> self.k);
+        assert_eq!(values[0].len(), self.n as usize);
+
+        // transpose the values in parallel
+        let mut transposed = vec![vec![F::ZERO; values.len()]; self.n as usize];
+        values.into_iter().enumerate().for_each(|(i, p)| {
+            parallelize(&mut transposed, |transposed, start| {
+                for (transposed, p) in transposed.iter_mut().zip(p.values[start..].iter()) {
+                    transposed[i] = *p;
+                }
+            });
+        });
+
+        Polynomial {
+            values: transposed.into_iter().flatten().collect(),
+            _marker: PhantomData,
+        }
+    }
+
     /// Returns an empty (zero) polynomial in the coefficient basis
     pub fn empty_coeff(&self) -> Polynomial<F, Coeff> {
         Polynomial {
