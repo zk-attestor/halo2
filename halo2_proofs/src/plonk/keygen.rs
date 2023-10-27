@@ -284,16 +284,49 @@ pub fn keygen_pk<'params, C, P, ConcreteCircuit>(
 ) -> Result<ProvingKey<C>, Error>
 where
     C: CurveAffine,
-    P: Params<'params, C>,
+    C::Scalar: FromUniformBytes<64>,
+    P: Params<'params, C> + Sync,
     ConcreteCircuit: Circuit<C::Scalar>,
 {
-    let mut cs = ConstraintSystem::default();
-    #[cfg(feature = "circuit-params")]
-    let config = ConcreteCircuit::configure_with_params(&mut cs, circuit.params());
-    #[cfg(not(feature = "circuit-params"))]
-    let config = ConcreteCircuit::configure(&mut cs);
+    let compress_selectors = vk.compress_selectors;
+    keygen_pk_impl(params, Some(vk), circuit, compress_selectors)
+}
 
-    let cs = cs;
+/// Generate a `ProvingKey` from an instance of `Circuit`. `VerifyingKey` is generated in the process.
+pub fn keygen_pk2<'params, C, P, ConcreteCircuit>(
+    params: &P,
+    circuit: &ConcreteCircuit,
+    compress_selectors: bool,
+) -> Result<ProvingKey<C>, Error>
+where
+    C: CurveAffine,
+    C::Scalar: FromUniformBytes<64>,
+    P: Params<'params, C> + Sync,
+    ConcreteCircuit: Circuit<C::Scalar>,
+{
+    keygen_pk_impl(params, None, circuit, compress_selectors)
+}
+
+/// Generate a `ProvingKey` from either a precalculated `VerifyingKey` and an instance of `Circuit`, or
+/// just a `Circuit`, in which case a new `VerifyingKey` is generated. The latter is more efficient because
+/// it does fixed column FFTs only once.
+pub fn keygen_pk_impl<'params, C, P, ConcreteCircuit>(
+    params: &P,
+    vk: Option<VerifyingKey<C>>,
+    circuit: &ConcreteCircuit,
+    compress_selectors: bool,
+) -> Result<ProvingKey<C>, Error>
+where
+    C: CurveAffine,
+    C::Scalar: FromUniformBytes<64>,
+    P: Params<'params, C> + Sync,
+    ConcreteCircuit: Circuit<C::Scalar>,
+{
+    let (domain, cs, config) = create_domain::<C, ConcreteCircuit>(
+        params.k(),
+        #[cfg(feature = "circuit-params")]
+        circuit.params(),
+    );
 
     if (params.n() as usize) < cs.minimum_rows() {
         return Err(Error::not_enough_rows_available(params.k()));
@@ -301,7 +334,7 @@ where
 
     let mut assembly: Assembly<C::Scalar> = Assembly {
         k: params.k(),
-        fixed: vec![vk.domain.empty_lagrange_assigned(); cs.num_fixed_columns],
+        fixed: vec![domain.empty_lagrange_assigned(); cs.num_fixed_columns],
         permutation: permutation::keygen::Assembly::new(params.n() as usize, &cs.permutation),
         selectors: vec![vec![false; params.n() as usize]; cs.num_selectors],
         usable_rows: 0..params.n() as usize - (cs.blinding_factors() + 1),
@@ -317,30 +350,54 @@ where
     )?;
 
     let mut fixed = batch_invert_assigned(assembly.fixed);
-    let (cs, selector_polys) = if vk.compress_selectors {
-        cs.compress_selectors(assembly.selectors)
+    let (cs, selector_polys) = if compress_selectors {
+        cs.compress_selectors(assembly.selectors.clone())
     } else {
-        cs.directly_convert_selectors_to_fixed(assembly.selectors)
+        let selectors = std::mem::take(&mut assembly.selectors);
+        cs.directly_convert_selectors_to_fixed(selectors)
     };
     fixed.extend(
         selector_polys
             .into_iter()
-            .map(|poly| vk.domain.lagrange_from_vec(poly)),
+            .map(|poly| domain.lagrange_from_vec(poly)),
     );
-
-    let fixed_polys: Vec<_> = fixed
-        .iter()
-        .map(|poly| vk.domain.lagrange_to_coeff(poly.clone()))
-        .collect();
-
-    let fixed_cosets = fixed_polys
-        .iter()
-        .map(|poly| vk.domain.coeff_to_extended(poly))
-        .collect();
 
     let permutation_pk = assembly
         .permutation
-        .build_pk(params, &vk.domain, &cs.permutation);
+        .clone()
+        .build_pk(params, &domain, &cs.permutation);
+
+    let vk = match vk {
+        Some(vk) => vk,
+        None => {
+            let permutation_vk = assembly
+                .permutation
+                .build_vk(params, &domain, &cs.permutation);
+
+            let fixed_commitments = (&fixed)
+                .into_par_iter()
+                .map(|poly| params.commit_lagrange(poly, Blind::default()).to_affine())
+                .collect();
+
+            VerifyingKey::from_parts(
+                domain,
+                fixed_commitments,
+                permutation_vk,
+                cs,
+                assembly.selectors,
+                compress_selectors,
+            )
+        }
+    };
+
+    let (fixed_polys, fixed_cosets): (Vec<_>, Vec<_>) = fixed
+        .iter()
+        .map(|poly| {
+            let fixed_poly = vk.domain.lagrange_to_coeff(poly.clone());
+            let fixed_coset = vk.domain.coeff_to_extended(&fixed_poly);
+            (fixed_poly, fixed_coset)
+        })
+        .unzip();
 
     // Compute l_0(X)
     // TODO: this can be done more efficiently
@@ -352,7 +409,7 @@ where
     // Compute l_blind(X) which evaluates to 1 for each blinding factor row
     // and 0 otherwise over the domain.
     let mut l_blind = vk.domain.empty_lagrange();
-    for evaluation in l_blind[..].iter_mut().rev().take(cs.blinding_factors()) {
+    for evaluation in l_blind[..].iter_mut().rev().take(vk.cs.blinding_factors()) {
         *evaluation = C::Scalar::ONE;
     }
     let l_blind = vk.domain.lagrange_to_coeff(l_blind);
@@ -361,7 +418,7 @@ where
     // Compute l_last(X) which evaluates to 1 on the first inactive row (just
     // before the blinding factors) and 0 otherwise over the domain
     let mut l_last = vk.domain.empty_lagrange();
-    l_last[params.n() as usize - cs.blinding_factors() - 1] = C::Scalar::ONE;
+    l_last[params.n() as usize - vk.cs.blinding_factors() - 1] = C::Scalar::ONE;
     let l_last = vk.domain.lagrange_to_coeff(l_last);
     let l_last = vk.domain.coeff_to_extended(&l_last);
 
