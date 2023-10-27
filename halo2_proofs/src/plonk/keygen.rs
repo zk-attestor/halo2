@@ -16,7 +16,7 @@ use super::{
 use crate::{
     arithmetic::{parallelize, CurveAffine},
     circuit::Value,
-    multicore::{IntoParallelRefIterator, ParallelIterator},
+    multicore::{IntoParallelIterator, ParallelIterator},
     poly::{
         batch_invert_assigned,
         commitment::{Blind, Params},
@@ -261,8 +261,8 @@ where
         .permutation
         .build_vk(params, &domain, &cs.permutation);
 
-    let fixed_commitments = fixed
-        .par_iter()
+    let fixed_commitments = (&fixed)
+        .into_par_iter()
         .map(|poly| params.commit_lagrange(poly, Blind::default()).to_affine())
         .collect();
 
