@@ -11,7 +11,7 @@ use super::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation};
 
 use group::ff::{BatchInvert, Field, WithSmallOrderMulGroup};
 
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
 /// This structure contains precomputed constants and other details needed for
 /// performing operations on an evaluation domain of size $2^k$ and an extended
@@ -34,8 +34,7 @@ pub struct EvaluationDomain<F: Field> {
     barycentric_weight: F,
 
     // Recursive stuff
-    fft_data: FFTData<F>,
-    extended_fft_data: FFTData<F>,
+    fft_data: HashMap<usize, FFTData<F>>,
 }
 
 impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
@@ -70,19 +69,22 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             extended_omega = extended_omega.square();
         }
         let extended_omega = extended_omega;
-        let mut extended_omega_inv = extended_omega; // Inversion computed later
 
         // Get omega, the 2^{k}'th root of unity (i.e. n'th root of unity)
         // The loop computes omega = extended_omega ^ {2 ^ (extended_k - k)}
         //           = (omega^{2 ^ (S - extended_k)})  ^ {2 ^ (extended_k - k)}
         //           = omega ^ {2 ^ (S - k)}.
         // Notice that omega ^ {2^k} = omega ^ {2^S} = 1.
+        let mut omegas = Vec::with_capacity((extended_k - k + 1) as usize);
         let mut omega = extended_omega;
+        omegas.push(omega);
         for _ in k..extended_k {
             omega = omega.square();
+            omegas.push(omega);
         }
         let omega = omega;
-        let mut omega_inv = omega; // Inversion computed later
+        omegas.reverse();
+        let mut omegas_inv = omegas.clone(); // Inversion computed later
 
         // We use zeta here because we know it generates a coset, and it's available
         // already.
@@ -129,9 +131,17 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             .chain(Some(&mut ifft_divisor))
             .chain(Some(&mut extended_ifft_divisor))
             .chain(Some(&mut barycentric_weight))
-            .chain(Some(&mut extended_omega_inv))
-            .chain(Some(&mut omega_inv))
+            .chain(&mut omegas_inv)
             .batch_invert();
+
+        let omega_inv = omegas_inv[0];
+        let extended_omega_inv = *omegas_inv.last().unwrap();
+        let mut fft_data = HashMap::new();
+        for (i, (omega, omega_inv)) in omegas.into_iter().zip(omegas_inv).enumerate() {
+            let intermediate_k = k as usize + i;
+            let len = 1usize << intermediate_k;
+            fft_data.insert(len, FFTData::<F>::new(len, omega, omega_inv));
+        }
 
         EvaluationDomain {
             n,
@@ -148,12 +158,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             extended_ifft_divisor,
             t_evaluations,
             barycentric_weight,
-            fft_data: FFTData::<F>::new(n as usize, omega, omega_inv),
-            extended_fft_data: FFTData::<F>::new(
-                (1 << extended_k) as usize,
-                extended_omega,
-                extended_omega_inv,
-            ),
+            fft_data,
         }
     }
 
@@ -560,7 +565,9 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     }
 
     fn ifft(&self, a: &mut Vec<F>, omega_inv: F, log_n: u32, divisor: F) {
-        self.fft_inner(a, omega_inv, log_n, true);
+        let fft_data = self.get_fft_data(a.len());
+        crate::fft::parallel::fft(a, omega_inv, log_n, fft_data, true);
+        // self.fft_inner(a, omega_inv, log_n, true);
         parallelize(a, |a, _| {
             for a in a {
                 // Finish iFFT
@@ -696,11 +703,9 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
 
     /// Get the private `fft_data`
     pub fn get_fft_data(&self, l: usize) -> &FFTData<F> {
-        if l == self.fft_data.get_n() {
-            &self.fft_data
-        } else {
-            &self.extended_fft_data
-        }
+        self.fft_data
+            .get(&l)
+            .expect("log_2(l) must be in k..=extended_k")
     }
 }
 
@@ -844,7 +849,7 @@ fn test_lagrange_vecs_to_extended() {
     use rand_core::OsRng;
 
     let rng = OsRng;
-    let domain = EvaluationDomain::<Scalar>::new(8, 3);
+    let domain = EvaluationDomain::<Scalar>::new(8, 10);
     let mut poly_vec = vec![];
     let mut poly_lagrange_vecs = vec![];
     let mut want = domain.empty_extended();
@@ -888,7 +893,6 @@ fn test_lagrange_vecs_to_extended() {
         want = want + &poly;
         omega = omega * omega;
     }
-
     poly_lagrange_vecs.reverse();
     let got = domain.lagrange_vecs_to_extended(poly_lagrange_vecs);
     assert_eq!(want.values, got.values);

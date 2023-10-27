@@ -402,6 +402,7 @@ mod tests {
         impl Circuit<vesta::Scalar> for MyCircuit {
             type Config = Column<Advice>;
             type FloorPlanner = SimpleFloorPlanner;
+            type Params = ();
 
             fn params(&self) -> Self::Params {}
             fn without_witnesses(&self) -> Self {

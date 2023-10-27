@@ -95,7 +95,7 @@ impl<F: arithmetic::Field> FFTData<F> {
             // Twiddles
             parallelize(twiddles, |twiddles, start| {
                 let w_m = o;
-                let mut w = o.pow_vartime([start as u64, 0, 0, 0]);
+                let mut w = o.pow_vartime([start as u64]);
                 for value in twiddles.iter_mut() {
                     *value = w;
                     w *= w_m;

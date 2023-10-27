@@ -374,29 +374,6 @@ pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mu
     });
 }
 
-/// This simple utility function will parallelize an operation that is to be
-/// performed over a mutable slice.
-pub fn parallelize_count<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(
-    v: &mut [T],
-    num_threads: usize,
-    f: F,
-) {
-    let n = v.len();
-    let mut chunk = n / num_threads;
-    if chunk < num_threads {
-        chunk = n;
-    }
-
-    multicore::scope(|scope| {
-        for (chunk_num, v) in v.chunks_mut(chunk).enumerate() {
-            let f = f.clone();
-            scope.spawn(move |_| {
-                f(v, chunk_num);
-            });
-        }
-    });
-}
-
 pub fn log2_floor(num: usize) -> u32 {
     assert!(num > 0);
 
