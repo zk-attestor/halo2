@@ -44,8 +44,6 @@ pub struct SingleChipLayouter<'a, F: Field, CS: Assignment<F> + 'a> {
     // Stores the starting row for each region.
     // Edit: modify to just one region with RegionStart(0)
     // regions: Vec<RegionStart>,
-    // `assign_region` must only be called once.
-    region_assigned: bool,
     /// Stores the first empty row for each column.
     columns: FxHashMap<RegionColumn, usize>,
     /// Stores the table fixed columns.
@@ -69,7 +67,6 @@ impl<'a, F: Field, CS: Assignment<F>> SingleChipLayouter<'a, F, CS> {
             cs,
             constants,
             // regions: vec![],
-            region_assigned: false,
             columns: FxHashMap::default(),
             table_columns: vec![],
             _marker: PhantomData,
@@ -89,10 +86,6 @@ impl<'a, F: Field, CS: Assignment<F> + 'a + SyncDeps> Layouter<F>
         N: Fn() -> NR,
         NR: Into<String>,
     {
-        assert!(
-            !self.region_assigned,
-            "Only a single region can be assigned per layouter."
-        );
         /*
         let region_index = self.regions.len();
 
@@ -154,8 +147,6 @@ impl<'a, F: Field, CS: Assignment<F> + 'a + SyncDeps> Layouter<F>
                 *next_constant_row += 1;
             }
         }
-
-        self.region_assigned = true;
 
         Ok(result)
     }
