@@ -354,8 +354,6 @@ impl<C: CurveAffine> Evaluator<C> {
 
         let mut values = domain.empty_extended();
 
-        #[cfg(feature = "profile")]
-        let start3 = start_timer!(|| "Core expression evaluations");
         // Core expression evaluations
         let num_threads = multicore::current_num_threads();
         for ((((advice, instance), lookups), shuffles), permutation) in advice
@@ -365,6 +363,8 @@ impl<C: CurveAffine> Evaluator<C> {
             .zip(shuffles.iter())
             .zip(permutations.iter())
         {
+            #[cfg(feature = "profile")]
+            let start3 = start_timer!(|| "Custom gates");
             // Custom gates
             multicore::scope(|scope| {
                 let chunk_size = (size + num_threads - 1) / num_threads;
