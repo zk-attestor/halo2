@@ -83,7 +83,7 @@ rand_chacha = "0.3.1"
 getrandom = { version = "0.2", features = ["js"] }
 
 [features]
-default = ["batch", "multicore", "circuit-params"]
+default = ["batch", "multicore", "circuit-params", "profile"]
 multicore = ["maybe-rayon/threads"]
 dev-graph = ["plotters", "tabbycat"]
 test-dev-graph = [

@@ -5,6 +5,8 @@ use crate::{
     arithmetic::{parallelize, CurveAffine},
     poly::{Coeff, ExtendedLagrangeCoeff, Polynomial, Rotation},
 };
+#[cfg(feature = "profile")]
+use ark_std::{end_timer, start_timer};
 use group::ff::{Field, PrimeField, WithSmallOrderMulGroup};
 
 use super::{shuffle, ConstraintSystem, Expression};
@@ -322,6 +324,8 @@ impl<C: CurveAffine> Evaluator<C> {
         let l_active_row = &pk.l_active_row;
         let p = &pk.vk.cs.permutation;
 
+        #[cfg(feature = "profile")]
+        let start1 = start_timer!(|| "FFT coeff to extended for advice");
         // Calculate the advice and instance cosets
         let advice: Vec<Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>> = advice_polys
             .iter()
@@ -332,6 +336,10 @@ impl<C: CurveAffine> Evaluator<C> {
                     .collect()
             })
             .collect();
+        #[cfg(feature = "profile")]
+        end_timer!(start1);
+        #[cfg(feature = "profile")]
+        let start2 = start_timer!(|| "FFT coeff to extended for instance");
         let instance: Vec<Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>> = instance_polys
             .iter()
             .map(|instance_polys| {
@@ -341,9 +349,13 @@ impl<C: CurveAffine> Evaluator<C> {
                     .collect()
             })
             .collect();
+        #[cfg(feature = "profile")]
+        end_timer!(start2);
 
         let mut values = domain.empty_extended();
 
+        #[cfg(feature = "profile")]
+        let start3 = start_timer!(|| "Core expression evaluations");
         // Core expression evaluations
         let num_threads = multicore::current_num_threads();
         for ((((advice, instance), lookups), shuffles), permutation) in advice
@@ -381,7 +393,11 @@ impl<C: CurveAffine> Evaluator<C> {
                     });
                 }
             });
+            #[cfg(feature = "profile")]
+            end_timer!(start3);
 
+            #[cfg(feature = "profile")]
+            let start4 = start_timer!(|| "Permutations");
             // Permutations
             let sets = &permutation.sets;
             if !sets.is_empty() {
@@ -463,7 +479,11 @@ impl<C: CurveAffine> Evaluator<C> {
                     }
                 });
             }
+            #[cfg(feature = "profile")]
+            end_timer!(start4);
 
+            #[cfg(feature = "profile")]
+            let start5 = start_timer!(|| "Lookups");
             // Lookups
             for (n, lookup) in lookups.iter().enumerate() {
                 // Polynomials required for this lookup.
@@ -534,6 +554,8 @@ impl<C: CurveAffine> Evaluator<C> {
                     }
                 });
             }
+            #[cfg(feature = "profile")]
+            end_timer!(start5);
 
             // Shuffle constraints
             for (n, shuffle) in shuffles.iter().enumerate() {
