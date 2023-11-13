@@ -285,6 +285,8 @@ where
 
         fn next_phase(&mut self) {
             let phase = self.current_phase.to_u8() as usize;
+            #[cfg(feature = "profile")]
+            let start1 = start_timer!(|| format!("Phase {phase} inversion and MSM commitment"));
             if phase == 0 {
                 // Absorb instances into transcript.
                 // Do this here and not earlier in case we want to be able to mutate
@@ -370,6 +372,8 @@ where
                 assert!(existing.is_none());
             }
             self.current_phase = self.current_phase.next();
+            #[cfg(feature = "profile")]
+            end_timer!(start1);
         }
     }
 
@@ -431,6 +435,11 @@ where
             // while loop is for compatibility with circuits that do not use the new `next_phase` API to manage phases
             // If the circuit uses the new API, then the while loop will only execute once
             while witness.current_phase.to_u8() < num_phases as u8 {
+                #[cfg(feature = "profile")]
+                let syn_time = start_timer!(|| format!(
+                    "Synthesize time starting from phase {} (synthesize may cross multiple phases)",
+                    witness.current_phase.to_u8()
+                ));
                 // Synthesize the circuit to obtain the witness and other information.
                 ConcreteCircuit::FloorPlanner::synthesize(
                     &mut witness,
@@ -439,6 +448,8 @@ where
                     meta.constants.clone(),
                 )
                 .unwrap();
+                #[cfg(feature = "profile")]
+                end_timer!(syn_time);
                 if witness.current_phase.to_u8() < num_phases as u8 {
                     witness.next_phase();
                 }
