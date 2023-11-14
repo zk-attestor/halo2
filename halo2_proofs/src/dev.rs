@@ -971,7 +971,10 @@ impl<'a, F: FromUniformBytes<64> + Ord> MockProver<'a, F> {
             instance,
             selectors_vec,
             selectors,
+            #[cfg(feature = "phase-check")]
             challenges: challenges.clone(),
+            #[cfg(not(feature = "phase-check"))]
+            challenges,
             permutation: Some(permutation),
             rw_rows: 0..usable_rows,
             usable_rows: 0..usable_rows,
