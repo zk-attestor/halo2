@@ -1,4 +1,7 @@
-//! # halo2_proofs
+//! # halo2-axiom
+//! This is a fork of <https://github.com/privacy-scaling-explorations/halo2>, which is itself a fork of ZCash's "halo2_proofs" crate.
+//! This fork uses the KZG polynomial commitment scheme for the proving backend.
+//! Publishing this crate for better versioning in Axiom's production usage.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // The actual lints we want to disable.

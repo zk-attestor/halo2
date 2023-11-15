@@ -30,7 +30,7 @@ use crate::{
 ///
 /// ```ignore
 /// use ff::Field;
-/// use halo2_proofs::{
+/// use halo2_axiom::{
 ///     circuit::{floor_planner, Layouter, Value},
 ///     dev::TracingFloorPlanner,
 ///     plonk::{Circuit, ConstraintSystem, Error},
