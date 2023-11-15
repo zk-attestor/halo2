@@ -198,7 +198,7 @@ impl<F: Field> Mul<F> for Value<F> {
 /// # Examples
 ///
 /// ```
-/// use halo2_proofs::{
+/// use halo2_axiom::{
 ///     circuit::{Layouter, SimpleFloorPlanner, Value},
 ///     dev::{FailureLocation, MockProver, VerifyFailure},
 ///     plonk::{Advice, Any, Circuit, Column, ConstraintSystem, Error, Selector},

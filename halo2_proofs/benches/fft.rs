@@ -3,7 +3,7 @@ extern crate criterion;
 
 use crate::arithmetic::best_fft;
 use group::ff::Field;
-use halo2_proofs::*;
+use halo2_axiom::*;
 use halo2curves::pasta::Fp;
 
 use criterion::{BenchmarkId, Criterion};

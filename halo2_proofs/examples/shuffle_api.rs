@@ -1,6 +1,7 @@
 use std::{hash::Hash, marker::PhantomData, vec};
 
 use ff::{FromUniformBytes, WithSmallOrderMulGroup};
+use halo2_axiom as halo2_proofs;
 use halo2_proofs::{
     arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},

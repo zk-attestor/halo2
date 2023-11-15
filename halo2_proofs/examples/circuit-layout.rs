@@ -1,4 +1,5 @@
 use ff::Field;
+use halo2_axiom as halo2_proofs;
 use halo2_proofs::{
     circuit::{Cell, Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Assigned, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn},
