@@ -1,4 +1,5 @@
 use ff::{BatchInvert, FromUniformBytes};
+use halo2_axiom as halo2_proofs;
 use halo2_proofs::{
     arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},

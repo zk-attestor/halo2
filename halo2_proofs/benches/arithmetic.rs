@@ -4,6 +4,7 @@ extern crate criterion;
 use crate::arithmetic::small_multiexp;
 use crate::halo2curves::pasta::{EqAffine, Fp};
 use group::ff::Field;
+use halo2_axiom as halo2_proofs;
 use halo2_proofs::*;
 
 use halo2_proofs::poly::{commitment::ParamsProver, ipa::commitment::ParamsIPA};
