@@ -9,7 +9,7 @@ authors = [
     "Privacy Scaling Explorations team", "Taiko Labs", "Intrinsic Technologies"
 ]
 edition = "2021"
-rust-version = "1.56.1"
+rust-version = "1.73.0-nightly"
 description = """
 Fast PLONK-based zero-knowledge proving system with no trusted setup.
 This is a fork of <https://github.com/privacy-scaling-explorations/halo2>, which is itself a fork of ZCash's "halo2_proofs" crate.
