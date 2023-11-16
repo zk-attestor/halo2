@@ -4,6 +4,7 @@ use std::{
 };
 
 use ff::Field;
+use halo2_axiom as halo2_proofs;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{

@@ -2,6 +2,7 @@ extern crate criterion;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use group::ff::Field;
+use halo2_axiom as halo2_proofs;
 use halo2_proofs::arithmetic::parallelize;
 use halo2curves::pasta::pallas::Scalar;
 use rand_chacha::rand_core::RngCore;

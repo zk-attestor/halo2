@@ -415,9 +415,9 @@ impl TryFrom<Column<Any>> for Column<Instance> {
 ///
 /// Selectors can be used to conditionally enable (portions of) gates:
 /// ```
-/// use halo2_proofs::poly::Rotation;
+/// use halo2_axiom::poly::Rotation;
 /// # use halo2curves::pasta::Fp;
-/// # use halo2_proofs::plonk::ConstraintSystem;
+/// # use halo2_axiom::plonk::ConstraintSystem;
 ///
 /// # let mut meta = ConstraintSystem::<Fp>::default();
 /// let a = meta.advice_column();
@@ -438,12 +438,12 @@ impl TryFrom<Column<Any>> for Column<Instance> {
 /// Selectors are disabled on all rows by default, and must be explicitly enabled on each
 /// row when required:
 /// ```
-/// use halo2_proofs::{
+/// use halo2_axiom::{
 ///     circuit::{Chip, Layouter, Value},
 ///     plonk::{Advice, Column, Error, Selector},
 /// };
 /// use ff::Field;
-/// # use halo2_proofs::plonk::Fixed;
+/// # use halo2_axiom::plonk::Fixed;
 ///
 /// struct Config {
 ///     a: Column<Advice>,
@@ -1477,9 +1477,9 @@ impl<F: Field> From<Expression<F>> for Vec<Constraint<F>> {
 /// A set of polynomial constraints with a common selector.
 ///
 /// ```
-/// use halo2_proofs::{plonk::{Constraints, Expression}, poly::Rotation};
+/// use halo2_axiom::{plonk::{Constraints, Expression}, poly::Rotation};
 /// use halo2curves::pasta::Fp;
-/// # use halo2_proofs::plonk::ConstraintSystem;
+/// # use halo2_axiom::plonk::ConstraintSystem;
 ///
 /// # let mut meta = ConstraintSystem::<Fp>::default();
 /// let a = meta.advice_column();

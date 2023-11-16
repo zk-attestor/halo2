@@ -2,6 +2,7 @@
 extern crate criterion;
 
 use ff::{Field, PrimeField};
+use halo2_axiom as halo2_proofs;
 use halo2_proofs::circuit::{Layouter, SimpleFloorPlanner, Value};
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::plonk::*;

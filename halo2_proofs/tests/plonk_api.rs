@@ -5,6 +5,7 @@
 
 // use assert_matches::assert_matches;
 use ff::{FromUniformBytes, WithSmallOrderMulGroup};
+use halo2_axiom as halo2_proofs;
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::circuit::{Cell, Layouter, SimpleFloorPlanner, Value};
 use halo2_proofs::dev::MockProver;
