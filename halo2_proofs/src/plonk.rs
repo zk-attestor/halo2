@@ -13,10 +13,7 @@ use crate::helpers::{
     polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice, SerdeCurveAffine,
     SerdePrimeField,
 };
-use crate::poly::{
-    Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff, PinnedEvaluationDomain,
-    Polynomial,
-};
+use crate::poly::{Coeff, EvaluationDomain, LagrangeCoeff, PinnedEvaluationDomain, Polynomial};
 use crate::transcript::{ChallengeScalar, EncodedChallenge, Transcript};
 use crate::SerdeFormat;
 
@@ -27,7 +24,7 @@ mod evaluation;
 mod keygen;
 mod lookup;
 pub mod permutation;
-mod shuffle;
+// mod shuffle;
 mod vanishing;
 
 mod prover;
@@ -317,12 +314,11 @@ pub struct PinnedVerificationKey<'a, C: CurveAffine> {
 #[derive(Clone, Debug)]
 pub struct ProvingKey<C: CurveAffine> {
     vk: VerifyingKey<C>,
-    l0: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
-    l_last: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
-    l_active_row: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
+    l0: Polynomial<C::Scalar, Coeff>,
+    l_last: Polynomial<C::Scalar, Coeff>,
+    l_active_row: Polynomial<C::Scalar, Coeff>,
     fixed_values: Vec<Polynomial<C::Scalar, LagrangeCoeff>>,
     fixed_polys: Vec<Polynomial<C::Scalar, Coeff>>,
-    fixed_cosets: Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>,
     permutation: permutation::ProvingKey<C>,
     ev: Evaluator<C>,
 }
@@ -344,7 +340,6 @@ where
             + scalar_len * (self.l0.len() + self.l_last.len() + self.l_active_row.len())
             + polynomial_slice_byte_length(&self.fixed_values)
             + polynomial_slice_byte_length(&self.fixed_polys)
-            + polynomial_slice_byte_length(&self.fixed_cosets)
             + self.permutation.bytes_length()
     }
 }
@@ -364,13 +359,12 @@ where
     /// WITHOUT performing the expensive Montgomery reduction.
     /// Does so by first writing the verifying key and then serializing the rest of the data (in the form of field polynomials)
     pub fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
-        self.vk.write(writer, format).unwrap();
+        self.vk.write(writer, format)?;
         self.l0.write(writer, format);
         self.l_last.write(writer, format);
         self.l_active_row.write(writer, format);
         write_polynomial_slice(&self.fixed_values, writer, format);
         write_polynomial_slice(&self.fixed_polys, writer, format);
-        write_polynomial_slice(&self.fixed_cosets, writer, format);
         self.permutation.write(writer, format);
         Ok(())
     }
@@ -396,14 +390,12 @@ where
             format,
             #[cfg(feature = "circuit-params")]
             params,
-        )
-        .unwrap();
+        )?;
         let l0 = Polynomial::read(reader, format);
         let l_last = Polynomial::read(reader, format);
         let l_active_row = Polynomial::read(reader, format);
         let fixed_values = read_polynomial_vec(reader, format);
         let fixed_polys = read_polynomial_vec(reader, format);
-        let fixed_cosets = read_polynomial_vec(reader, format);
         let permutation = permutation::ProvingKey::read(reader, format);
         let ev = Evaluator::new(vk.cs());
         Ok(Self {
@@ -413,7 +405,6 @@ where
             l_active_row,
             fixed_values,
             fixed_polys,
-            fixed_cosets,
             permutation,
             ev,
         })

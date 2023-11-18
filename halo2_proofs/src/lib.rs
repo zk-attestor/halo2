@@ -15,6 +15,7 @@
 pub mod arithmetic;
 pub mod circuit;
 pub use halo2curves;
+pub mod fft;
 mod multicore;
 pub mod plonk;
 pub mod poly;

@@ -1,4 +1,4 @@
-use super::{lookup, permutation, shuffle, Assigned, Error};
+use super::{lookup, permutation, Assigned, Error};
 use crate::circuit::layouter::SyncDeps;
 use crate::dev::metadata;
 use crate::{
@@ -8,6 +8,7 @@ use crate::{
 use core::cmp::max;
 use core::ops::{Add, Mul};
 use ff::Field;
+use itertools::Itertools;
 use sealed::SealedPhase;
 use std::collections::HashMap;
 use std::env::var;
@@ -1247,6 +1248,72 @@ impl<F: Field> Expression<F> {
             &|a, _| a,
         )
     }
+
+    /// Extracts all used instance columns in this expression
+    pub fn extract_instances(&self) -> Vec<usize> {
+        self.evaluate(
+            &|_| vec![],
+            &|_| vec![],
+            &|_| vec![],
+            &|_| vec![],
+            &|query| vec![query.column_index],
+            &|_| vec![],
+            &|a| a,
+            &|mut a, b| {
+                a.extend(b);
+                a.into_iter().unique().collect()
+            },
+            &|mut a, b| {
+                a.extend(b);
+                a.into_iter().unique().collect()
+            },
+            &|a, _| a,
+        )
+    }
+
+    /// Extracts all used advice columns in this expression
+    pub fn extract_advices(&self) -> Vec<usize> {
+        self.evaluate(
+            &|_| vec![],
+            &|_| vec![],
+            &|_| vec![],
+            &|query| vec![query.column_index],
+            &|_| vec![],
+            &|_| vec![],
+            &|a| a,
+            &|mut a, b| {
+                a.extend(b);
+                a.into_iter().unique().collect()
+            },
+            &|mut a, b| {
+                a.extend(b);
+                a.into_iter().unique().collect()
+            },
+            &|a, _| a,
+        )
+    }
+
+    /// Extracts all used fixed columns in this expression
+    pub fn extract_fixed(&self) -> Vec<usize> {
+        self.evaluate(
+            &|_| vec![],
+            &|_| vec![],
+            &|query| vec![query.column_index],
+            &|_| vec![],
+            &|_| vec![],
+            &|_| vec![],
+            &|a| a,
+            &|mut a, b| {
+                a.extend(b);
+                a.into_iter().unique().collect()
+            },
+            &|mut a, b| {
+                a.extend(b);
+                a.into_iter().unique().collect()
+            },
+            &|a, _| a,
+        )
+    }
 }
 
 impl<F: std::fmt::Debug> std::fmt::Debug for Expression<F> {
@@ -1563,10 +1630,6 @@ pub struct ConstraintSystem<F: Field> {
     // input expressions and a sequence of table expressions involved in the lookup.
     pub(crate) lookups: Vec<lookup::Argument<F>>,
 
-    // Vector of shuffle arguments, where each corresponds to a sequence of
-    // input expressions and a sequence of shuffle expressions involved in the shuffle.
-    pub(crate) shuffles: Vec<shuffle::Argument<F>>,
-
     // List of indexes of Fixed columns which are associated to a circuit-general Column tied to their annotation.
     pub(crate) general_column_annotations: HashMap<metadata::Column, String>,
 
@@ -1593,7 +1656,6 @@ pub struct PinnedConstraintSystem<'a, F: Field> {
     fixed_queries: &'a Vec<(Column<Fixed>, Rotation)>,
     permutation: &'a permutation::Argument,
     lookups: &'a Vec<lookup::Argument<F>>,
-    shuffles: &'a Vec<shuffle::Argument<F>>,
     constants: &'a Vec<Column<Fixed>>,
     minimum_degree: &'a Option<usize>,
 }
@@ -1654,7 +1716,6 @@ impl<F: Field> Default for ConstraintSystem<F> {
             instance_queries: Vec::new(),
             permutation: permutation::Argument::new(),
             lookups: Vec::new(),
-            shuffles: Vec::new(),
             general_column_annotations: HashMap::new(),
             constants: vec![],
             minimum_degree: None,
@@ -1681,7 +1742,6 @@ impl<F: Field> ConstraintSystem<F> {
             instance_queries: &self.instance_queries,
             permutation: &self.permutation,
             lookups: &self.lookups,
-            shuffles: &self.shuffles,
             constants: &self.constants,
             minimum_degree: &self.minimum_degree,
         }
@@ -1758,29 +1818,6 @@ impl<F: Field> ConstraintSystem<F> {
 
         self.lookups
             .push(lookup::Argument::new(name.as_ref(), table_map));
-
-        index
-    }
-
-    /// Add a shuffle argument for some input expressions and table expressions.
-    pub fn shuffle<S: AsRef<str>>(
-        &mut self,
-        name: S,
-        shuffle_map: impl FnOnce(&mut VirtualCells<'_, F>) -> Vec<(Expression<F>, Expression<F>)>,
-    ) -> usize {
-        let mut cells = VirtualCells::new(self);
-        let shuffle_map = shuffle_map(&mut cells)
-            .into_iter()
-            .map(|(mut input, mut table)| {
-                input.query_cells(&mut cells);
-                table.query_cells(&mut cells);
-                (input, table)
-            })
-            .collect();
-        let index = self.shuffles.len();
-
-        self.shuffles
-            .push(shuffle::Argument::new(name.as_ref(), shuffle_map));
 
         index
     }
@@ -2083,15 +2120,6 @@ impl<F: Field> ConstraintSystem<F> {
         }) {
             replace_selectors(expr, selector_replacements, true);
         }
-
-        for expr in self.shuffles.iter_mut().flat_map(|shuffle| {
-            shuffle
-                .input_expressions
-                .iter_mut()
-                .chain(shuffle.shuffle_expressions.iter_mut())
-        }) {
-            replace_selectors(expr, selector_replacements, true);
-        }
     }
 
     /// Allocate a new (simple) selector. Simple selectors cannot be added to
@@ -2252,17 +2280,6 @@ impl<F: Field> ConstraintSystem<F> {
                 .unwrap_or(1),
         );
 
-        // The lookup argument also serves alongside the gates and must be accounted
-        // for.
-        degree = std::cmp::max(
-            degree,
-            self.shuffles
-                .iter()
-                .map(|l| l.required_degree())
-                .max()
-                .unwrap_or(1),
-        );
-
         // Account for each gate to ensure our quotient polynomial is the
         // correct degree and that our extended domain is the right size.
         degree = std::cmp::max(
@@ -2397,11 +2414,6 @@ impl<F: Field> ConstraintSystem<F> {
     /// Returns lookup arguments
     pub fn lookups(&self) -> &Vec<lookup::Argument<F>> {
         &self.lookups
-    }
-
-    /// Returns shuffle arguments
-    pub fn shuffles(&self) -> &Vec<shuffle::Argument<F>> {
-        &self.shuffles
     }
 
     /// Returns constants

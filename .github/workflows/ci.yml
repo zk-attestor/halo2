@@ -31,9 +31,9 @@ jobs:
         with:
           override: false
       - name: Run examples
-        run: cargo run --example serialization
+        run: |
+          cargo run --example serialization
           cargo run --example shuffle
-          cargo run --example shuffle_api
 
   fmt:
     name: Rustfmt

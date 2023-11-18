@@ -394,21 +394,9 @@ pub(crate) fn build_pk<'params, C: CurveAffine, P: Params<'params, C>>(
         });
     }
 
-    let mut cosets = vec![domain.empty_extended(); p.columns.len()];
-    {
-        parallelize(&mut cosets, |o, start| {
-            for (x, coset) in o.iter_mut().enumerate() {
-                let i = start + x;
-                let poly = &polys[i];
-                *coset = domain.coeff_to_extended(poly);
-            }
-        });
-    }
-
     ProvingKey {
         permutations,
         polys,
-        cosets,
     }
 }
 
