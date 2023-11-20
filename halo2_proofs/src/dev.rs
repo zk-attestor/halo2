@@ -129,7 +129,7 @@ impl<F: Field> PartialEq for CellValue<F> {
 }
 
 #[cfg(feature = "mock-batch-inv")]
-impl<F: Group + Field> CellValue<F> {
+impl<F: Field> CellValue<F> {
     /// Returns the numerator.
     pub fn numerator(&self) -> Option<F> {
         match self {
@@ -148,7 +148,7 @@ impl<F: Group + Field> CellValue<F> {
 }
 
 #[cfg(feature = "mock-batch-inv")]
-impl<F: Group + Field> From<Assigned<F>> for CellValue<F> {
+impl<F: Field> From<Assigned<F>> for CellValue<F> {
     fn from(value: Assigned<F>) -> Self {
         match value {
             Assigned::Zero => CellValue::Unassigned,
@@ -161,7 +161,7 @@ impl<F: Group + Field> From<Assigned<F>> for CellValue<F> {
 }
 
 #[cfg(feature = "mock-batch-inv")]
-fn calculate_assigned_values<F: Group + Field>(
+fn calculate_assigned_values<F: Field>(
     cell_values: &mut [CellValue<F>],
     inv_denoms: &[Option<F>],
 ) {
@@ -177,7 +177,7 @@ fn calculate_assigned_values<F: Group + Field>(
 }
 
 #[cfg(feature = "mock-batch-inv")]
-fn batch_invert_cellvalues<F: Field + Group>(cell_values: &mut [Vec<CellValue<F>>]) {
+fn batch_invert_cellvalues<F: Field>(cell_values: &mut [Vec<CellValue<F>>]) {
     let mut denominators: Vec<_> = cell_values
         .iter()
         .map(|f| {
