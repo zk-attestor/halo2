@@ -161,10 +161,7 @@ impl<F: Field> From<Assigned<F>> for CellValue<F> {
 }
 
 #[cfg(feature = "mock-batch-inv")]
-fn calculate_assigned_values<F: Field>(
-    cell_values: &mut [CellValue<F>],
-    inv_denoms: &[Option<F>],
-) {
+fn calculate_assigned_values<F: Field>(cell_values: &mut [CellValue<F>], inv_denoms: &[Option<F>]) {
     assert_eq!(inv_denoms.len(), cell_values.len());
     for (value, inv_den) in cell_values.iter_mut().zip(inv_denoms.iter()) {
         // if numerator and denominator exist, calculate the assigned value
