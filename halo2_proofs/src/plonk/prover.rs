@@ -7,10 +7,6 @@ use rand_core::RngCore;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::RangeTo;
-
-#[cfg(feature = "multicore")]
-use crate::multicore::IndexedParallelIterator;
-use crate::multicore::{IntoParallelIterator, ParallelIterator};
 use std::{collections::HashMap, iter};
 
 use super::{
@@ -300,11 +296,10 @@ where
                         }
                     }
                 } else {
-                    let instance_commitments_projective: Vec<_> =
-                        (&self.instance_single.instance_values)
-                            .into_par_iter()
-                            .map(|poly| self.params.commit_lagrange(poly, Blind::default()))
-                            .collect();
+                    let instance_commitments_projective = self.params.commit_lagrange_many(
+                        &self.instance_single.instance_values,
+                        vec![Blind::default(); self.instance_single.instance_values.len()],
+                    );
                     let mut instance_commitments =
                         vec![C::identity(); instance_commitments_projective.len()];
                     C::CurveExt::batch_normalize(
@@ -341,11 +336,9 @@ where
                 .iter()
                 .map(|_| Blind(F::random(&mut self.rng)))
                 .collect();
-            let advice_commitments_projective: Vec<_> = (&advice_values)
-                .into_par_iter()
-                .zip((&blinds).into_par_iter())
-                .map(|(poly, blind)| self.params.commit_lagrange(poly, *blind))
-                .collect();
+            let advice_commitments_projective: Vec<_> = self
+                .params
+                .commit_lagrange_many(&advice_values, blinds.clone());
             let mut advice_commitments = vec![C::identity(); advice_commitments_projective.len()];
             C::CurveExt::batch_normalize(&advice_commitments_projective, &mut advice_commitments);
             let advice_commitments = advice_commitments;

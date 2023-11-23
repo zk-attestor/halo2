@@ -144,6 +144,12 @@ impl<F, B> DerefMut for Polynomial<F, B> {
     }
 }
 
+impl<F, B> AsRef<Polynomial<F, B>> for Polynomial<F, B> {
+    fn as_ref(&self) -> &Polynomial<F, B> {
+        self
+    }
+}
+
 impl<F, B> Polynomial<F, B> {
     /// Iterate over the values, which are either in coefficient or evaluation
     /// form depending on the basis `B`.

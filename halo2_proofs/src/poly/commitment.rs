@@ -66,6 +66,19 @@ pub trait Params<'params, C: CurveAffine>: Sized + Clone {
         r: Blind<C::ScalarExt>,
     ) -> C::CurveExt;
 
+    fn commit_lagrange_many(
+        &self,
+        polys: &[impl AsRef<Polynomial<C::ScalarExt, LagrangeCoeff>> + Sync],
+        r: Vec<Blind<C::ScalarExt>>,
+    ) -> Vec<C::CurveExt> {
+        assert_eq!(polys.len(), r.len());
+        polys
+            .iter()
+            .zip(r)
+            .map(|(poly, r)| self.commit_lagrange(poly.as_ref(), r))
+            .collect()
+    }
+
     /// Writes params to a buffer.
     fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()>;
 

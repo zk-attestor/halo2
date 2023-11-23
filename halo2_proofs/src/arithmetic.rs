@@ -10,6 +10,7 @@ use group::{
     prime::PrimeCurveAffine,
     Curve, Group, GroupOpsOwned, ScalarMulOwned,
 };
+use multicore::{IntoParallelIterator, ParallelIterator};
 
 pub use halo2curves::{CurveAffine, CurveExt};
 
@@ -153,6 +154,47 @@ pub fn small_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::C
     acc
 }
 
+/// Computes sum_i multi_coeffs[j][i] * bases[i] for each j.
+/// Tries to optimize memory locality from the shared bases.
+pub fn best_multiexp_shared_bases<C: CurveAffine, A, B>(
+    multi_coeffs: &[A],
+    bases: &[C],
+) -> Vec<C::Curve>
+where
+    A: AsRef<Polynomial<C::Scalar, B>> + Sync, // can't get around this trait in commit_lagrange_many...
+{
+    let bases_len = bases.len();
+    let num_threads = multicore::current_num_threads();
+    let chunk = if bases.len() < num_threads {
+        bases.len()
+    } else {
+        bases.len() / num_threads
+    };
+    let num_chunks = bases.chunks(chunk).len();
+    let mut multi_results = vec![vec![C::Curve::identity(); multi_coeffs.len()]; num_chunks];
+    multicore::scope(|scope| {
+        for (chunk_idx, (bases, results)) in bases
+            .chunks(chunk)
+            .zip(multi_results.iter_mut())
+            .enumerate()
+        {
+            let chunk_start = chunk_idx * chunk;
+            let chunk_end = std::cmp::min((chunk_idx + 1) * chunk, bases_len);
+            scope.spawn(move |_| {
+                for (coeffs, acc) in multi_coeffs.iter().zip(results.iter_mut()) {
+                    let coeffs = coeffs.as_ref();
+                    debug_assert_eq!(coeffs.len(), bases_len);
+                    multiexp_serial(&coeffs[chunk_start..chunk_end], bases, acc);
+                }
+            });
+        }
+    });
+    (0..multi_coeffs.len())
+        .into_par_iter()
+        .map(|j| multi_results.iter().map(|results| results[j]).sum())
+        .collect()
+}
+
 /// Performs a multi-exponentiation operation.
 ///
 /// This function will panic if coeffs and bases have a different length.
@@ -161,11 +203,8 @@ pub fn small_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::C
 pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Curve {
     assert_eq!(coeffs.len(), bases.len());
 
-    //println!("msm: {}", coeffs.len());
-
-    // let start = get_time();
     let num_threads = multicore::current_num_threads();
-    let res = if coeffs.len() > num_threads {
+    if coeffs.len() > num_threads {
         let chunk = coeffs.len() / num_threads;
         let num_chunks = coeffs.chunks(chunk).len();
         let mut results = vec![C::Curve::identity(); num_chunks];
@@ -187,14 +226,7 @@ pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Cu
         let mut acc = C::Curve::identity();
         multiexp_serial(coeffs, bases, &mut acc);
         acc
-    };
-
-    // let duration = get_duration(start);
-    #[allow(unsafe_code)]
-    // unsafe {
-    //     MULTIEXP_TOTAL_TIME += duration;
-    // }
-    res
+    }
 }
 
 /// Dispatcher
@@ -464,9 +496,12 @@ pub fn bitreverse(mut n: usize, l: usize) -> usize {
 #[cfg(test)]
 use rand_core::OsRng;
 
-use crate::fft::{self, recursive::FFTData};
 #[cfg(test)]
 use crate::halo2curves::pasta::Fp;
+use crate::{
+    fft::{self, recursive::FFTData},
+    poly::Polynomial,
+};
 // use crate::plonk::{get_duration, get_time, start_measure, stop_measure};
 
 #[test]

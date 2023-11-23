@@ -1,4 +1,4 @@
-use crate::arithmetic::{best_multiexp, g_to_lagrange, parallelize};
+use crate::arithmetic::{best_multiexp, best_multiexp_shared_bases, g_to_lagrange, parallelize};
 use crate::helpers::SerdeCurveAffine;
 use crate::poly::commitment::{Blind, CommitmentScheme, Params, ParamsProver, ParamsVerifier};
 use crate::poly::{Coeff, LagrangeCoeff, Polynomial};
@@ -303,6 +303,19 @@ where
         let size = poly.len();
         assert!(self.n() >= size as u64);
         best_multiexp(poly, &self.g_lagrange[0..size])
+    }
+
+    fn commit_lagrange_many(
+        &self,
+        polys: &[impl AsRef<Polynomial<E::Fr, LagrangeCoeff>> + Sync],
+        _: Vec<Blind<<E::G1Affine as halo2curves::CurveAffine>::ScalarExt>>,
+    ) -> Vec<E::G1> {
+        if polys.is_empty() {
+            return vec![];
+        }
+        let size = polys[0].as_ref().len();
+        assert!(self.n() >= size as u64);
+        best_multiexp_shared_bases(polys, &self.g_lagrange[0..size])
     }
 
     /// Writes params to a buffer.
