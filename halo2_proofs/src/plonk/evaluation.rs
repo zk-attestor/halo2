@@ -1,4 +1,5 @@
 #![allow(clippy::too_many_arguments)]
+
 use crate::multicore;
 use crate::plonk::{lookup, permutation, Any, ProvingKey};
 use crate::poly::Basis;
@@ -6,7 +7,10 @@ use crate::{
     arithmetic::{parallelize, CurveAffine},
     poly::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation},
 };
+#[cfg(feature = "profile")]
+use ark_std::{end_timer, start_timer};
 use ff::{Field, PrimeField, WithSmallOrderMulGroup};
+use multicore::{IntoParallelIterator, ParallelIterator};
 
 use super::{ConstraintSystem, Expression};
 
@@ -286,9 +290,10 @@ impl<C: CurveAffine> Evaluator<C> {
         let mut current_extended_omega = one;
         let value_parts: Vec<Polynomial<C::ScalarExt, LagrangeCoeff>> = (0..num_parts)
             .map(|_| {
-                let fixed: Vec<Polynomial<C::ScalarExt, LagrangeCoeff>> = pk
-                    .fixed_polys
-                    .iter()
+                #[cfg(feature = "profile")]
+                let fixed_timer = start_timer!(|| "Fixed coeff_to_extended_part");
+                let fixed: Vec<Polynomial<C::ScalarExt, LagrangeCoeff>> = (&pk.fixed_polys)
+                    .into_par_iter()
                     .map(|p| domain.coeff_to_extended_part(p.clone(), current_extended_omega))
                     .collect();
                 let fixed = &fixed[..];
@@ -297,10 +302,14 @@ impl<C: CurveAffine> Evaluator<C> {
                     domain.coeff_to_extended_part(pk.l_last.clone(), current_extended_omega);
                 let l_active_row =
                     domain.coeff_to_extended_part(pk.l_active_row.clone(), current_extended_omega);
+                #[cfg(feature = "profile")]
+                end_timer!(fixed_timer);
 
+                #[cfg(feature = "profile")]
+                let advice_timer = start_timer!(|| "Advice coeff_to_extended_part");
                 // Calculate the advice and instance cosets
                 let advice: Vec<Vec<Polynomial<C::Scalar, LagrangeCoeff>>> = advice_polys
-                    .iter()
+                    .into_par_iter()
                     .map(|advice_polys| {
                         advice_polys
                             .iter()
@@ -310,8 +319,12 @@ impl<C: CurveAffine> Evaluator<C> {
                             .collect()
                     })
                     .collect();
+                #[cfg(feature = "profile")]
+                end_timer!(advice_timer);
+                #[cfg(feature = "profile")]
+                let instance_timer = start_timer!(|| "Instance coeff_to_extended_part");
                 let instance: Vec<Vec<Polynomial<C::Scalar, LagrangeCoeff>>> = instance_polys
-                    .iter()
+                    .into_par_iter()
                     .map(|instance_polys| {
                         instance_polys
                             .iter()
@@ -321,6 +334,8 @@ impl<C: CurveAffine> Evaluator<C> {
                             .collect()
                     })
                     .collect();
+                #[cfg(feature = "profile")]
+                end_timer!(instance_timer);
 
                 let mut values = domain.empty_lagrange();
 
@@ -332,6 +347,8 @@ impl<C: CurveAffine> Evaluator<C> {
                     .zip(lookups.iter())
                     .zip(permutations.iter())
                 {
+                    #[cfg(feature = "profile")]
+                    let timer = start_timer!(|| "Custom gates");
                     // Custom gates
                     multicore::scope(|scope| {
                         let chunk_size = (size + num_threads - 1) / num_threads;
@@ -360,7 +377,11 @@ impl<C: CurveAffine> Evaluator<C> {
                             });
                         }
                     });
+                    #[cfg(feature = "profile")]
+                    end_timer!(timer);
 
+                    #[cfg(feature = "profile")]
+                    let timer = start_timer!(|| "Permutations");
                     // Permutations
                     let sets = &permutation.sets;
                     if !sets.is_empty() {
@@ -372,7 +393,7 @@ impl<C: CurveAffine> Evaluator<C> {
                         let permutation_product_cosets: Vec<
                             Polynomial<C::ScalarExt, LagrangeCoeff>,
                         > = sets
-                            .iter()
+                            .into_par_iter()
                             .map(|set| {
                                 domain.coeff_to_extended_part(
                                     set.permutation_product_poly.clone(),
@@ -380,14 +401,13 @@ impl<C: CurveAffine> Evaluator<C> {
                                 )
                             })
                             .collect();
-                        let permutation_cosets: Vec<Polynomial<C::ScalarExt, LagrangeCoeff>> = pk
-                            .permutation
-                            .polys
-                            .iter()
-                            .map(|p| {
-                                domain.coeff_to_extended_part(p.clone(), current_extended_omega)
-                            })
-                            .collect();
+                        let permutation_cosets: Vec<Polynomial<C::ScalarExt, LagrangeCoeff>> =
+                            (&pk.permutation.polys)
+                                .into_par_iter()
+                                .map(|p| {
+                                    domain.coeff_to_extended_part(p.clone(), current_extended_omega)
+                                })
+                                .collect();
 
                         let first_set_permutation_product_coset =
                             permutation_product_cosets.first().unwrap();
@@ -473,7 +493,11 @@ impl<C: CurveAffine> Evaluator<C> {
                             }
                         });
                     }
+                    #[cfg(feature = "profile")]
+                    end_timer!(timer);
 
+                    #[cfg(feature = "profile")]
+                    let timer = start_timer!(|| "Lookups");
                     // Lookups
                     for (n, lookup) in lookups.iter().enumerate() {
                         // Polynomials required for this lookup.
@@ -554,6 +578,8 @@ impl<C: CurveAffine> Evaluator<C> {
                             }
                         });
                     }
+                    #[cfg(feature = "profile")]
+                    end_timer!(timer);
                 }
                 current_extended_omega *= extended_omega;
                 values
