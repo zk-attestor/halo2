@@ -93,7 +93,7 @@ ark-std = { version = "0.3.0", features = ["print-trace"] }
 getrandom = { version = "0.2", features = ["js"] }
 
 [features]
-default = ["batch", "multicore", "circuit-params", "profile"]
+default = ["batch", "multicore", "circuit-params"]
 multicore = ["maybe-rayon/threads"]
 dev-graph = ["plotters", "tabbycat"]
 test-dev-graph = ["dev-graph", "plotters/bitmap_backend", "plotters/bitmap_encoder", "plotters/ttf"]
