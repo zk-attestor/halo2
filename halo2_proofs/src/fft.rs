@@ -17,6 +17,10 @@ pub fn fft<Scalar: Field, G: FftGroup<Scalar>>(
     data: &FFTData<Scalar>,
     inverse: bool,
 ) {
+    // Empirically, the parallel implementation requires less memory bandwidth, which is more performant on x86_64.
+    #[cfg(target_arch = "x86_64")]
+    parallel::fft(a, omega, log_n, data, inverse);
+    #[cfg(not(target_arch = "x86_64"))]
     recursive::fft(a, omega, log_n, data, inverse)
 }
 
@@ -52,6 +56,18 @@ mod tests {
         );
         end_timer!(start);
 
+        let mut c = input.clone();
+        let l_c = c.len();
+        let start = start_timer!(|| format!("parallel fft {} ({})", a.len(), num_threads));
+        fft::parallel::fft(
+            &mut c,
+            domain.get_omega(),
+            k,
+            domain.get_fft_data(l_c),
+            false,
+        );
+        end_timer!(start);
+
         let mut b = input;
         let l_b = b.len();
         let start = start_timer!(|| format!("recursive fft {} ({})", a.len(), num_threads));
@@ -67,6 +83,7 @@ mod tests {
         for i in 0..n {
             //log_info(format!("{}: {} {}", i, a[i], b[i]));
             assert_eq!(a[i], b[i]);
+            assert_eq!(a[i], c[i]);
         }
     }
 

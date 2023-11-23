@@ -1,12 +1,14 @@
 [package]
 name = "halo2-axiom"
-version = "0.4.0"
+version = "0.4.1"
 authors = [
     "Sean Bowe <sean@electriccoin.co>",
     "Ying Tong Lai <yingtong@electriccoin.co>",
     "Daira Hopwood <daira@electriccoin.co>",
     "Jack Grigg <jack@electriccoin.co>",
-    "Privacy Scaling Explorations team", "Taiko Labs", "Intrinsic Technologies"
+    "Privacy Scaling Explorations team",
+    "Taiko Labs",
+    "Intrinsic Technologies",
 ]
 edition = "2021"
 rust-version = "1.73.0"
@@ -63,7 +65,7 @@ group = "0.13"
 pairing = "0.23"
 halo2curves = { package = "halo2curves-axiom", version = "0.4.2", default-features = false, features = ["bits", "bn256-table", "derive_serde"] }
 rand = "0.8"
-rand_core = { version = "0.6", default-features = false}
+rand_core = { version = "0.6", default-features = false }
 tracing = "0.1"
 blake2b_simd = "1"
 rustc-hash = "1.1"
@@ -94,12 +96,7 @@ getrandom = { version = "0.2", features = ["js"] }
 default = ["batch", "multicore", "circuit-params"]
 multicore = ["maybe-rayon/threads"]
 dev-graph = ["plotters", "tabbycat"]
-test-dev-graph = [
-    "dev-graph",
-    "plotters/bitmap_backend",
-    "plotters/bitmap_encoder",
-    "plotters/ttf",
-]
+test-dev-graph = ["dev-graph", "plotters/bitmap_backend", "plotters/bitmap_encoder", "plotters/ttf"]
 gadget-traces = ["backtrace"]
 # thread-safe-region = []
 sanity-checks = []
