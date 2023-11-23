@@ -17,6 +17,10 @@ pub fn fft<Scalar: Field, G: FftGroup<Scalar>>(
     data: &FFTData<Scalar>,
     inverse: bool,
 ) {
+    // Empirically, the parallel implementation requires less memory bandwidth, which is more performant on x86_64.
+    #[cfg(target_arch = "x86_64")]
+    parallel::fft(a, omega, log_n, data, inverse);
+    #[cfg(not(target_arch = "x86_64"))]
     recursive::fft(a, omega, log_n, data, inverse)
 }
 
