@@ -29,6 +29,7 @@ where
 }
 
 // ASSUMES C::Scalar::Repr is little endian
+// ASSUMES `acc` starts off as 0
 fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut C::Curve) {
     let coeffs: Vec<_> = coeffs.iter().map(|a| a.to_repr()).collect();
 
@@ -63,34 +64,13 @@ fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut 
 
     let segments = (C::Scalar::NUM_BITS as usize + c - 1) / c;
 
-    // this can be optimized
-    let mut coeffs_in_segments = Vec::with_capacity(segments);
     // track what is the last segment where we actually have nonzero bits, so we completely skip buckets where the scalar bits for all coeffs are 0
-    let mut max_nonzero_segment = None;
-    for current_segment in 0..segments {
-        let coeff_segments: Vec<_> = coeffs
-            .iter()
-            .map(|coeff| {
-                let c_bits = get_at::<C::Scalar>(current_segment, c, coeff);
-                if c_bits != 0 {
-                    max_nonzero_segment = Some(current_segment);
-                }
-                c_bits
-            })
-            .collect();
-        coeffs_in_segments.push(coeff_segments);
-    }
-
-    if max_nonzero_segment.is_none() {
-        return;
-    }
-    for coeffs_seg in coeffs_in_segments
-        .into_iter()
-        .take(max_nonzero_segment.unwrap() + 1)
-        .rev()
-    {
-        for _ in 0..c {
-            *acc = acc.double();
+    let mut is_init = false;
+    for current_segment in (0..segments).rev() {
+        if is_init {
+            for _ in 0..c {
+                *acc = acc.double();
+            }
         }
 
         #[derive(Clone, Copy)]
@@ -126,10 +106,13 @@ fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut 
 
         let mut buckets: Vec<Bucket<C>> = vec![Bucket::None; (1 << c) - 1];
 
-        let mut max_bits = 0;
-        for (coeff, base) in coeffs_seg.into_iter().zip(bases.iter()) {
+        let mut max_coeff = 0;
+        for (coeff, base) in coeffs.iter().zip(bases.iter()) {
+            let coeff = get_at::<C::Scalar>(current_segment, c, coeff);
             if coeff != 0 {
-                max_bits = cmp::max(max_bits, coeff);
+                // First initialization of the accumulator, after this we must start doubling `acc`
+                is_init = true;
+                max_coeff = cmp::max(max_coeff, coeff);
                 buckets[coeff - 1].add_assign(base);
             }
         }
@@ -139,7 +122,7 @@ fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut 
         //                    (a) + b +
         //                    ((a) + b) + c
         let mut running_sum = C::Curve::identity();
-        for exp in buckets.into_iter().take(max_bits).rev() {
+        for exp in buckets.into_iter().take(max_coeff).rev() {
             running_sum = exp.add(running_sum);
             *acc += &running_sum;
         }
