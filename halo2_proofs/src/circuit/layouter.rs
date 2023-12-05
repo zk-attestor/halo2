@@ -229,11 +229,11 @@ impl<F: Field> RegionLayouter<F> for RegionShape {
     }
 
     fn query_advice(&self, _column: Column<Advice>, _offset: usize) -> Result<F, Error> {
-        Ok(F::zero())
+        Ok(F::ZERO)
     }
 
     fn query_fixed(&self, _column: Column<Fixed>, _offset: usize) -> Result<F, Error> {
-        Ok(F::zero())
+        Ok(F::ZERO)
     }
 
     fn assign_advice<'v>(

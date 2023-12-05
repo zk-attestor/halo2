@@ -188,7 +188,7 @@ impl<'a, F: Field> Assignment<F> for Assembly<'a, F> {
 
     fn query_advice(&self, _column: Column<Advice>, _row: usize) -> Result<F, Error> {
         // We only care about fixed columns here
-        Ok(F::zero())
+        Ok(F::ZERO)
     }
 
     fn query_fixed(&self, column: Column<Fixed>, row: usize) -> Result<F, Error> {
