@@ -149,6 +149,7 @@ where
         advice: Vec<&'a mut [Assigned<F>]>,
         challenges: &'a HashMap<usize, F>,
         instances: &'a [&'a [F]],
+        fixed_values: &'a [Polynomial<F, LagrangeCoeff>],
         rw_rows: Range<usize>,
         usable_rows: RangeTo<usize>,
         _marker: std::marker::PhantomData<F>,
@@ -232,6 +233,7 @@ where
                     advice,
                     challenges: self.challenges,
                     instances: self.instances,
+                    fixed_values: self.fixed_values,
                     rw_rows: sub_range.clone(),
                     usable_rows: self.usable_rows,
                     _marker: Default::default(),
@@ -251,6 +253,30 @@ where
             AR: Into<String>,
         {
             // Do nothing
+        }
+
+        /// Get the last assigned value of a cell.
+        fn query_advice(&self, column: Column<Advice>, row: usize) -> Result<F, Error> {
+            if !self.usable_rows.contains(&row) {
+                return Err(Error::not_enough_rows_available(self.k));
+            }
+            if !self.rw_rows.contains(&row) {
+                log::error!("query_advice: {:?}, row: {}", column, row);
+                return Err(Error::Synthesis);
+            }
+            self.advice
+                .get(column.index())
+                .and_then(|v| v.get(row - self.rw_rows.start))
+                .map(|v| v.evaluate())
+                .ok_or(Error::BoundsFailure)
+        }
+
+        fn query_fixed(&self, column: Column<Fixed>, row: usize) -> Result<F, Error> {
+            self.fixed_values
+                .get(column.index())
+                .and_then(|v| v.get(row))
+                .copied()
+                .ok_or(Error::BoundsFailure)
         }
 
         fn query_instance(&self, column: Column<Instance>, row: usize) -> Result<Value<F>, Error> {
@@ -406,6 +432,7 @@ where
                     advice_vec,
                     advice: advice_slice,
                     instances,
+                    fixed_values: &pk.fixed_values,
                     challenges: &challenges,
                     // The prover will not be allowed to assign values to advice
                     // cells that exist within inactive rows, which include some
