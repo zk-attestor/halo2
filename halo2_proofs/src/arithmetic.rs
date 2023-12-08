@@ -322,6 +322,12 @@ where
     q
 }
 
+pub fn par_invert<F: Field>(values: &mut [F]) {
+    parallelize(values, |values, _start| {
+        values.batch_invert();
+    });
+}
+
 /// This utility function will parallelize an operation that is to be
 /// performed over a mutable slice.
 pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mut [T], f: F) {
@@ -371,7 +377,7 @@ pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mu
                 scope.spawn(move |_| f(chunk, offset));
             }
         }
-    });
+    })
 }
 
 pub fn log2_floor(num: usize) -> u32 {

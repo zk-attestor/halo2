@@ -22,9 +22,10 @@ mod circuit;
 mod error;
 mod evaluation;
 mod keygen;
+#[allow(dead_code)]
 mod lookup;
-pub mod permutation;
-// mod shuffle;
+mod mv_lookup;
+pub(crate) mod permutation;
 mod vanishing;
 
 mod prover;

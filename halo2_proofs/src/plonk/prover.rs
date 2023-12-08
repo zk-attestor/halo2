@@ -19,7 +19,7 @@ use super::{
         Advice, Any, Assignment, Challenge, Circuit, Column, ConstraintSystem, Fixed, FloorPlanner,
         Instance, Selector,
     },
-    lookup, permutation, vanishing, ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX,
+    mv_lookup, permutation, vanishing, ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX,
     ChallengeY, Error, ProvingKey,
 };
 
@@ -59,7 +59,7 @@ pub fn create_proof<
     mut transcript: &'a mut T,
 ) -> Result<(), Error>
 where
-    Scheme::Scalar: Hash + WithSmallOrderMulGroup<3>,
+    Scheme::Scalar: Hash + WithSmallOrderMulGroup<3> + Ord,
     <Scheme as CommitmentScheme>::ParamsProver: Sync,
 {
     if circuits.len() != instances.len() {
@@ -472,18 +472,22 @@ where
     // Sample theta challenge for keeping lookup columns linearly independent
     let theta: ChallengeTheta<_> = transcript.squeeze_challenge_scalar();
 
-    let lookups: Vec<Vec<lookup::prover::Permuted<Scheme::Curve>>> = instance
+    let lookups: Vec<Vec<mv_lookup::prover::Prepared<Scheme::Curve>>> = instance
         .iter()
         .zip(advice.iter())
         .map(|(instance, advice)| -> Vec<_> {
+            #[cfg(feature = "profile")]
+            let lookup_get_mx_time =
+                start_timer!(|| format!("get m(X) in {} lookups", pk.vk.cs.lookups.len()));
             // Construct and commit to permuted values for each lookup
-            pk.vk
+            let mx = pk
+                .vk
                 .cs
                 .lookups
                 .iter()
                 .map(|lookup| {
                     lookup
-                        .commit_permuted(
+                        .prepare(
                             pk,
                             params,
                             domain,
@@ -497,7 +501,11 @@ where
                         )
                         .unwrap()
                 })
-                .collect()
+                .collect();
+            #[cfg(feature = "profile")]
+            end_timer!(lookup_get_mx_time);
+
+            mx
         })
         .collect();
     #[cfg(feature = "profile")]
@@ -539,8 +547,8 @@ where
     end_timer!(phase3a_time);
 
     #[cfg(feature = "profile")]
-    let phase3b_time = start_timer!(|| "Phase 3b: Lookup commit product");
-    let lookups: Vec<Vec<lookup::prover::Committed<Scheme::Curve>>> = lookups
+    let lookup_commit_time = start_timer!(|| "Phase 3b: Lookup commit grand sum");
+    let lookups: Vec<Vec<mv_lookup::prover::Committed<Scheme::Curve>>> = lookups
         .into_iter()
         .map(|lookups| -> Vec<_> {
             // Construct and commit to products for each lookup
@@ -548,14 +556,14 @@ where
                 .into_iter()
                 .map(|lookup| {
                     lookup
-                        .commit_product(pk, params, beta, gamma, &mut rng, transcript)
+                        .commit_grand_sum(pk, params, beta, &mut rng, transcript)
                         .unwrap()
                 })
                 .collect()
         })
         .collect();
     #[cfg(feature = "profile")]
-    end_timer!(phase3b_time);
+    end_timer!(lookup_commit_time);
 
     #[cfg(feature = "profile")]
     let vanishing_time = start_timer!(|| "Commit to vanishing argument's random poly");
@@ -694,8 +702,7 @@ where
         .map(|permutation| permutation.construct().evaluate(pk, x, transcript).unwrap())
         .collect();
 
-    // Evaluate the lookups, if any, at omega^i x.
-    let lookups: Vec<Vec<lookup::prover::Evaluated<Scheme::Curve>>> = lookups
+    let lookups: Vec<Vec<mv_lookup::prover::Evaluated<Scheme::Curve>>> = lookups
         .into_iter()
         .map(|lookups| -> Vec<_> {
             lookups
