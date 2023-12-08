@@ -40,6 +40,10 @@ name = "dev_lookup"
 harness = false
 
 [[bench]]
+name = "lookups"
+harness = false
+
+[[bench]]
 name = "fft"
 harness = false
 
@@ -63,10 +67,12 @@ crossbeam = "0.8.0"
 # Developer tooling dependencies
 plotters = { version = "0.3.0", optional = true }
 tabbycat = { version = "0.1", features = ["attributes"], optional = true }
+lazy_static = { version = "1", optional = true }
 log = "0.4.17"
 
 # timer
 ark-std = { version = "0.3.0" }
+
 
 [dev-dependencies]
 assert_matches = "1.5"
@@ -80,7 +86,7 @@ rand_core = { version = "0.6", default-features = false, features = ["getrandom"
 getrandom = { version = "0.2", features = ["js"] }
 
 [features]
-default = ["batch", "gwc"]
+default = ["batch", "gwc", "logup_skip_inv"]
 dev-graph = ["plotters", "tabbycat"]
 gadget-traces = ["backtrace"]
 sanity-checks = []
@@ -90,7 +96,9 @@ gwc = []
 parallel_syn = []
 phase-check = []
 profile = ["ark-std/print-trace"]
+counter = ["lazy_static"]
 mock-batch-inv = []
+logup_skip_inv = []
 
 [lib]
 bench = false

@@ -886,6 +886,7 @@ dependencies = [
  "group",
  "gumdrop",
  "halo2curves 0.1.0",
+ "lazy_static",
  "log",
  "num-bigint",
  "num-integer",
