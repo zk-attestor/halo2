@@ -1,8 +1,6 @@
-use crate::arithmetic::{
-    best_fft, best_multiexp, g_to_lagrange, parallelize, CurveAffine, CurveExt,
-};
+use crate::arithmetic::{best_multiexp, g_to_lagrange, parallelize};
 use crate::helpers::SerdeCurveAffine;
-use crate::poly::commitment::{Blind, CommitmentScheme, Params, ParamsProver, ParamsVerifier, MSM};
+use crate::poly::commitment::{Blind, CommitmentScheme, Params, ParamsProver, ParamsVerifier};
 use crate::poly::{Coeff, LagrangeCoeff, Polynomial};
 use crate::SerdeFormat;
 
@@ -12,7 +10,6 @@ use halo2curves::pairing::Engine;
 use rand_core::{OsRng, RngCore};
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::ops::{Add, AddAssign, Mul, MulAssign};
 
 use std::io;
 
@@ -109,7 +106,7 @@ where
         }
         let n_inv = Option::<E::Scalar>::from(E::Scalar::from(n).invert())
             .expect("inversion should be ok for n = 1<<k");
-        let multiplier = (s.pow_vartime(&[n as u64]) - E::Scalar::ONE) * n_inv;
+        let multiplier = (s.pow_vartime([n]) - E::Scalar::ONE) * n_inv;
         parallelize(&mut g_lagrange_projective, |g, start| {
             for (idx, g) in g.iter_mut().enumerate() {
                 let offset = start + idx;
@@ -139,6 +136,30 @@ where
             n,
             g,
             g_lagrange,
+            g2,
+            s_g2,
+        }
+    }
+
+    /// Initializes parameters for the curve through existing parameters
+    /// k, g, g_lagrange (optional), g2, s_g2
+    pub fn from_parts(
+        &self,
+        k: u32,
+        g: Vec<E::G1Affine>,
+        g_lagrange: Option<Vec<E::G1Affine>>,
+        g2: E::G2Affine,
+        s_g2: E::G2Affine,
+    ) -> Self {
+        Self {
+            k,
+            n: 1 << k,
+            g_lagrange: if let Some(g_l) = g_lagrange {
+                g_l
+            } else {
+                g_to_lagrange(g.iter().map(PrimeCurveAffine::to_curve).collect(), k)
+            },
+            g,
             g2,
             s_g2,
         }
@@ -359,21 +380,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::arithmetic::{best_fft, best_multiexp, parallelize, CurveAffine, CurveExt};
     use crate::poly::commitment::ParamsProver;
-    use crate::poly::commitment::{Blind, CommitmentScheme, Params, MSM};
-    use crate::poly::kzg::commitment::{ParamsKZG, ParamsVerifierKZG};
-    use crate::poly::kzg::msm::MSMKZG;
-    use crate::poly::kzg::multiopen::ProverSHPLONK;
-    use crate::poly::{Coeff, LagrangeCoeff, Polynomial};
-
-    use ff::{Field, PrimeField};
-    use group::{prime::PrimeCurveAffine, Curve, Group};
-    use halo2curves::bn256::G1Affine;
-    use std::marker::PhantomData;
-    use std::ops::{Add, AddAssign, Mul, MulAssign};
-
-    use std::io;
+    use crate::poly::commitment::{Blind, Params};
+    use crate::poly::kzg::commitment::ParamsKZG;
+    use ff::Field;
 
     #[test]
     fn test_commit_lagrange() {
@@ -404,13 +414,8 @@ mod test {
     fn test_parameter_serialisation_roundtrip() {
         const K: u32 = 4;
 
-        use ff::Field;
-        use rand_core::OsRng;
-
-        use super::super::commitment::{Blind, Params};
-        use crate::arithmetic::eval_polynomial;
-        use crate::halo2curves::bn256::{Bn256, Fr};
-        use crate::poly::EvaluationDomain;
+        use super::super::commitment::Params;
+        use crate::halo2curves::bn256::Bn256;
 
         let params0 = ParamsKZG::<Bn256>::new(K);
         let mut data = vec![];

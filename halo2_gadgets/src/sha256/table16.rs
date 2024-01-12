@@ -531,7 +531,7 @@ trait Table16Assignment<F: Field> {
 }
 
 #[cfg(test)]
-#[cfg(feature = "dev-graph")]
+#[cfg(feature = "test-dev-graph")]
 mod tests {
     use super::super::{Sha256, BLOCK_SIZE};
     use super::{message_schedule::msg_schedule_test_input, Table16Chip, Table16Config};
@@ -549,6 +549,8 @@ mod tests {
         impl Circuit<pallas::Base> for MyCircuit {
             type Config = Table16Config;
             type FloorPlanner = SimpleFloorPlanner;
+            #[cfg(feature = "circuit-params")]
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 MyCircuit {}

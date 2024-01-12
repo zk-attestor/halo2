@@ -14,7 +14,6 @@ use crate::dev::metadata::Constraint;
 use crate::{
     dev::{Instance, Value},
     plonk::{Any, Column, ConstraintSystem, Expression, Gate},
-    poly::Rotation,
 };
 
 mod emitter;
@@ -70,9 +69,9 @@ impl FailureLocation {
                 expression.evaluate(
                     &|_| vec![],
                     &|_| panic!("virtual selectors are removed during optimization"),
-                    &|query| vec![cs.fixed_queries[query.index].0.into()],
-                    &|query| vec![cs.advice_queries[query.index].0.into()],
-                    &|query| vec![cs.instance_queries[query.index].0.into()],
+                    &|query| vec![cs.fixed_queries[query.index.unwrap()].0.into()],
+                    &|query| vec![cs.advice_queries[query.index.unwrap()].0.into()],
+                    &|query| vec![cs.instance_queries[query.index.unwrap()].0.into()],
                     &|_| vec![],
                     &|a| a,
                     &|mut a, mut b| {
@@ -101,16 +100,17 @@ impl FailureLocation {
             .iter()
             .enumerate()
             .find(|(_, r)| {
-                if r.rows.is_none() {
-                    return false;
+                if let Some((start, end)) = r.rows {
+                    // We match the region if any input columns overlap, rather than all of
+                    // them, because matching complex selector columns is hard. As long as
+                    // regions are rectangles, and failures occur due to assignments entirely
+                    // within single regions, "any" will be equivalent to "all". If these
+                    // assumptions change, we'll start getting bug reports from users :)
+                    (start..=end).contains(&failure_row) && !failure_columns.is_disjoint(&r.columns)
+                } else {
+                    // Zero-area region
+                    false
                 }
-                let (start, end) = r.rows.unwrap();
-                // We match the region if any input columns overlap, rather than all of
-                // them, because matching complex selector columns is hard. As long as
-                // regions are rectangles, and failures occur due to assignments entirely
-                // within single regions, "any" will be equivalent to "all". If these
-                // assumptions change, we'll start getting bug reports from users :)
-                (start..=end).contains(&failure_row) && !failure_columns.is_disjoint(&r.columns)
             })
             .map(|(r_i, r)| FailureLocation::InRegion {
                 region: (r_i, r.name.clone(), r.annotations.clone()).into(),
@@ -139,6 +139,20 @@ pub enum VerifyFailure {
         /// offset 0, but the gate uses `Rotation::prev()`).
         offset: isize,
     },
+    /// An instance cell used in an active gate was not assigned to.
+    InstanceCellNotAssigned {
+        /// The index of the active gate.
+        gate: metadata::Gate,
+        /// The region in which this gate was activated.
+        region: metadata::Region,
+        /// The offset (relative to the start of the region) at which the active gate
+        /// queries this cell.
+        gate_offset: usize,
+        /// The column in which this cell should be assigned.
+        column: Column<Instance>,
+        /// The absolute row at which this cell should be assigned.
+        row: usize,
+    },
     /// A constraint was not satisfied for a particular row.
     ConstraintNotSatisfied {
         /// The polynomial constraint that is not satisfied.
@@ -158,11 +172,33 @@ pub enum VerifyFailure {
     },
     /// A lookup input did not exist in its corresponding table.
     Lookup {
-        name: &'static str,
+        name: String,
         /// The index of the lookup that is not satisfied. These indices are assigned in
         /// the order in which `ConstraintSystem::lookup` is called during
         /// `Circuit::configure`.
         lookup_index: usize,
+        /// The location at which the lookup is not satisfied.
+        ///
+        /// `FailureLocation::InRegion` is most common, and may be due to the intentional
+        /// use of a lookup (if its inputs are conditional on a complex selector), or an
+        /// unintentional lookup constraint that overlaps the region (indicating that the
+        /// lookup's inputs should be made conditional).
+        ///
+        /// `FailureLocation::OutsideRegion` is uncommon, and could mean that:
+        /// - The input expressions do not correctly constrain a default value that exists
+        ///   in the table when the lookup is not being used.
+        /// - The input expressions use a column queried at a non-zero `Rotation`, and the
+        ///   lookup is active on a row adjacent to an unrelated region.
+        location: FailureLocation,
+    },
+    /// A shuffle input did not exist in its corresponding map.
+    Shuffle {
+        /// The name of the lookup that is not satisfied.
+        name: String,
+        /// The index of the lookup that is not satisfied. These indices are assigned in
+        /// the order in which `ConstraintSystem::lookup` is called during
+        /// `Circuit::configure`.
+        shuffle_index: usize,
         /// The location at which the lookup is not satisfied.
         ///
         /// `FailureLocation::InRegion` is most common, and may be due to the intentional
@@ -200,6 +236,19 @@ impl fmt::Display for VerifyFailure {
                     f,
                     "{} uses {} at offset {}, which requires cell in column {:?} at offset {} with annotation {:?} to be assigned.",
                     region, gate, gate_offset, column, offset, region.get_column_annotation((*column).into())
+                )
+            }
+            Self::InstanceCellNotAssigned {
+                gate,
+                region,
+                gate_offset,
+                column,
+                row,
+            } => {
+                write!(
+                    f,
+                    "{} uses {} at offset {}, which requires cell in instance column {:?} at row {} to be assigned.",
+                    region, gate, gate_offset, column, row
                 )
             }
             Self::ConstraintNotSatisfied {
@@ -240,6 +289,17 @@ impl fmt::Display for VerifyFailure {
                     name, lookup_index, location
                 )
             }
+            Self::Shuffle {
+                name,
+                shuffle_index,
+                location,
+            } => {
+                write!(
+                    f,
+                    "Shuffle {}(index: {}) is not satisfied {}",
+                    name, shuffle_index, location
+                )
+            }
             Self::Permutation { column, location } => {
                 write!(
                     f,
@@ -276,7 +336,7 @@ impl Debug for VerifyFailure {
                 };
 
                 let debug = ConstraintCaseDebug {
-                    constraint: *constraint,
+                    constraint: constraint.clone(),
                     location: location.clone(),
                     cell_values: cell_values
                         .iter()
@@ -624,6 +684,176 @@ fn render_lookup<F: Field>(
     }
 }
 
+fn render_shuffle<F: Field>(
+    prover: &MockProver<F>,
+    name: &str,
+    shuffle_index: usize,
+    location: &FailureLocation,
+) {
+    let n = prover.n as i32;
+    let cs = &prover.cs;
+    let shuffle = &cs.shuffles[shuffle_index];
+
+    // Get the absolute row on which the shuffle's inputs are being queried, so we can
+    // fetch the input values.
+    let row = match location {
+        FailureLocation::InRegion { region, offset } => {
+            prover.regions[region.index].rows.unwrap().0 + offset
+        }
+        FailureLocation::OutsideRegion { row } => *row,
+    } as i32;
+
+    let shuffle_columns = shuffle.shuffle_expressions.iter().map(|expr| {
+        expr.evaluate(
+            &|f| format! {"Const: {:#?}", f},
+            &|s| format! {"S{}", s.0},
+            &|query| {
+                format!(
+                    "{:?}",
+                    prover
+                        .cs
+                        .general_column_annotations
+                        .get(&metadata::Column::from((Any::Fixed, query.column_index)))
+                        .cloned()
+                        .unwrap_or_else(|| format!("F{}", query.column_index()))
+                )
+            },
+            &|query| {
+                format!(
+                    "{:?}",
+                    prover
+                        .cs
+                        .general_column_annotations
+                        .get(&metadata::Column::from((Any::advice(), query.column_index)))
+                        .cloned()
+                        .unwrap_or_else(|| format!("A{}", query.column_index()))
+                )
+            },
+            &|query| {
+                format!(
+                    "{:?}",
+                    prover
+                        .cs
+                        .general_column_annotations
+                        .get(&metadata::Column::from((Any::Instance, query.column_index)))
+                        .cloned()
+                        .unwrap_or_else(|| format!("I{}", query.column_index()))
+                )
+            },
+            &|challenge| format! {"C{}", challenge.index()},
+            &|query| format! {"-{}", query},
+            &|a, b| format! {"{} + {}", a,b},
+            &|a, b| format! {"{} * {}", a,b},
+            &|a, b| format! {"{} * {:?}", a, b},
+        )
+    });
+
+    fn cell_value<'a, F: Field, Q: Into<AnyQuery> + Copy>(
+        load: impl Fn(Q) -> Value<F> + 'a,
+    ) -> impl Fn(Q) -> BTreeMap<metadata::VirtualCell, String> + 'a {
+        move |query| {
+            let AnyQuery {
+                column_type,
+                column_index,
+                rotation,
+                ..
+            } = query.into();
+            Some((
+                ((column_type, column_index).into(), rotation.0).into(),
+                match load(query) {
+                    Value::Real(v) => util::format_value(v),
+                    Value::Poison => unreachable!(),
+                },
+            ))
+            .into_iter()
+            .collect()
+        }
+    }
+
+    eprintln!("error: input does not exist in shuffle");
+    eprint!("  (");
+    for i in 0..shuffle.input_expressions.len() {
+        eprint!("{}L{}", if i == 0 { "" } else { ", " }, i);
+    }
+    eprint!(") <-> (");
+    for (i, column) in shuffle_columns.enumerate() {
+        eprint!("{}{}", if i == 0 { "" } else { ", " }, column);
+    }
+    eprintln!(")");
+
+    eprintln!();
+    eprintln!("  Shuffle '{}' inputs:", name);
+    for (i, input) in shuffle.input_expressions.iter().enumerate() {
+        // Fetch the cell values (since we don't store them in VerifyFailure::Shuffle).
+        let cell_values = input.evaluate(
+            &|_| BTreeMap::default(),
+            &|_| panic!("virtual selectors are removed during optimization"),
+            &cell_value(&util::load_slice(n, row, &cs.fixed_queries, &prover.fixed)),
+            &cell_value(&util::load_slice(
+                n,
+                row,
+                &cs.advice_queries,
+                &prover.advice,
+            )),
+            &cell_value(&util::load_instance(
+                n,
+                row,
+                &cs.instance_queries,
+                &prover.instance,
+            )),
+            &|_| BTreeMap::default(),
+            &|a| a,
+            &|mut a, mut b| {
+                a.append(&mut b);
+                a
+            },
+            &|mut a, mut b| {
+                a.append(&mut b);
+                a
+            },
+            &|a, _| a,
+        );
+
+        // Collect the necessary rendering information:
+        // - The columns involved in this constraint.
+        // - How many cells are in each column.
+        // - The grid of cell values, indexed by rotation.
+        let mut columns = BTreeMap::<metadata::Column, usize>::default();
+        let mut layout = BTreeMap::<i32, BTreeMap<metadata::Column, _>>::default();
+        for (i, (cell, _)) in cell_values.iter().enumerate() {
+            *columns.entry(cell.column).or_default() += 1;
+            layout
+                .entry(cell.rotation)
+                .or_default()
+                .entry(cell.column)
+                .or_insert(format!("x{}", i));
+        }
+
+        if i != 0 {
+            eprintln!();
+        }
+        eprintln!(
+            "    Sh{} = {}",
+            i,
+            emitter::expression_to_string(input, &layout)
+        );
+        eprintln!("    ^");
+
+        emitter::render_cell_layout("    | ", location, &columns, &layout, |_, rotation| {
+            if rotation == 0 {
+                eprint!(" <--{{ Shuffle '{}' inputs queried here", name);
+            }
+        });
+
+        // Print the map from local variables to assigned values.
+        eprintln!("    |");
+        eprintln!("    | Assigned cell values:");
+        for (i, (_, value)) in cell_values.iter().enumerate() {
+            eprintln!("    |   x{} = {}", i, value);
+        }
+    }
+}
+
 impl VerifyFailure {
     /// Emits this failure in pretty-printed format to stderr.
     pub(super) fn emit<F: Field>(&self, prover: &MockProver<F>) {
@@ -654,6 +884,11 @@ impl VerifyFailure {
                 lookup_index,
                 location,
             } => render_lookup(prover, name, *lookup_index, location),
+            Self::Shuffle {
+                name,
+                shuffle_index,
+                location,
+            } => render_shuffle(prover, name, *shuffle_index, location),
             _ => eprintln!("{}", self),
         }
     }

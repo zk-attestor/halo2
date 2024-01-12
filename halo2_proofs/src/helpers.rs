@@ -1,8 +1,7 @@
 use crate::plonk::{Any, Column};
 use crate::poly::Polynomial;
-use ff::PrimeField;
-use ff::{Field, FromUniformBytes};
-use halo2curves::{pairing::Engine, serde::SerdeObject, CurveAffine};
+use ff::{FromUniformBytes, PrimeField};
+use halo2curves::{serde::SerdeObject, CurveAffine};
 use num_bigint::BigUint;
 use std::io;
 
@@ -93,6 +92,7 @@ macro_rules! two_dim_vec_to_vec_of_slice {
 #[cfg(test)]
 mod test {
     use super::*;
+    use ff::Field;
     use halo2curves::bn256::{Fq, G1Affine};
     use rand_core::OsRng;
     #[test]
@@ -112,6 +112,7 @@ mod test {
         }
     }
 }
+
 pub trait SerdeCurveAffine: CurveAffine + SerdeObject {
     /// Reads an element from the buffer and parses it according to the `format`:
     /// - `Processed`: Reads a compressed curve element and decompress it

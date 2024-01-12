@@ -1,32 +1,29 @@
-use ff::{Field, FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
+use crate::plonk::shuffle;
+use ff::{Field, FromUniformBytes, WithSmallOrderMulGroup};
 use group::Curve;
-use halo2curves::CurveExt;
 use rand_core::RngCore;
 use std::collections::BTreeSet;
-use std::env::var;
 use std::ops::{Range, RangeTo};
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
-use std::time::Instant;
-use std::{collections::HashMap, iter, mem, sync::atomic::Ordering};
+use std::{collections::HashMap, iter};
 
 use super::{
     circuit::{
-        sealed::{self, SealedPhase},
-        Advice, Any, Assignment, Challenge, Circuit, Column, ConstraintSystem, FirstPhase, Fixed,
-        FloorPlanner, Instance, Selector,
+        sealed::{self},
+        Advice, Any, Assignment, Challenge, Circuit, Column, ConstraintSystem, Fixed, FloorPlanner,
+        Instance, Selector,
     },
     mv_lookup, permutation, vanishing, ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX,
-    ChallengeY, Error, Expression, ProvingKey,
+    ChallengeY, Error, ProvingKey,
 };
+
 use crate::{
     arithmetic::{eval_polynomial, CurveAffine},
     circuit::Value,
     plonk::Assigned,
     poly::{
-        self,
         commitment::{Blind, CommitmentScheme, Params, Prover},
-        Basis, Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, ProverQuery,
+        Basis, Coeff, LagrangeCoeff, Polynomial, ProverQuery,
     },
     two_dim_vec_to_vec_of_slice,
 };
@@ -60,6 +57,10 @@ pub fn create_proof<
 where
     Scheme::Scalar: WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
 {
+    if circuits.len() != instances.len() {
+        return Err(Error::InvalidInstances);
+    }
+
     for instance in instances.iter() {
         if instance.len() != pk.vk.cs.num_instance_columns {
             return Err(Error::InvalidInstances);
@@ -71,6 +72,9 @@ where
 
     let domain = &pk.vk.domain;
     let mut meta = ConstraintSystem::default();
+    #[cfg(feature = "circuit-params")]
+    let config = ConcreteCircuit::configure_with_params(&mut meta, circuits[0].params());
+    #[cfg(not(feature = "circuit-params"))]
     let config = ConcreteCircuit::configure(&mut meta);
 
     // Selector optimizations cannot be applied here; use the ConstraintSystem
@@ -285,11 +289,13 @@ where
                 return Err(Error::not_enough_rows_available(self.k));
             }
 
-            self.instances
+            Ok(self
+                .instances
                 .get(column.index())
                 .and_then(|column| column.get(row))
                 .map(|v| Value::known(*v))
                 .ok_or(Error::BoundsFailure)
+                .expect("bound failure"))
         }
 
         fn assign_advice<V, VR, A, AR>(
@@ -323,7 +329,7 @@ where
                 .advice
                 .get_mut(column.index())
                 .and_then(|v| v.get_mut(row - self.rw_rows.start))
-                .ok_or(Error::BoundsFailure)? = to().into_field().assign()?;
+                .expect("bounds failure") = to().into_field().assign()?;
 
             Ok(())
         }
@@ -619,6 +625,34 @@ where
         .collect::<Result<Vec<_>, _>>()?;
     end_timer!(lookup_commit_time);
 
+    let shuffles: Vec<Vec<shuffle::prover::Committed<Scheme::Curve>>> = instance
+        .iter()
+        .zip(advice.iter())
+        .map(|(instance, advice)| -> Result<Vec<_>, _> {
+            // Compress expressions for each shuffle
+            pk.vk
+                .cs
+                .shuffles
+                .iter()
+                .map(|shuffle| {
+                    shuffle.commit_product(
+                        pk,
+                        params,
+                        domain,
+                        theta,
+                        gamma,
+                        &advice.advice_polys,
+                        &pk.fixed_values,
+                        &instance.instance_values,
+                        &challenges,
+                        &mut rng,
+                        transcript,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     // Commit to the vanishing argument's random polynomial for blinding h(x_3)
     let vanishing = vanishing::Argument::commit(params, domain, &mut rng, transcript)?;
 
@@ -661,6 +695,7 @@ where
         *gamma,
         *theta,
         &lookups,
+        &shuffles,
         &permutations,
     );
 
@@ -668,7 +703,7 @@ where
     let vanishing = vanishing.construct(params, domain, h_poly, &mut rng, transcript)?;
 
     let x: ChallengeX<_> = transcript.squeeze_challenge_scalar();
-    let xn = x.pow(&[params.n() as u64, 0, 0, 0]);
+    let xn = x.pow([params.n()]);
 
     if P::QUERY_INSTANCE {
         // Compute and hash instance evals for each circuit instance
@@ -747,12 +782,24 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    // Evaluate the shuffles, if any, at omega^i x.
+    let shuffles: Vec<Vec<shuffle::prover::Evaluated<Scheme::Curve>>> = shuffles
+        .into_iter()
+        .map(|shuffles| -> Result<Vec<_>, _> {
+            shuffles
+                .into_iter()
+                .map(|p| p.evaluate(pk, x, transcript))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     let instances = instance
         .iter()
         .zip(advice.iter())
         .zip(permutations.iter())
         .zip(lookups.iter())
-        .flat_map(|(((instance, advice), permutation), lookups)| {
+        .zip(shuffles.iter())
+        .flat_map(|((((instance, advice), permutation), lookups), shuffles)| {
             iter::empty()
                 .chain(
                     P::QUERY_INSTANCE
@@ -778,7 +825,8 @@ where
                         }),
                 )
                 .chain(permutation.open(pk, x))
-                .chain(lookups.iter().flat_map(move |p| p.open(pk, x)).into_iter())
+                .chain(lookups.iter().flat_map(move |p| p.open(pk, x)))
+                .chain(shuffles.iter().flat_map(move |p| p.open(pk, x)))
         })
         .chain(
             pk.vk
@@ -799,4 +847,70 @@ where
     prover
         .create_proof(rng, transcript, instances)
         .map_err(|_| Error::ConstraintSystemFailure)
+}
+
+#[test]
+fn test_create_proof() {
+    use crate::{
+        circuit::SimpleFloorPlanner,
+        plonk::{keygen_pk, keygen_vk},
+        poly::kzg::{
+            commitment::{KZGCommitmentScheme, ParamsKZG},
+            multiopen::ProverSHPLONK,
+        },
+        transcript::{Blake2bWrite, Challenge255, TranscriptWriterBuffer},
+    };
+    use halo2curves::bn256::Bn256;
+    use rand_core::OsRng;
+
+    #[derive(Clone, Copy)]
+    struct MyCircuit;
+
+    impl<F: Field> Circuit<F> for MyCircuit {
+        type Config = ();
+        type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
+
+        fn without_witnesses(&self) -> Self {
+            *self
+        }
+
+        fn configure(_meta: &mut ConstraintSystem<F>) -> Self::Config {}
+
+        fn synthesize(
+            &self,
+            _config: Self::Config,
+            _layouter: impl crate::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    let params: ParamsKZG<Bn256> = ParamsKZG::setup(3, OsRng);
+    let vk = keygen_vk(&params, &MyCircuit).expect("keygen_vk should not fail");
+    let pk = keygen_pk(&params, vk, &MyCircuit).expect("keygen_pk should not fail");
+    let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+
+    // Create proof with wrong number of instances
+    let proof = create_proof::<KZGCommitmentScheme<_>, ProverSHPLONK<_>, _, _, _, _>(
+        &params,
+        &pk,
+        &[MyCircuit, MyCircuit],
+        &[],
+        OsRng,
+        &mut transcript,
+    );
+    assert!(matches!(proof.unwrap_err(), Error::InvalidInstances));
+
+    // Create proof with correct number of instances
+    create_proof::<KZGCommitmentScheme<_>, ProverSHPLONK<_>, _, _, _, _>(
+        &params,
+        &pk,
+        &[MyCircuit, MyCircuit],
+        &[&[], &[]],
+        OsRng,
+        &mut transcript,
+    )
+    .expect("proof generation should not fail");
 }

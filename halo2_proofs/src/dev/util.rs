@@ -1,7 +1,7 @@
 use group::ff::Field;
 use std::collections::BTreeMap;
 
-use super::{metadata, CellValue, Value};
+use super::{metadata, CellValue, InstanceValue, Value};
 use crate::{
     plonk::{
         Advice, AdviceQuery, Any, Column, ColumnType, Expression, FixedQuery, Gate, InstanceQuery,
@@ -12,7 +12,7 @@ use crate::{
 
 pub(crate) struct AnyQuery {
     /// Query index
-    pub index: usize,
+    pub index: Option<usize>,
     /// Column type
     pub column_type: Any,
     /// Column index
@@ -79,7 +79,7 @@ pub(super) fn load<'a, F: Field, T: ColumnType, Q: Into<AnyQuery> + Copy>(
     cells: &'a [Vec<CellValue<F>>],
 ) -> impl Fn(Q) -> Value<F> + 'a {
     move |query| {
-        let (column, at) = &queries[query.into().index];
+        let (column, at) = &queries[query.into().index.unwrap()];
         let resolved_row = (row + at.0) % n;
         cells[column.index()][resolved_row as usize].into()
     }
@@ -93,8 +93,8 @@ pub(super) fn load_slice<'a, F: Field, T: ColumnType, Q: Into<AnyQuery> + Copy>(
     cells: &'a [&mut [CellValue<F>]],
 ) -> impl Fn(Q) -> Value<F> + 'a {
     move |query| {
-        let (column, at) = &queries[query.into().index];
-        let resolved_row = (row + at.0 + n) % n;
+        let (column, at) = &queries[query.into().index.unwrap()];
+        let resolved_row = (row + at.0) % n;
         cells[column.index()][resolved_row as usize].into()
     }
 }
@@ -103,12 +103,13 @@ pub(super) fn load_instance<'a, F: Field, T: ColumnType, Q: Into<AnyQuery> + Cop
     n: i32,
     row: i32,
     queries: &'a [(Column<T>, Rotation)],
-    cells: &'a [Vec<F>],
+    cells: &'a [Vec<InstanceValue<F>>],
 ) -> impl Fn(Q) -> Value<F> + 'a {
     move |query| {
-        let (column, at) = &queries[query.into().index];
-        let resolved_row = (row + at.0 + n) % n;
-        Value::Real(cells[column.index()][resolved_row as usize])
+        let (column, at) = &queries[query.into().index.unwrap()];
+        let resolved_row = (row + at.0) % n;
+        let cell = &cells[column.index()][resolved_row as usize];
+        Value::Real(cell.value())
     }
 }
 

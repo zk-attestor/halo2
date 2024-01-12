@@ -90,6 +90,7 @@ impl<C: CurveAffine> Committed<C> {
 }
 
 impl<C: CurveAffine> Evaluated<C> {
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::plonk) fn expressions<'a>(
         &'a self,
         l_0: C::Scalar,
@@ -120,9 +121,9 @@ impl<C: CurveAffine> Evaluated<C> {
                         expression.evaluate(
                             &|scalar| scalar,
                             &|_| panic!("virtual selectors are removed during optimization"),
-                            &|query| fixed_evals[query.index],
-                            &|query| advice_evals[query.index],
-                            &|query| instance_evals[query.index],
+                            &|query| fixed_evals[query.index.unwrap()],
+                            &|query| advice_evals[query.index.unwrap()],
+                            &|query| instance_evals[query.index.unwrap()],
                             &|challenge| challenges[challenge.index()],
                             &|a| -a,
                             &|a, b| a + &b,
@@ -141,7 +142,7 @@ impl<C: CurveAffine> Evaluated<C> {
 
         std::iter::empty()
             .chain(
-                // l_0(X) * (1 - z'(X)) = 0
+                // l_0(X) * (1 - z(X)) = 0
                 Some(l_0 * &(C::Scalar::ONE - &self.product_eval)),
             )
             .chain(

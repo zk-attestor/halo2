@@ -49,7 +49,7 @@ impl<F: PrimeFieldBits> RangeConstrained<F, AssignedCell<F, F>> {
             .map(|inner| Self {
                 inner,
                 num_bits,
-                _phantom: PhantomData::default(),
+                _phantom: PhantomData,
             })
     }
 }
@@ -410,6 +410,8 @@ mod tests {
         impl<F: PrimeFieldBits> Circuit<F> for MyCircuit<F> {
             type Config = LookupRangeCheckConfig<F, K>;
             type FloorPlanner = SimpleFloorPlanner;
+            #[cfg(feature = "circuit-params")]
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 *self
@@ -506,6 +508,8 @@ mod tests {
         impl<F: PrimeFieldBits> Circuit<F> for MyCircuit<F> {
             type Config = LookupRangeCheckConfig<F, K>;
             type FloorPlanner = SimpleFloorPlanner;
+            #[cfg(feature = "circuit-params")]
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 MyCircuit {
@@ -582,13 +586,13 @@ mod tests {
             assert_eq!(
                 prover.verify(),
                 Err(vec![VerifyFailure::Lookup {
-                    name: "lookup",
+                    name: "lookup".to_string(),
                     lookup_index: 0,
                     location: FailureLocation::InRegion {
                         region: (1, "Range check 6 bits").into(),
                         offset: 1,
                     },
-                }])
+                }]),
             );
         }
 
@@ -603,7 +607,7 @@ mod tests {
                 prover.verify(),
                 Err(vec![
                     VerifyFailure::Lookup {
-                        name: "lookup",
+                        name: "lookup".to_string(),
                         lookup_index: 0,
                         location: FailureLocation::InRegion {
                             region: (1, "Range check 6 bits").into(),
@@ -611,7 +615,7 @@ mod tests {
                         },
                     },
                     VerifyFailure::Lookup {
-                        name: "lookup",
+                        name: "lookup".to_string(),
                         lookup_index: 0,
                         location: FailureLocation::InRegion {
                             region: (1, "Range check 6 bits").into(),
@@ -641,7 +645,7 @@ mod tests {
             assert_eq!(
                 prover.verify(),
                 Err(vec![VerifyFailure::Lookup {
-                    name: "lookup",
+                    name: "lookup".to_string(),
                     lookup_index: 0,
                     location: FailureLocation::InRegion {
                         region: (1, "Range check 6 bits").into(),

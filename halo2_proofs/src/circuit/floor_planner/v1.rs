@@ -4,8 +4,8 @@ use ff::Field;
 
 use crate::{
     circuit::{
-        floor_planner::single_pass::SimpleTableLayouter,
-        layouter::{RegionColumn, RegionLayouter, RegionShape, TableLayouter},
+        layouter::{RegionColumn, RegionLayouter, RegionShape, SyncDeps, TableLayouter},
+        table_layouter::{compute_table_lengths, SimpleTableLayouter},
         Cell, Layouter, Region, RegionIndex, RegionStart, Table, Value,
     },
     plonk::{
@@ -43,7 +43,7 @@ impl<'a, F: Field, CS: Assignment<F> + 'a> fmt::Debug for V1Plan<'a, F, CS> {
     }
 }
 
-impl<'a, F: Field, CS: Assignment<F>> V1Plan<'a, F, CS> {
+impl<'a, F: Field, CS: Assignment<F> + SyncDeps> V1Plan<'a, F, CS> {
     /// Creates a new v1 layouter.
     pub fn new(cs: &'a mut CS) -> Result<Self, Error> {
         let ret = V1Plan {
@@ -57,7 +57,7 @@ impl<'a, F: Field, CS: Assignment<F>> V1Plan<'a, F, CS> {
 }
 
 impl FloorPlanner for V1 {
-    fn synthesize<F: Field, CS: Assignment<F>, C: Circuit<F>>(
+    fn synthesize<F: Field, CS: Assignment<F> + SyncDeps, C: Circuit<F>>(
         cs: &mut CS,
         circuit: &C,
         config: C::Config,
@@ -90,8 +90,8 @@ impl FloorPlanner for V1 {
 
         // - Determine how many rows our planned circuit will require.
         let first_unassigned_row = column_allocations
-            .iter()
-            .map(|(_, a)| a.unbounded_interval_start())
+            .values()
+            .map(|a| a.unbounded_interval_start())
             .max()
             .unwrap_or(0);
 
@@ -128,8 +128,7 @@ impl FloorPlanner for V1 {
         if constant_positions().count() < plan.constants.len() {
             return Err(Error::NotEnoughColumnsForConstants);
         }
-        for ((fixed_column, fixed_row), (value, advice)) in
-            constant_positions().zip(plan.constants.into_iter())
+        for ((fixed_column, fixed_row), (value, advice)) in constant_positions().zip(plan.constants)
         {
             plan.cs.assign_fixed(
                 || format!("Constant({:?})", value.evaluate()),
@@ -169,7 +168,7 @@ impl<'p, 'a, F: Field, CS: Assignment<F> + 'a> V1Pass<'p, 'a, F, CS> {
     }
 }
 
-impl<'p, 'a, F: Field, CS: Assignment<F> + 'a> Layouter<F> for V1Pass<'p, 'a, F, CS> {
+impl<'p, 'a, F: Field, CS: Assignment<F> + SyncDeps> Layouter<F> for V1Pass<'p, 'a, F, CS> {
     type Root = Self;
 
     fn assign_region<A, AR, N, NR>(&mut self, name: N, assignment: A) -> Result<AR, Error>
@@ -293,7 +292,7 @@ pub struct AssignmentPass<'p, 'a, F: Field, CS: Assignment<F> + 'a> {
     region_index: usize,
 }
 
-impl<'p, 'a, F: Field, CS: Assignment<F> + 'a> AssignmentPass<'p, 'a, F, CS> {
+impl<'p, 'a, F: Field, CS: Assignment<F> + SyncDeps> AssignmentPass<'p, 'a, F, CS> {
     fn new(plan: &'p mut V1Plan<'a, F, CS>) -> Self {
         AssignmentPass {
             plan,
@@ -342,24 +341,7 @@ impl<'p, 'a, F: Field, CS: Assignment<F> + 'a> AssignmentPass<'p, 'a, F, CS> {
 
         // Check that all table columns have the same length `first_unused`,
         // and all cells up to that length are assigned.
-        let first_unused = {
-            match default_and_assigned
-                .values()
-                .map(|(_, assigned)| {
-                    if assigned.iter().all(|b| *b) {
-                        Some(assigned.len())
-                    } else {
-                        None
-                    }
-                })
-                .reduce(|acc, item| match (acc, item) {
-                    (Some(a), Some(b)) if a == b => Some(a),
-                    _ => None,
-                }) {
-                Some(Some(len)) => len,
-                _ => return Err(Error::Synthesis), // TODO better error
-            }
-        };
+        let first_unused = compute_table_lengths(&default_and_assigned)?;
 
         // Record these columns so that we can prevent them from being used again.
         for column in default_and_assigned.keys() {
@@ -413,7 +395,7 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> V1Region<'r, 'a, F, CS> {
     }
 }
 
-impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F> for V1Region<'r, 'a, F, CS> {
+impl<'r, 'a, F: Field, CS: Assignment<F> + SyncDeps> RegionLayouter<F> for V1Region<'r, 'a, F, CS> {
     fn enable_selector<'v>(
         &'v mut self,
         annotation: &'v (dyn Fn() -> String + 'v),
@@ -496,6 +478,14 @@ impl<'r, 'a, F: Field, CS: Assignment<F> + 'a> RegionLayouter<F> for V1Region<'r
         Ok((cell, value))
     }
 
+    fn instance_value(
+        &mut self,
+        instance: Column<Instance>,
+        row: usize,
+    ) -> Result<Value<F>, Error> {
+        self.plan.cs.query_instance(instance, row)
+    }
+
     fn assign_fixed<'v>(
         &'v mut self,
         annotation: &'v (dyn Fn() -> String + 'v),
@@ -562,6 +552,8 @@ mod tests {
         impl Circuit<vesta::Scalar> for MyCircuit {
             type Config = Column<Advice>;
             type FloorPlanner = super::V1;
+            #[cfg(feature = "circuit-params")]
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 MyCircuit {}

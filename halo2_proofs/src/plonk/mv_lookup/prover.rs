@@ -1,6 +1,5 @@
 use super::super::{
-    circuit::Expression, ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, Error,
-    ProvingKey,
+    circuit::Expression, ChallengeBeta, ChallengeTheta, ChallengeX, Error, ProvingKey,
 };
 use super::Argument;
 use crate::plonk::evaluation::evaluate;
@@ -8,25 +7,15 @@ use crate::{
     arithmetic::{eval_polynomial, parallelize, CurveAffine},
     poly::{
         commitment::{Blind, Params},
-        Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, ProverQuery,
-        Rotation,
+        Coeff, EvaluationDomain, LagrangeCoeff, Polynomial, ProverQuery, Rotation,
     },
     transcript::{EncodedChallenge, TranscriptWrite},
 };
 use ark_std::{end_timer, start_timer};
-use blake2b_simd::Hash;
-use ff::{BitViewSized, PrimeField, PrimeFieldBits, WithSmallOrderMulGroup};
-use group::{
-    ff::{BatchInvert, Field},
-    Curve,
-};
+use ff::{PrimeField, WithSmallOrderMulGroup};
+use group::{ff::Field, Curve};
 use rand_core::RngCore;
-use rayon::current_num_threads;
-use std::collections::{BTreeSet, HashSet};
-use std::time::Instant;
-use std::{any::TypeId, convert::TryInto, num::ParseIntError, ops::Index};
 use std::{
-    collections::BTreeMap,
     iter,
     ops::{Mul, MulAssign},
 };
@@ -72,7 +61,8 @@ impl<F: PrimeField + WithSmallOrderMulGroup<3> + Ord> Argument<F> {
         fixed_values: &'a [Polynomial<C::Scalar, LagrangeCoeff>],
         instance_values: &'a [Polynomial<C::Scalar, LagrangeCoeff>],
         challenges: &'a [C::Scalar],
-        mut rng: R, // in case we want to blind (do we actually need zk?)
+        #[cfg(feature = "sanity-checks")] mut rng: R, // in case we want to blind (do we actually need zk?)
+        #[cfg(not(feature = "sanity-checks"))] rng: R,
         transcript: &mut T,
     ) -> Result<Prepared<C>, Error>
     where
@@ -134,7 +124,6 @@ impl<F: PrimeField + WithSmallOrderMulGroup<3> + Ord> Argument<F> {
         let m_time = start_timer!(|| "m(X) values");
         let m_values: Vec<F> = {
             use std::sync::atomic::{AtomicU64, Ordering};
-            use std::sync::RwLock;
             let m_values: Vec<AtomicU64> = (0..params.n()).map(|_| AtomicU64::new(0)).collect();
 
             for compressed_input_expression in compressed_inputs_expressions.iter() {
@@ -154,7 +143,7 @@ impl<F: PrimeField + WithSmallOrderMulGroup<3> + Ord> Argument<F> {
 
             m_values
                 .par_iter()
-                .map(|mi| F::from(mi.load(Ordering::Relaxed) as u64))
+                .map(|mi| F::from(mi.load(Ordering::Relaxed)))
                 .collect()
         };
         end_timer!(m_time);
@@ -313,32 +302,24 @@ impl<C: CurveAffine> Prepared<C> {
         let phi = {
             // parallelized version of log_derivatives_diff.scan()
             let active_size = params.n() as usize - blinding_factors;
-            let chunk = {
-                let num_threads = crate::multicore::current_num_threads();
-                let mut chunk = (active_size as usize) / num_threads;
-                if chunk < num_threads {
-                    chunk = 1;
-                }
-                chunk
-            };
-            let num_chunks = (active_size as usize + chunk - 1) / chunk;
-            let mut segment_sum = vec![C::Scalar::ZERO; num_chunks];
             let mut grand_sum = iter::once(C::Scalar::ZERO)
                 .chain(log_derivatives_diff)
                 .take(active_size)
                 .collect::<Vec<_>>();
             // TODO: remove the implicit assumption that parallelize() split the grand_sum
             //      into segments that each has `chunk` elements except the last.
-            parallelize(&mut grand_sum, |segment_grand_sum, _| {
+            let segment_starts = parallelize_internal(&mut grand_sum, |segment_grand_sum, _| {
                 for i in 1..segment_grand_sum.len() {
                     segment_grand_sum[i] += segment_grand_sum[i - 1];
                 }
             });
-            for i in 1..segment_sum.len() {
-                segment_sum[i] = segment_sum[i - 1] + grand_sum[i * chunk - 1];
+            let mut segment_sum = vec![C::Scalar::ZERO; grand_sum.len()];
+            for i in 1..segment_starts.len() {
+                segment_sum[segment_starts[i]] =
+                    segment_sum[segment_starts[i - 1]] + grand_sum[segment_starts[i] - 1];
             }
             parallelize(&mut grand_sum, |grand_sum, start| {
-                let prefix_sum = segment_sum[start / chunk];
+                let prefix_sum = segment_sum[start];
                 for v in grand_sum.iter_mut() {
                     *v += prefix_sum;
                 }
@@ -479,6 +460,7 @@ impl<C: CurveAffine> Evaluated<C> {
     }
 }
 
+#[cfg(test)]
 mod benches {
     use ark_std::rand::thread_rng;
     use ff::Field;
@@ -498,7 +480,6 @@ mod benches {
             let n = 1 << log_n;
             let dur = Instant::now();
             let _table: BTreeMap<Fr, usize> = (0..n)
-                .into_iter()
                 .map(|_| Fr::random(&mut rng))
                 .enumerate()
                 .map(|(i, x)| (x, i))
@@ -514,7 +495,6 @@ mod benches {
             let n = 1 << log_n;
             let dur = Instant::now();
             let _table: BTreeMap<Fr, usize> = (0..n)
-                .into_iter()
                 .map(Fr::from)
                 .enumerate()
                 .map(|(i, x)| (x, i))

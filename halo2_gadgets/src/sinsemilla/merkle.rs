@@ -213,6 +213,8 @@ pub mod tests {
             MerkleConfig<TestHashDomain, TestCommitDomain, TestFixedBases>,
         );
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -380,7 +382,7 @@ pub mod tests {
         assert_eq!(prover.verify(), Ok(()))
     }
 
-    #[cfg(feature = "dev-graph")]
+    #[cfg(feature = "test-dev-graph")]
     #[test]
     fn print_merkle_chip() {
         use plotters::prelude::*;

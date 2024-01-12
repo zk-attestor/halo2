@@ -1,9 +1,7 @@
-use super::{
-    construct_intermediate_sets, ChallengeX1, ChallengeX2, ChallengeX3, ChallengeX4, Query,
-};
+use super::{construct_intermediate_sets, ChallengeX1, ChallengeX2, ChallengeX3, ChallengeX4};
 use crate::arithmetic::{eval_polynomial, kate_division, CurveAffine};
 use crate::poly::commitment::ParamsProver;
-use crate::poly::commitment::{Blind, Params, Prover};
+use crate::poly::commitment::{Blind, Prover};
 use crate::poly::ipa::commitment::{self, IPACommitmentScheme, ParamsIPA};
 use crate::poly::query::ProverQuery;
 use crate::poly::{Coeff, Polynomial};
@@ -109,7 +107,7 @@ impl<'params, C: CurveAffine> Prover<'params, IPACommitmentScheme<C>> for Prover
 
         let x_4: ChallengeX4<_> = transcript.squeeze_challenge_scalar();
 
-        let (p_poly, p_poly_blind) = q_polys.into_iter().zip(q_blinds.into_iter()).fold(
+        let (p_poly, p_poly_blind) = q_polys.into_iter().zip(q_blinds).fold(
             (q_prime_poly, q_prime_blind),
             |(q_prime_poly, q_prime_blind), (poly, blind)| {
                 (

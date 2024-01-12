@@ -166,7 +166,7 @@ mod private {
 pub trait SpongeMode: private::SealedSpongeMode {}
 
 /// The absorbing state of the `Sponge`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Absorbing<F, const RATE: usize>(pub(crate) SpongeRate<F, RATE>);
 
 /// The squeezing state of the `Sponge`.
@@ -188,6 +188,7 @@ impl<F: fmt::Debug, const RATE: usize> Absorbing<F, RATE> {
     }
 }
 
+#[derive(Clone)]
 /// A Poseidon sponge.
 pub(crate) struct Sponge<
     F: Field,
@@ -219,7 +220,7 @@ impl<F: Field, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
             state,
             mds_matrix,
             round_constants,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 
@@ -256,7 +257,7 @@ impl<F: Field, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
             state: self.state,
             mds_matrix: self.mds_matrix,
             round_constants: self.round_constants,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 }
@@ -329,6 +330,7 @@ impl<F: PrimeField, const RATE: usize, const L: usize> Domain<F, RATE> for Const
     }
 }
 
+#[derive(Clone)]
 /// A Poseidon hash function, built around a sponge.
 pub struct Hash<
     F: Field,
@@ -362,7 +364,7 @@ impl<F: Field, S: Spec<F, T, RATE>, D: Domain<F, RATE>, const T: usize, const RA
     pub fn init() -> Self {
         Hash {
             sponge: Sponge::new(D::initial_capacity_element()),
-            _domain: PhantomData::default(),
+            _domain: PhantomData,
         }
     }
 }

@@ -12,8 +12,7 @@ use super::{
         Selector,
     },
     evaluation::Evaluator,
-    permutation, Assigned, Challenge, Error, Expression, LagrangeCoeff, Polynomial, ProvingKey,
-    VerifyingKey,
+    permutation, Assigned, Challenge, Error, LagrangeCoeff, Polynomial, ProvingKey, VerifyingKey,
 };
 use crate::helpers::CopyCell;
 use crate::{
@@ -21,7 +20,7 @@ use crate::{
     circuit::Value,
     poly::{
         batch_invert_assigned,
-        commitment::{Blind, Params, MSM},
+        commitment::{Blind, Params},
         EvaluationDomain,
     },
     two_dim_vec_to_vec_of_slice,
@@ -29,6 +28,7 @@ use crate::{
 
 pub(crate) fn create_domain<C, ConcreteCircuit>(
     k: u32,
+    #[cfg(feature = "circuit-params")] params: ConcreteCircuit::Params,
 ) -> (
     EvaluationDomain<C::Scalar>,
     ConstraintSystem<C::Scalar>,
@@ -39,6 +39,9 @@ where
     ConcreteCircuit: Circuit<C::Scalar>,
 {
     let mut cs = ConstraintSystem::default();
+    #[cfg(feature = "circuit-params")]
+    let config = ConcreteCircuit::configure_with_params(&mut cs, params);
+    #[cfg(not(feature = "circuit-params"))]
     let config = ConcreteCircuit::configure(&mut cs);
 
     let cs = cs.chunk_lookups();
@@ -260,7 +263,7 @@ impl<'a, F: Field> Assignment<F> for Assembly<'a, F> {
             .fixed
             .get_mut(column.index())
             .and_then(|v| v.get_mut(row - self.rw_rows.start))
-            .ok_or(Error::BoundsFailure)? = to().into_field().assign()?;
+            .expect("bounds failure") = to().into_field().assign()?;
 
         Ok(())
     }
@@ -304,10 +307,7 @@ impl<'a, F: Field> Assignment<F> for Assembly<'a, F> {
             return Err(Error::not_enough_rows_available(self.k));
         }
 
-        let col = self
-            .fixed
-            .get_mut(column.index())
-            .ok_or(Error::BoundsFailure)?;
+        let col = self.fixed.get_mut(column.index()).expect("bounds failure");
 
         let filler = to.assign()?;
         for row in self.usable_rows.clone().skip(from_row) {
@@ -353,7 +353,11 @@ where
     ConcreteCircuit: Circuit<C::Scalar>,
     C::Scalar: FromUniformBytes<64>,
 {
-    let (domain, cs, config) = create_domain::<C, ConcreteCircuit>(params.k());
+    let (domain, cs, config) = create_domain::<C, ConcreteCircuit>(
+        params.k(),
+        #[cfg(feature = "circuit-params")]
+        circuit.params(),
+    );
 
     if (params.n() as usize) < cs.minimum_rows() {
         return Err(Error::not_enough_rows_available(params.k()));
@@ -478,7 +482,11 @@ where
     ConcreteCircuit: Circuit<C::Scalar>,
     C::Scalar: FromUniformBytes<64>,
 {
-    let (domain, cs, config) = create_domain::<C, ConcreteCircuit>(params.k());
+    let (domain, cs, config) = create_domain::<C, ConcreteCircuit>(
+        params.k(),
+        #[cfg(feature = "circuit-params")]
+        circuit.params(),
+    );
 
     if (params.n() as usize) < cs.minimum_rows() {
         return Err(Error::not_enough_rows_available(params.k()));

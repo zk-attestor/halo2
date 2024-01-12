@@ -1,19 +1,13 @@
 mod prover;
 mod verifier;
 
-use crate::{
-    arithmetic::{eval_polynomial, lagrange_interpolate, CurveAffine},
-    poly::{query::Query, Coeff, Polynomial},
-    transcript::ChallengeScalar,
-};
+use crate::multicore::IntoParallelIterator;
+#[cfg(feature = "multicore")]
+use crate::multicore::ParallelIterator;
+use crate::{poly::query::Query, transcript::ChallengeScalar};
 use ff::Field;
 pub use prover::ProverSHPLONK;
-use rayon::prelude::*;
-use std::{
-    collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
-    marker::PhantomData,
-    sync::Arc,
-};
+use std::collections::BTreeSet;
 pub use verifier::VerifierSHPLONK;
 
 #[derive(Clone, Copy, Debug)]
@@ -126,7 +120,8 @@ where
                 .into_par_iter()
                 .map(|commitment| {
                     let evals: Vec<F> = rotations_vec
-                        .par_iter()
+                        .as_slice()
+                        .into_par_iter()
                         .map(|&&rotation| get_eval(commitment, rotation))
                         .collect();
                     Commitment((commitment, evals))
@@ -148,18 +143,10 @@ where
 
 #[cfg(test)]
 mod proptests {
-    use proptest::{
-        collection::vec,
-        prelude::*,
-        sample::{select, subsequence},
-        strategy::Strategy,
-    };
-
     use super::{construct_intermediate_sets, Commitment, IntermediateSets};
-    use crate::poly::Rotation;
-    use ff::{Field, FromUniformBytes};
+    use ff::FromUniformBytes;
     use halo2curves::pasta::Fp;
-    use std::collections::BTreeMap;
+    use proptest::{collection::vec, prelude::*, sample::select};
     use std::convert::TryFrom;
 
     #[derive(Debug, Clone)]
@@ -212,7 +199,7 @@ mod proptests {
             col_indices in vec(select((0..num_cols).collect::<Vec<_>>()), num_queries),
             point_indices in vec(select((0..num_points).collect::<Vec<_>>()), num_queries)
         ) -> Vec<(usize, usize)> {
-            col_indices.into_iter().zip(point_indices.into_iter()).collect()
+            col_indices.into_iter().zip(point_indices).collect()
         }
     }
 

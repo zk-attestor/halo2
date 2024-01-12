@@ -7,17 +7,13 @@
 
 use blake2b_simd::Params as Blake2bParams;
 use group::ff::{Field, FromUniformBytes, PrimeField};
-use halo2curves::pairing::Engine;
 
 use crate::arithmetic::CurveAffine;
 use crate::helpers::{
     polynomial_slice_byte_length, read_polynomial_vec, write_polynomial_slice, SerdeCurveAffine,
     SerdePrimeField,
 };
-use crate::poly::{
-    commitment::Params, Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff,
-    PinnedEvaluationDomain, Polynomial,
-};
+use crate::poly::{Coeff, EvaluationDomain, LagrangeCoeff, PinnedEvaluationDomain, Polynomial};
 use crate::transcript::{ChallengeScalar, EncodedChallenge, Transcript};
 use crate::SerdeFormat;
 
@@ -29,7 +25,8 @@ mod keygen;
 #[allow(dead_code)]
 mod lookup;
 mod mv_lookup;
-pub(crate) mod permutation;
+pub mod permutation;
+mod shuffle;
 mod vanishing;
 
 mod prover;
@@ -106,11 +103,16 @@ where
     pub fn read<R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
         reader: &mut R,
         format: SerdeFormat,
+        #[cfg(feature = "circuit-params")] params: ConcreteCircuit::Params,
     ) -> io::Result<Self> {
         let mut k = [0u8; 4];
         reader.read_exact(&mut k)?;
         let k = u32::from_be_bytes(k);
-        let (domain, cs, _) = keygen::create_domain::<C, ConcreteCircuit>(k);
+        let (domain, cs, _) = keygen::create_domain::<C, ConcreteCircuit>(
+            k,
+            #[cfg(feature = "circuit-params")]
+            params,
+        );
         let mut num_fixed_columns = [0u8; 4];
         reader.read_exact(&mut num_fixed_columns)?;
         let num_fixed_columns = u32::from_be_bytes(num_fixed_columns);
@@ -147,8 +149,14 @@ where
     pub fn from_bytes<ConcreteCircuit: Circuit<C::Scalar>>(
         mut bytes: &[u8],
         format: SerdeFormat,
+        #[cfg(feature = "circuit-params")] params: ConcreteCircuit::Params,
     ) -> io::Result<Self> {
-        Self::read::<_, ConcreteCircuit>(&mut bytes, format)
+        Self::read::<_, ConcreteCircuit>(
+            &mut bytes,
+            format,
+            #[cfg(feature = "circuit-params")]
+            params,
+        )
     }
 }
 
@@ -159,14 +167,13 @@ where
     fn bytes_length(&self) -> usize {
         8 + (self.fixed_commitments.len() * C::default().to_bytes().as_ref().len())
             + self.permutation.bytes_length()
-        /*
-        + self.selectors.len()
-            * (self
-                .selectors
-                .get(0)
-                .map(|selector| selector.len() / 8 + 1)
-                .unwrap_or(0))
-                */
+        // scroll/halo2: we don’t need to store
+        // + self.selectors.len()
+        //     * (self
+        //         .selectors
+        //         .get(0)
+        //         .map(|selector| (selector.len() + 7) / 8)
+        //         .unwrap_or(0))
     }
 
     fn from_parts(
@@ -174,8 +181,11 @@ where
         fixed_commitments: Vec<C>,
         permutation: permutation::VerifyingKey<C>,
         cs: ConstraintSystem<C::Scalar>,
-        //selectors: Vec<Vec<bool>>,
-    ) -> Self {
+        // selectors: Vec<Vec<bool>>,
+    ) -> Self
+    where
+        C::ScalarExt: FromUniformBytes<64>,
+    {
         // Compute cached values.
         let cs_degree = cs.degree();
 
@@ -242,6 +252,11 @@ where
     /// Returns `ConstraintSystem`
     pub fn cs(&self) -> &ConstraintSystem<C::Scalar> {
         &self.cs
+    }
+
+    /// Returns representative of this `VerifyingKey` in transcripts
+    pub fn transcript_repr(&self) -> C::Scalar {
+        self.transcript_repr
     }
 }
 
@@ -333,8 +348,14 @@ where
     pub fn read<R: io::Read, ConcreteCircuit: Circuit<C::Scalar>>(
         reader: &mut R,
         format: SerdeFormat,
+        #[cfg(feature = "circuit-params")] params: ConcreteCircuit::Params,
     ) -> io::Result<Self> {
-        let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(reader, format)?;
+        let vk = VerifyingKey::<C>::read::<R, ConcreteCircuit>(
+            reader,
+            format,
+            #[cfg(feature = "circuit-params")]
+            params,
+        )?;
         let l0 = Polynomial::read(reader, format)?;
         let l_last = Polynomial::read(reader, format)?;
         let l_active_row = Polynomial::read(reader, format)?;
@@ -367,8 +388,14 @@ where
     pub fn from_bytes<ConcreteCircuit: Circuit<C::Scalar>>(
         mut bytes: &[u8],
         format: SerdeFormat,
+        #[cfg(feature = "circuit-params")] params: ConcreteCircuit::Params,
     ) -> io::Result<Self> {
-        Self::read::<_, ConcreteCircuit>(&mut bytes, format)
+        Self::read::<_, ConcreteCircuit>(
+            &mut bytes,
+            format,
+            #[cfg(feature = "circuit-params")]
+            params,
+        )
     }
 }
 

@@ -8,10 +8,7 @@ use crate::{
 
 use super::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation};
 use ff::WithSmallOrderMulGroup;
-use group::{
-    ff::{BatchInvert, Field, PrimeField},
-    Group,
-};
+use group::ff::{BatchInvert, Field};
 
 use std::marker::PhantomData;
 
@@ -54,6 +51,9 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             extended_k += 1;
         }
 
+        // ensure extended_k <= S
+        assert!(extended_k <= F::S);
+
         let mut extended_omega = F::ROOT_OF_UNITY;
 
         // Get extended_omega, the 2^{extended_k}'th root of unity
@@ -88,8 +88,8 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         {
             // Compute the evaluations of t(X) = X^n - 1 in the coset evaluation domain.
             // We don't have to compute all of them, because it will repeat.
-            let orig = F::ZETA.pow_vartime(&[n as u64, 0, 0, 0]);
-            let step = extended_omega.pow_vartime(&[n as u64, 0, 0, 0]);
+            let orig = F::ZETA.pow_vartime([n, 0, 0, 0]);
+            let step = extended_omega.pow_vartime([n, 0, 0, 0]);
             let mut cur = orig;
             loop {
                 t_evaluations.push(cur);
@@ -175,7 +175,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         &self,
         values: Vec<Polynomial<F, LagrangeCoeff>>,
     ) -> Polynomial<F, ExtendedLagrangeCoeff> {
-        assert_eq!(values.len(), (self.extended_len() >> self.k) as usize);
+        assert_eq!(values.len(), (self.extended_len() >> self.k));
         assert_eq!(values[0].len(), self.n as usize);
 
         // transpose the values in parallel
@@ -456,10 +456,10 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     ///
     fn distribute_powers(&self, a: &mut [F], c: F) {
         parallelize(a, |a, index| {
-            let mut c_power = c.pow_vartime(&[index as u64, 0, 0, 0]);
+            let mut c_power = c.pow_vartime([index as u64, 0, 0, 0]);
             for a in a {
-                *a = *a * c_power;
-                c_power = c_power * c;
+                *a *= &c_power;
+                c_power *= c;
             }
         });
     }
@@ -651,17 +651,17 @@ fn test_l_i() {
     let mut l = vec![];
     let mut points = vec![];
     for i in 0..8 {
-        points.push(domain.omega.pow(&[i, 0, 0, 0]));
+        points.push(domain.omega.pow([i]));
     }
     for i in 0..8 {
-        let mut l_i = vec![Scalar::zero(); 8];
+        let mut l_i = vec![Scalar::ZERO; 8];
         l_i[i] = Scalar::ONE;
         let l_i = lagrange_interpolate(&points[..], &l_i[..]);
         l.push(l_i);
     }
 
     let x = Scalar::random(OsRng);
-    let xn = x.pow(&[8, 0, 0, 0]);
+    let xn = x.pow([8]);
 
     let evaluations = domain.l_i_range(x, xn, -7..=7);
     for i in 0..8 {

@@ -8,7 +8,7 @@ authors = [
     "Jack Grigg <jack@electriccoin.co>",
 ]
 edition = "2021"
-rust-version = "1.56.1"
+rust-version = "1.66.0"
 description = """
 Fast PLONK-based zero-knowledge proving system with no trusted setup
 """
@@ -48,24 +48,26 @@ name = "fft"
 harness = false
 
 [dependencies]
-backtrace = { version = "0.3", optional = true }
 rayon = "1.5.1"
+backtrace = { version = "0.3", optional = true }
 ff = "0.13"
 group = "0.13"
 halo2curves = { version = "0.1.0", features = [ "derive_serde" ] }
 rand_core = { version = "0.6", default-features = false }
 tracing = "0.1"
-blake2b_simd = "1"
+blake2b_simd = "1" # MSRV 1.66.0
 sha3 = "0.9.1"
 subtle = "2.3"
 cfg-if = "0.1"
 poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "main" }
 num-integer = "0.1"
 num-bigint = { version = "0.4", features = ["rand"] }
+rand_chacha = "0.3"
+maybe-rayon = { version = "0.1.0", default-features = false }
 
 crossbeam = "0.8.0"
 # Developer tooling dependencies
-plotters = { version = "0.3.0", optional = true }
+plotters = { version = "0.3.0", default-features = false, optional = true }
 tabbycat = { version = "0.1", features = ["attributes"], optional = true }
 lazy_static = { version = "1", optional = true }
 log = "0.4.17"
@@ -73,6 +75,9 @@ log = "0.4.17"
 # timer
 ark-std = { version = "0.3.0" }
 
+
+# Legacy circuit compatibility
+halo2_legacy_pdqsort = { version = "0.1.0", optional = true }
 
 [dev-dependencies]
 assert_matches = "1.5"
@@ -86,23 +91,35 @@ rand_core = { version = "0.6", default-features = false, features = ["getrandom"
 getrandom = { version = "0.2", features = ["js"] }
 
 [features]
-default = ["batch", "gwc", "logup_skip_inv"]
+default = ["batch", "gwc", "multicore", "parallel_syn", "logup_skip_inv"]
+multicore = ["maybe-rayon/threads"]
 dev-graph = ["plotters", "tabbycat"]
+test-dev-graph = [
+    "dev-graph",
+    "plotters/bitmap_backend",
+    "plotters/bitmap_encoder",
+    "plotters/ttf",
+]
 gadget-traces = ["backtrace"]
+thread-safe-region = []
 sanity-checks = []
 batch = ["rand_core/getrandom"]
 shplonk = []
 gwc = []
 parallel_syn = []
-phase-check = []
 profile = ["ark-std/print-trace"]
 counter = ["lazy_static"]
 mock-batch-inv = []
+circuit-params = []
 logup_skip_inv = []
+
+# todo: we have both mutliphase prover and phase check. consider merge them
+phase-check = []
+multiphase-mock-prover = []
 
 [lib]
 bench = false
 
 [[example]]
 name = "circuit-layout"
-required-features = ["dev-graph"]
+required-features = ["test-dev-graph"]
