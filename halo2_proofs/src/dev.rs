@@ -7,6 +7,8 @@ use std::ops::{Add, Mul, Neg, Range};
 use std::sync::Arc;
 
 use blake2b_simd::blake2b;
+#[cfg(feature = "mock-batch-inv")]
+use ff::BatchInvert;
 use ff::Field;
 use ff::FromUniformBytes;
 
