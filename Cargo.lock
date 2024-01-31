@@ -828,7 +828,7 @@ dependencies = [
 
 [[package]]
 name = "halo2_gadgets"
-version = "0.2.0"
+version = "1.1.0"
 dependencies = [
  "arrayvec 0.7.2",
  "bitvec",
@@ -854,7 +854,7 @@ checksum = "47716fe1ae67969c5e0b2ef826f32db8c3be72be325e1aa3c1951d06b5575ec5"
 
 [[package]]
 name = "halo2_proofs"
-version = "0.2.0"
+version = "1.1.0"
 dependencies = [
  "ark-std",
  "assert_matches",

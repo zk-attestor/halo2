@@ -1585,6 +1585,7 @@ impl<F: Field> Gate<F> {
 /// TODO doc
 #[derive(Debug, Clone)]
 pub struct LookupTracker<F: Field> {
+    pub(crate) name: String,
     pub(crate) table: Vec<Expression<F>>,
     pub(crate) inputs: Vec<Vec<Expression<F>>>,
 }
@@ -1779,8 +1780,7 @@ impl<F: Field> ConstraintSystem<F> {
     /// they need to match.
     pub fn lookup<S: AsRef<str>>(
         &mut self,
-        // FIXME use name in debug messages
-        _name: S,
+        name: S,
         table_map: impl FnOnce(&mut VirtualCells<'_, F>) -> Vec<(Expression<F>, TableColumn)>,
     ) {
         let mut cells = VirtualCells::new(self);
@@ -1804,6 +1804,7 @@ impl<F: Field> ConstraintSystem<F> {
             .entry(table_expressions_identifier)
             .and_modify(|table_tracker| table_tracker.inputs.push(input_expressions.clone()))
             .or_insert(LookupTracker {
+                name: name.as_ref().to_string(),
                 table: table_expressions,
                 inputs: vec![input_expressions],
             });
@@ -1845,9 +1846,10 @@ impl<F: Field> ConstraintSystem<F> {
 
         let mut lookups: Vec<_> = vec![];
         for v in self.lookups_map.values() {
-            let LookupTracker { table, inputs } = v;
+            let LookupTracker { table, inputs, name } = v;
+            let name = Box::leak(name.clone().into_boxed_str());
             let mut args = vec![super::mv_lookup::Argument::new(
-                "lookup",
+                name,
                 table,
                 &[inputs[0].clone()],
             )];
@@ -1868,7 +1870,7 @@ impl<F: Field> ConstraintSystem<F> {
 
                 if !indicator {
                     args.push(super::mv_lookup::Argument::new(
-                        "dummy",
+                        name,
                         table,
                         &[input.clone()],
                     ))
@@ -1886,8 +1888,7 @@ impl<F: Field> ConstraintSystem<F> {
     /// they need to match.
     pub fn lookup_any<S: AsRef<str>>(
         &mut self,
-        // FIXME use name in debug messages
-        _name: S,
+        name: S,
         table_map: impl FnOnce(&mut VirtualCells<'_, F>) -> Vec<(Expression<F>, Expression<F>)>,
     ) {
         let mut cells = VirtualCells::new(self);
@@ -1903,6 +1904,7 @@ impl<F: Field> ConstraintSystem<F> {
             .entry(table_expressions_identifier)
             .and_modify(|table_tracker| table_tracker.inputs.push(input_expressions.clone()))
             .or_insert(LookupTracker {
+                name: name.as_ref().to_string(),
                 table: table_expressions,
                 inputs: vec![input_expressions],
             });
