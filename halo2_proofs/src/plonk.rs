@@ -42,6 +42,8 @@ use evaluation::Evaluator;
 
 use std::io;
 
+const VERIFYING_KEY_VERSION: u8 = 0x03;
+
 /// This is a verifying key which allows for the verification of proofs for a
 /// particular circuit.
 #[derive(Clone, Debug)]
@@ -74,7 +76,7 @@ where
     /// WITHOUT performing the expensive Montgomery reduction.
     pub fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
         // Version byte that will be checked on read.
-        writer.write_all(&[0x02])?;
+        writer.write_all(&[VERIFYING_KEY_VERSION])?;
         writer.write_all(&self.domain.k().to_le_bytes())?;
         writer.write_all(&[self.compress_selectors as u8])?;
         writer.write_all(&(self.fixed_commitments.len() as u32).to_le_bytes())?;
@@ -113,7 +115,7 @@ where
     ) -> io::Result<Self> {
         let mut version_byte = [0u8; 1];
         reader.read_exact(&mut version_byte)?;
-        if 0x02 != version_byte[0] {
+        if VERIFYING_KEY_VERSION != version_byte[0] {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "unexpected version byte",
