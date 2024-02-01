@@ -3,14 +3,15 @@
 #[cfg(feature = "profile")]
 use ark_std::{end_timer, start_timer};
 use ff::{Field, PrimeField, WithSmallOrderMulGroup};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 #[cfg(not(feature = "logup_skip_inv"))]
 use rayon::slice::ParallelSlice;
 
 #[cfg(not(feature = "logup_skip_inv"))]
 use crate::arithmetic::par_invert;
-use crate::multicore::{self, IntoParallelIterator, ParallelIterator};
 use crate::{
     arithmetic::{parallelize, CurveAffine},
+    multicore,
     plonk::{mv_lookup, permutation, Any, ProvingKey},
     poly::{Basis, Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation},
 };
