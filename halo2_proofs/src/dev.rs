@@ -195,7 +195,7 @@ fn batch_invert_cellvalues<F: Field>(cell_values: &mut [Vec<CellValue<F>>]) {
         })
         .collect::<Vec<_>>();
 
-    log::info!(
+    log::debug!(
         "num of denominators: {} / {}",
         mut_denominators.len(),
         denominators_len
