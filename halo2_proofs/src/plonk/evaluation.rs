@@ -2,6 +2,8 @@
 
 #[cfg(feature = "profile")]
 use ark_std::{end_timer, start_timer};
+#[cfg(not(feature = "logup_skip_inv"))]
+use ff::BatchInvert;
 use ff::{Field, PrimeField, WithSmallOrderMulGroup};
 
 use crate::multicore::{self, IntoParallelIterator, ParallelIterator};
@@ -545,7 +547,7 @@ impl<C: CurveAffine> Evaluator<C> {
                                                 &gamma,
                                                 &theta,
                                                 &y,
-                                                &C::ScalarExt::zero(),
+                                                &C::ScalarExt::ZERO,
                                                 idx,
                                                 rot_scale,
                                                 isize,
@@ -572,7 +574,7 @@ impl<C: CurveAffine> Evaluator<C> {
                                     inputs_values_for_extended_domain
                                         [i * inputs_len..(i + 1) * inputs_len]
                                         .iter()
-                                        .fold(C::Scalar::zero(), |acc, x| acc + x)
+                                        .fold(C::Scalar::ZERO, |acc, x| acc + x)
                                 })
                                 .collect::<Vec<_>>()
                         })

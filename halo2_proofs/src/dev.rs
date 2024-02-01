@@ -610,7 +610,7 @@ impl<F: FromUniformBytes<64> + Ord> MockProver<F> {
         let config = ConcreteCircuit::configure_with_params(&mut cs, circuit.params());
         #[cfg(not(feature = "circuit-params"))]
         let config = ConcreteCircuit::configure(&mut cs);
-        let cs = cs;
+        let cs = cs.chunk_lookups();
 
         assert!(
             n >= cs.minimum_rows(),
@@ -620,7 +620,9 @@ impl<F: FromUniformBytes<64> + Ord> MockProver<F> {
             k,
         );
 
-        assert_eq!(instance.len(), cs.num_instance_columns);
+        if instance.len() != cs.num_instance_columns {
+            return Err(Error::InvalidInstances);
+        }
 
         let instance = instance
             .into_iter()

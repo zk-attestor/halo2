@@ -113,6 +113,7 @@ batch = ["rand/getrandom"]
 profile = ["dep:ark-std"]
 asm = ["halo2curves/asm"]
 circuit-params = []
+counter = ["lazy_static"]
 logup_skip_inv = []
 
 [lib]
