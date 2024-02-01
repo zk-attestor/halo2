@@ -12,7 +12,7 @@ use rayon::prelude::{
     IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator, ParallelSliceMut,
 };
 
-use crate::plonk::evaluation::evaluate;
+use crate::{arithmetic::parallelize_naive, plonk::evaluation::evaluate};
 use crate::{
     arithmetic::{eval_polynomial, par_invert, parallelize, CurveAffine},
     poly::{
@@ -64,7 +64,7 @@ impl<F: PrimeField + WithSmallOrderMulGroup<3> + Ord> Argument<F> {
         fixed_values: &'a [Polynomial<C::Scalar, LagrangeCoeff>],
         instance_values: &'a [Polynomial<C::Scalar, LagrangeCoeff>],
         challenges: &'a [C::Scalar],
-        rng: R, // in case we want to blind (do we actually need zk?)
+        #[allow(unused_mut)] mut rng: R, // in case we want to blind (do we actually need zk?)
         transcript: &mut T,
     ) -> Result<Prepared<C>, Error>
     where
@@ -336,9 +336,10 @@ impl<C: CurveAffine> Prepared<C> {
                 .chain(log_derivatives_diff)
                 .take(active_size)
                 .collect::<Vec<_>>();
-            // TODO: remove the implicit assumption that parallelize() split the grand_sum
+            // TODO: remove the implicit assumption that parallelize_naive() split the grand_sum
             //      into segments that each has `chunk` elements except the last.
-            parallelize(&mut grand_sum, |segment_grand_sum, _| {
+            // !! Do not use `parallelize()` here because it breaks the above assumption. !!
+            parallelize_naive(&mut grand_sum, |segment_grand_sum, _| {
                 for i in 1..segment_grand_sum.len() {
                     segment_grand_sum[i] += segment_grand_sum[i - 1];
                 }
@@ -346,7 +347,7 @@ impl<C: CurveAffine> Prepared<C> {
             for i in 1..segment_sum.len() {
                 segment_sum[i] = segment_sum[i - 1] + grand_sum[i * chunk - 1];
             }
-            parallelize(&mut grand_sum, |grand_sum, start| {
+            parallelize_naive(&mut grand_sum, |grand_sum, start| {
                 let prefix_sum = segment_sum[start / chunk];
                 for v in grand_sum.iter_mut() {
                     *v += prefix_sum;

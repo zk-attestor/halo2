@@ -377,6 +377,37 @@ pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mu
                 scope.spawn(move |_| f(chunk, offset));
             }
         }
+    });
+}
+
+/// This simple utility function will parallelize an operation that is to be
+/// performed over a mutable slice.
+/// This naive version will have all chunks except the last one of the same size.
+/// !! This is important for the mv_lookup prover parallel scan implementation at the moment. !!
+pub(crate) fn parallelize_naive<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(
+    v: &mut [T],
+    f: F,
+) -> Vec<usize> {
+    let n = v.len();
+    let num_threads = multicore::current_num_threads();
+    let mut chunk = n / num_threads;
+    if chunk < num_threads {
+        chunk = 1;
+    }
+
+    multicore::scope(|scope| {
+        let mut chunk_starts = vec![];
+        for (chunk_num, v) in v.chunks_mut(chunk).enumerate() {
+            let f = f.clone();
+            scope.spawn(move |_| {
+                let start = chunk_num * chunk;
+                f(v, start);
+            });
+            let start = chunk_num * chunk;
+            chunk_starts.push(start);
+        }
+
+        chunk_starts
     })
 }
 

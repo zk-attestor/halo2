@@ -2,10 +2,12 @@
 
 #[cfg(feature = "profile")]
 use ark_std::{end_timer, start_timer};
-#[cfg(not(feature = "logup_skip_inv"))]
-use ff::BatchInvert;
 use ff::{Field, PrimeField, WithSmallOrderMulGroup};
+#[cfg(not(feature = "logup_skip_inv"))]
+use rayon::slice::ParallelSlice;
 
+#[cfg(not(feature = "logup_skip_inv"))]
+use crate::arithmetic::par_invert;
 use crate::multicore::{self, IntoParallelIterator, ParallelIterator};
 use crate::{
     arithmetic::{parallelize, CurveAffine},
@@ -562,20 +564,13 @@ impl<C: CurveAffine> Evaluator<C> {
                                     .flatten()
                                     .collect();
 
-                            parallelize(&mut inputs_values_for_extended_domain, |values, _| {
-                                values.batch_invert();
-                            });
+                            par_invert(&mut inputs_values_for_extended_domain);
 
                             let inputs_len = inputs_lookup_evaluator.len();
 
-                            (0..size)
-                                .into_par_iter()
-                                .map(|i| {
-                                    inputs_values_for_extended_domain
-                                        [i * inputs_len..(i + 1) * inputs_len]
-                                        .iter()
-                                        .fold(C::Scalar::ZERO, |acc, x| acc + x)
-                                })
+                            inputs_values_for_extended_domain
+                                .par_chunks_exact(inputs_len)
+                                .map(|values| values.iter().sum())
                                 .collect::<Vec<_>>()
                         })
                         .collect();
