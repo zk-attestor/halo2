@@ -20,6 +20,11 @@ jobs:
         with:
           command: test
           args: --verbose --release --all --all-features
+      - name: Bench lookup
+        uses: actions-rs/cargo@v1
+        with:
+          command: bench
+          args: --bench lookups
 
   build:
     name: Build target ${{ matrix.target }}
