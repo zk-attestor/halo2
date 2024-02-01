@@ -983,7 +983,8 @@ fn plonk_api() {
     }"#####
                 );
             }
-        }*/
+        }
+    */
 
     //test_plonk_api_ipa();
     test_plonk_api_gwc();

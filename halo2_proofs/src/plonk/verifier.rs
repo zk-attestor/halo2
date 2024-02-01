@@ -122,13 +122,13 @@ where
     // Sample theta challenge for keeping lookup columns linearly independent
     let theta: ChallengeTheta<_> = transcript.squeeze_challenge_scalar();
 
-    let lookups_permuted = (0..num_proofs)
+    let lookups_prepared = (0..num_proofs)
         .map(|_| -> Result<Vec<_>, _> {
-            // Hash each lookup permuted commitment
+            // Hash each lookup prepared commitment
             vk.cs
                 .lookups
                 .iter()
-                .map(|argument| argument.read_permuted_commitments(transcript))
+                .map(|argument| argument.read_prepared_commitments(transcript))
                 .collect::<Result<Vec<_>, _>>()
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -146,13 +146,13 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let lookups_committed = lookups_permuted
+    let lookups_committed = lookups_prepared
         .into_iter()
         .map(|lookups| {
-            // Hash each lookup product commitment
+            // Hash each lookup sum commitment
             lookups
                 .into_iter()
-                .map(|lookup| lookup.read_product_commitment(transcript))
+                .map(|lookup| lookup.read_grand_sum_commitment(transcript))
                 .collect::<Result<Vec<_>, _>>()
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -306,7 +306,6 @@ where
                                 argument,
                                 theta,
                                 beta,
-                                gamma,
                                 advice_evals,
                                 fixed_evals,
                                 instance_evals,

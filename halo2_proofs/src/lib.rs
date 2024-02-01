@@ -12,6 +12,15 @@
 // #![deny(unsafe_code)]
 #![feature(associated_type_defaults)]
 
+#[cfg(feature = "counter")]
+use std::{collections::BTreeMap, sync::Mutex};
+
+#[cfg(feature = "counter")]
+lazy_static::lazy_static! {
+    static ref FFT_COUNTER: Mutex<BTreeMap<usize, usize>> = Mutex::new(BTreeMap::new());
+    static ref MSM_COUNTER: Mutex<BTreeMap<usize, usize>> = Mutex::new(BTreeMap::new());
+}
+
 pub mod arithmetic;
 pub mod circuit;
 pub use halo2curves;
