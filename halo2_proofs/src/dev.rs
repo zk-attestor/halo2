@@ -7,8 +7,9 @@ use std::ops::{Add, Mul, Neg, Range};
 use std::sync::Arc;
 
 use blake2b_simd::blake2b;
-#[cfg(feature = "mock-batch-inv")]
+#[cfg(any(feature = "mock-batch-inv", feature = "multiphase-mock-prover"))]
 use ff::BatchInvert;
+
 use ff::Field;
 use ff::FromUniformBytes;
 
@@ -23,8 +24,6 @@ use crate::{
 
 #[cfg(feature = "multiphase-mock-prover")]
 use crate::{plonk::sealed::SealedPhase, plonk::FirstPhase, plonk::Phase};
-#[cfg(feature = "multiphase-mock-prover")]
-use ff::BatchInvert;
 
 #[cfg(feature = "multicore")]
 use crate::multicore::{
@@ -427,7 +426,8 @@ impl<F: Field> Mul<F> for Value<F> {
 pub struct MockProver<'a, F: Field> {
     k: u32,
     n: u32,
-    cs: ConstraintSystem<F>,
+    // use Arc type to reduce cs.clone when fork lots of time.
+    cs: Arc<ConstraintSystem<F>>,
 
     /// The regions in the circuit.
     regions: Vec<Region>,
@@ -444,7 +444,8 @@ pub struct MockProver<'a, F: Field> {
     // This field is used only if the "phase_check" feature is turned on.
     advice_prev: Vec<Vec<CellValue<F>>>,
     // The instance cells in the circuit, arranged as [column][row].
-    instance: Vec<Vec<InstanceValue<F>>>,
+    // use Arc type to reduce instance.clone when fork lots of time.
+    instance: Arc<Vec<Vec<InstanceValue<F>>>>,
 
     selectors_vec: Arc<Vec<Vec<bool>>>,
     selectors: Vec<&'a mut [bool]>,
@@ -847,6 +848,7 @@ impl<'a, F: Field> Assignment<F> for MockProver<'a, F> {
         let advice_anno = anno().into();
         #[cfg(not(feature = "mock-batch-inv"))]
         let val_res = to().into_field().evaluate().assign();
+
         #[cfg(feature = "mock-batch-inv")]
         let val_res = to().into_field().assign();
         if val_res.is_err() {
@@ -1084,13 +1086,13 @@ impl<'a, F: FromUniformBytes<64> + Ord> MockProver<'a, F> {
         instance: Vec<Vec<F>>,
     ) -> Result<Self, Error> {
         let n = 1 << k;
-
         let mut cs = ConstraintSystem::default();
         #[cfg(feature = "circuit-params")]
         let config = ConcreteCircuit::configure_with_params(&mut cs, circuit.params());
         #[cfg(not(feature = "circuit-params"))]
         let config = ConcreteCircuit::configure(&mut cs);
         let cs = cs.chunk_lookups();
+        let cs = Arc::new(cs);
 
         assert!(
             n >= cs.minimum_rows(),
@@ -1122,6 +1124,7 @@ impl<'a, F: FromUniformBytes<64> + Ord> MockProver<'a, F> {
             })
             .collect::<Vec<_>>();
 
+        let instance = Arc::new(instance);
         // Fixed columns contain no blinding factors.
         let fixed_vec = Arc::new(vec![vec![CellValue::Unassigned; n]; cs.num_fixed_columns]);
         let fixed = two_dim_vec_to_vec_of_slice!(fixed_vec);
@@ -1260,11 +1263,10 @@ impl<'a, F: FromUniformBytes<64> + Ord> MockProver<'a, F> {
             ConcreteCircuit::FloorPlanner::synthesize(&mut prover, circuit, config, constants)?;
             log::info!("MockProver synthesize took {:?}", syn_time.elapsed());
         }
-
-        let (cs, selector_polys) = prover
-            .cs
-            .compress_selectors(prover.selectors_vec.as_ref().clone());
-        prover.cs = cs;
+        let prover_cs = Arc::try_unwrap(prover.cs).unwrap();
+        let (cs, selector_polys) =
+            prover_cs.compress_selectors(prover.selectors_vec.as_ref().clone());
+        prover.cs = Arc::new(cs);
 
         // batch invert
         #[cfg(feature = "mock-batch-inv")]
