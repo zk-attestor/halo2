@@ -1583,11 +1583,20 @@ impl<F: Field> Gate<F> {
 }
 
 /// TODO doc
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LookupTracker<F: Field> {
     pub(crate) name: String,
     pub(crate) table: Vec<Expression<F>>,
     pub(crate) inputs: Vec<Vec<Expression<F>>>,
+}
+
+impl<F: Field> std::fmt::Debug for LookupTracker<F> where F: std::fmt::Debug {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LookupTracker")
+            .field("table", &self.table)
+            .field("inputs", &self.inputs)
+            .finish()
+    }
 }
 
 /// This is a description of the circuit environment, such as the gate, column and

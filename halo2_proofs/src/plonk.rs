@@ -212,7 +212,7 @@ where
 
         // Hash in final Blake2bState
         vk.transcript_repr = C::Scalar::from_uniform_bytes(hasher.finalize().as_array());
-
+        log::info!("vk.transcript_repr {:?}", vk.transcript_repr);
         vk
     }
 
