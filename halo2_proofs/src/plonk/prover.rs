@@ -451,12 +451,15 @@ where
                 };
 
                 // Synthesize the circuit to obtain the witness and other information.
+
+                log::info!("create_proof synthesize phase {current_phase:?} begin");
                 ConcreteCircuit::FloorPlanner::synthesize(
                     &mut witness,
                     circuit,
                     config.clone(),
                     meta.constants.clone(),
                 )?;
+                log::info!("create_proof synthesize phase {current_phase:?} end");
 
                 #[cfg(feature = "phase-check")]
                 {

@@ -1590,7 +1590,10 @@ pub struct LookupTracker<F: Field> {
     pub(crate) inputs: Vec<Vec<Expression<F>>>,
 }
 
-impl<F: Field> std::fmt::Debug for LookupTracker<F> where F: std::fmt::Debug {
+impl<F: Field> std::fmt::Debug for LookupTracker<F>
+where
+    F: std::fmt::Debug,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LookupTracker")
             .field("table", &self.table)
