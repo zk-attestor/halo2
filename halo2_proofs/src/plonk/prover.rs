@@ -569,7 +569,7 @@ where
                 .lookups
                 .iter()
                 .map(|lookup| {
-                    lookup.prepare(
+                    let r = lookup.prepare(
                         pk,
                         params,
                         domain,
@@ -580,7 +580,11 @@ where
                         &challenges,
                         &mut rng,
                         transcript,
-                    )
+                    );
+                    if r.is_err() {
+                        log::error!("lookup {} prepare failed {:?}", lookup.name, r);
+                    }
+                    r
                 })
                 .collect();
             end_timer!(lookup_get_mx_time);
