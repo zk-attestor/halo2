@@ -110,8 +110,6 @@ pub fn eval_polynomial<F: Field>(poly: &[F], point: F) -> F {
 /// This computes the inner product of two vectors `a` and `b`.
 ///
 /// This function will panic if the two vectors are not the same size.
-/// For vectors smaller than 32 elements, it uses sequential computation for better performance.
-/// For larger vectors, it switches to parallel computation using multiple threads.
 pub fn compute_inner_product<F: Field>(a: &[F], b: &[F]) -> F {
     assert_eq!(a.len(), b.len());
     
@@ -124,20 +122,9 @@ pub fn compute_inner_product<F: Field>(a: &[F], b: &[F]) -> F {
         return acc;
     }
 
-    // Use parallel computation for large vectors
-    let mut products = vec![F::ZERO; a.len()];
-    parallelize(&mut products, |products, chunk_size| {
-        for (((a, b), product), i) in a
-            .chunks(chunk_size)
-            .zip(b.chunks(chunk_size))
-            .zip(products)
-            .zip(0..)
-        {
-            *product = a.iter().zip(b.iter()).fold(F::ZERO, |acc, (a, b)| acc + (*a) * (*b));
-        }
-    });
-    
-    products.iter().fold(F::ZERO, |acc, product| acc + *product)
+    // Use parallel computation with rayon
+    use rayon::prelude::*;
+    a.par_iter().zip(b.par_iter()).map(|(a, b)| (*a) * (*b)).sum()
 }
 
 /// Divides polynomial `a` in `X` by `X - b` with
