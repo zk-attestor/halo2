@@ -120,6 +120,7 @@ bench = false
 
 [[example]]
 name = "serialization"
+required-features = ["circuit-params"]
 
 [[example]]
 name = "shuffle"
