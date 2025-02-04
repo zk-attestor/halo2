@@ -115,7 +115,7 @@ pub fn eval_polynomial<F: Field>(poly: &[F], point: F) -> F {
 /// For larger vectors, it switches to parallel computation.
 pub fn compute_inner_product<F: Field>(a: &[F], b: &[F]) -> F {
     assert_eq!(a.len(), b.len());
-    
+
     if a.len() < 32 {
         // Use sequential computation for small vectors
         let mut acc = F::ZERO;
@@ -126,11 +126,7 @@ pub fn compute_inner_product<F: Field>(a: &[F], b: &[F]) -> F {
     }
 
     // Use parallel computation
-    let mut result = F::ZERO;
-    parallelize(&mut [result], |results, _| {
-        results[0] = a.iter().zip(b.iter()).fold(F::ZERO, |acc, (a, b)| acc + (*a) * (*b));
-    });
-    result
+    a.par_iter().zip(b.par_iter()).map(|(a, b)| (*a) * b).sum()
 }
 
 /// Divides polynomial `a` in `X` by `X - b` with
@@ -348,12 +344,14 @@ mod tests {
     #[test]
     fn test_compute_inner_product() {
         let rng = OsRng;
-        
+
         // Test small vectors (sequential)
         let a_small: Vec<Fp> = (0..16).map(|_| Fp::random(rng)).collect();
         let b_small: Vec<Fp> = (0..16).map(|_| Fp::random(rng)).collect();
         let result_small = compute_inner_product(&a_small, &b_small);
-        let expected_small = a_small.iter().zip(b_small.iter())
+        let expected_small = a_small
+            .iter()
+            .zip(b_small.iter())
             .fold(Fp::ZERO, |acc, (a, b)| acc + (*a) * (*b));
         assert_eq!(result_small, expected_small);
 
@@ -361,7 +359,9 @@ mod tests {
         let a_large: Vec<Fp> = (0..64).map(|_| Fp::random(rng)).collect();
         let b_large: Vec<Fp> = (0..64).map(|_| Fp::random(rng)).collect();
         let result_large = compute_inner_product(&a_large, &b_large);
-        let expected_large = a_large.iter().zip(b_large.iter())
+        let expected_large = a_large
+            .iter()
+            .zip(b_large.iter())
             .fold(Fp::ZERO, |acc, (a, b)| acc + (*a) * (*b));
         assert_eq!(result_large, expected_large);
     }
