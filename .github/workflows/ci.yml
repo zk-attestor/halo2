@@ -4,12 +4,17 @@ on: [pull_request, push]
 
 jobs:
   test:
-    name: Test on ${{ matrix.os }}
+    name: Test on ${{ matrix.os }} with ${{ matrix.feature_set }} features
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
-
+        feature_set: [basic, all]
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+        include:
+          - feature_set: basic
+            features: --features batch,dev-graph,gadget-traces
+          - feature_set: all
+            features: --all-features
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -19,7 +24,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --release --all --all-features
+          args: --verbose --release --workspace --no-default-features ${{ matrix.features }}
 
   build:
     name: Build target ${{ matrix.target }}
