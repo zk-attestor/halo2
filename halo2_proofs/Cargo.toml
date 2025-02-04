@@ -109,10 +109,7 @@ sanity-checks = []
 batch = ["rand/getrandom"]
 profile = ["dep:ark-std"]
 circuit-params = []
-
-[target.'cfg(target_arch = "x86")'.features]
-asm = ["halo2curves/asm"]
-[target.'cfg(target_arch = "x86_64")'.features]
+# only for x86:
 asm = ["halo2curves/asm"]
 
 [lib]
