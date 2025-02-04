@@ -72,6 +72,7 @@ rustc-hash = "1.1"
 sha3 = "0.10"
 ark-std = { version = "0.3.0", features = ["print-trace"], optional = true }
 maybe-rayon = { version = "0.1.0", default-features = false }
+rayon = "1.10"
 
 # Developer tooling dependencies
 plotters = { version = "0.3.0", default-features = false, optional = true }
